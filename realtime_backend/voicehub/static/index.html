@@ -127,7 +127,7 @@
           <div class="conversation-layout">
             <aside class="panel session-list">
               <h2>最近会话</h2>
-              <div id="sessions"></div>
+              <div id="sessions" role="region" aria-label="最近会话列表" tabindex="0"></div>
               <button class="secondary" id="more-sessions">更早会话</button>
             </aside>
             <article class="panel transcript">
@@ -140,7 +140,7 @@
               <button id="more-messages" class="text-button" hidden>
                 加载更早消息
               </button>
-              <div id="messages">
+              <div id="messages" role="region" aria-label="对话消息" tabindex="0">
                 <div class="empty">
                   <span>▤</span>
                   <h3>对话会在这里留下记录</h3>

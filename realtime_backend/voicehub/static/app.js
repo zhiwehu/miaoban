@@ -160,6 +160,7 @@ function renderOverview() {
 }
 function renderSessions() {
   const target = $("sessions");
+  const scrollTop = target.scrollTop;
   target.replaceChildren();
   if (!state.sessions.length)
     empty(target, "还没有会话", "记录会在开始对话后出现。");
@@ -173,8 +174,10 @@ function renderSessions() {
       node("small", "", dateTime(s.updated) + " · " + s.id.slice(0, 8)),
     );
     b.onclick = () => selectSession(s.id);
+    b.setAttribute("aria-current", String(s.id === state.selected));
     target.append(b);
   }
+  target.scrollTop = scrollTop;
 }
 const deliveryLabels = {
   confirmed: "已识别",
@@ -198,7 +201,10 @@ function bubble(message) {
   );
   return wrapper;
 }
-function renderMessages(target, messages, sid, includeLive = true) {
+function renderMessages(target, messages, sid, includeLive = true, scrollMode = "follow") {
+  const previousTop = target.scrollTop;
+  const previousHeight = target.scrollHeight;
+  const follow = previousHeight - previousTop - target.clientHeight < 80;
   target.replaceChildren();
   for (const m of messages) target.append(bubble(m));
   for (const [key, value] of state.live) {
@@ -218,9 +224,11 @@ function renderMessages(target, messages, sid, includeLive = true) {
   }
   if (!target.children.length)
     empty(target, "对话已经准备好", "发送一句话，或开启麦克风。");
-  target.scrollTop = target.scrollHeight;
+  if (scrollMode === "prepend") target.scrollTop = previousTop + target.scrollHeight - previousHeight;
+  else if (scrollMode === "end" || follow) target.scrollTop = target.scrollHeight;
+  else target.scrollTop = previousTop;
 }
-async function selectSession(sid) {
+async function selectSession(sid, preserveScroll = false) {
   state.selected = sid;
   state.messages = await api("sessions/" + sid + "/messages");
   $("conversation-title").textContent =
@@ -230,7 +238,7 @@ async function selectSession(sid) {
   );
   $("more-messages").hidden = state.messages.length < 100;
   renderSessions();
-  renderMessages($("messages"), state.messages, sid);
+  renderMessages($("messages"), state.messages, sid, true, preserveScroll ? "follow" : "end");
 }
 $("interrupt-session").onclick = () =>
   api("sessions/" + state.selected + "/interrupt", { method: "POST" }).catch(
@@ -243,7 +251,7 @@ $("more-messages").onclick = async () => {
       "sessions/" + state.selected + "/messages?before=" + state.messages[0].id,
     );
     state.messages = [...older, ...state.messages];
-    renderMessages($("messages"), state.messages, state.selected);
+    renderMessages($("messages"), state.messages, state.selected, true, "prepend");
     $("more-messages").hidden = older.length < 100;
   } catch (e) {
     notice(e.message, true);
@@ -324,7 +332,7 @@ async function refresh() {
   renderOverview();
   renderSessions();
   renderLogs();
-  if (state.selected) await selectSession(state.selected);
+  if (state.selected) await selectSession(state.selected, true);
 }
 function scheduleRefresh() {
   clearTimeout(refreshTimer);

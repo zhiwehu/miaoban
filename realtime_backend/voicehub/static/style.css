@@ -493,10 +493,36 @@ p {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   gap: 20px;
-  min-height: 560px;
+  height: clamp(420px, calc(100dvh - 270px), 780px);
+  min-height: 0;
+  align-items: stretch;
 }
 .session-list {
   padding: 20px 13px;
+}
+.session-list,
+.transcript {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.session-list h2,
+.session-list > button,
+.transcript > .section-heading,
+.transcript > button {
+  flex-shrink: 0;
+}
+#sessions {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.session-list > button {
+  margin-top: 12px;
 }
 .session-list h2 {
   padding-left: 7px;
@@ -528,11 +554,12 @@ p {
   display: block;
   margin-top: 7px;
 }
-.transcript {
-  min-height: 560px;
-}
 #messages {
-  max-height: 650px;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   overflow: auto;
   padding: 10px 0;
 }
@@ -917,10 +944,13 @@ footer {
   }
   .conversation-layout {
     grid-template-columns: 1fr;
+    height: auto;
   }
   .session-list {
-    max-height: 240px;
-    overflow: auto;
+    height: 240px;
+  }
+  .transcript {
+    height: clamp(360px, 60dvh, 600px);
   }
   .section-intro {
     align-items: flex-start;
