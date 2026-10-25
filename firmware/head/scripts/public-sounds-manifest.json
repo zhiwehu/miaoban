@@ -1,0 +1,112 @@
+{
+  "source": "https://github.com/78/xiaozhi-esp32",
+  "commit": "860d12a12c7df9e933ff710b6f9061bf58d61ab2",
+  "archive_sha256": "c9cf0b5bdc9358f98291f71a00ada863aa55f1c99c784afe0e52726e324a5c3a",
+  "files": [
+    {
+      "path": "main/assets/common/exclamation.ogg",
+      "sha256": "61d0a91d7658e62c2ee0a940bd8b99e2062c4b760848f0ba2d793c852def4716",
+      "bytes": 1663
+    },
+    {
+      "path": "main/assets/common/low_battery.ogg",
+      "sha256": "a0d9eebf8b55db5f3da9b325f76eee5db9123e4215d134804204fc56eb3191d1",
+      "bytes": 2269
+    },
+    {
+      "path": "main/assets/common/popup.ogg",
+      "sha256": "f9806e04bbbc7b496f53632ea00610ec239fec02ea8ab41489782f079a3fc19b",
+      "bytes": 1148
+    },
+    {
+      "path": "main/assets/common/success.ogg",
+      "sha256": "c6bcb6322575df4ddaaa266c388d287338e8f857e85d4b5e3d90e8ee6ea2d678",
+      "bytes": 2012
+    },
+    {
+      "path": "main/assets/common/vibration.ogg",
+      "sha256": "576747b283d4fcfab690435d7abcb92e549dfdf7dfcea82dc39fa686d983f8d5",
+      "bytes": 1574
+    },
+    {
+      "path": "main/assets/locales/zh-CN/0.ogg",
+      "sha256": "cadc88f48d9ef7bc761880e3d8da9c5c8cc54cfa9488e9b89dd4f3c0dddc7ab1",
+      "bytes": 1438
+    },
+    {
+      "path": "main/assets/locales/zh-CN/1.ogg",
+      "sha256": "4f47d7f6543dfd3805bb1a6f93ae5edddc9133106257897c00b6d8afca958397",
+      "bytes": 1485
+    },
+    {
+      "path": "main/assets/locales/zh-CN/2.ogg",
+      "sha256": "1560482e66c1ddcd04de9a52c702a2dc6c31e785339a61cf59bba6984423f094",
+      "bytes": 1250
+    },
+    {
+      "path": "main/assets/locales/zh-CN/3.ogg",
+      "sha256": "80e64ec8e33756fbc88e24d65d58786e538cbc136a097d96e9d3f05fdeb2c0da",
+      "bytes": 1503
+    },
+    {
+      "path": "main/assets/locales/zh-CN/4.ogg",
+      "sha256": "4dd1001918bb7e76a74cd02c9640fd8dc68321546e5263db5fe83358991e1df5",
+      "bytes": 1634
+    },
+    {
+      "path": "main/assets/locales/zh-CN/5.ogg",
+      "sha256": "271012d6165c88010a2b203f2b3ac24fb59ddcc5e623691b5e9e11781fb1d2a5",
+      "bytes": 1512
+    },
+    {
+      "path": "main/assets/locales/zh-CN/6.ogg",
+      "sha256": "0d352e834451ee2f7936a14a38d602bba6dc6712ed12b03aa2974ca65ecdceaf",
+      "bytes": 1496
+    },
+    {
+      "path": "main/assets/locales/zh-CN/7.ogg",
+      "sha256": "6a906b484c62284ef073d13c4d2c6ab170bdc80d10a5e453a74301ad35b263fb",
+      "bytes": 1652
+    },
+    {
+      "path": "main/assets/locales/zh-CN/8.ogg",
+      "sha256": "11d91766156da1e594cc6ed416256bd800856c89a270175d1bd0e59155b9b569",
+      "bytes": 1473
+    },
+    {
+      "path": "main/assets/locales/zh-CN/9.ogg",
+      "sha256": "65dda65d4fc7c230e06ba1f1a51d149274050c8c79bde2ca30475db463b01389",
+      "bytes": 1421
+    },
+    {
+      "path": "main/assets/locales/zh-CN/activation.ogg",
+      "sha256": "4d42e1afaaec891e772a60877c0e310eecc47b33c6d58e9a0d73c760971bfe0f",
+      "bytes": 8402
+    },
+    {
+      "path": "main/assets/locales/zh-CN/err_pin.ogg",
+      "sha256": "a408f312ba76ed50df4f3a023f0d59916a08c50ea508c6e3698abc242be755eb",
+      "bytes": 3538
+    },
+    {
+      "path": "main/assets/locales/zh-CN/err_reg.ogg",
+      "sha256": "e4cec242920be01874542518262b65288931ce1398c7d380c78896f3abd3ea34",
+      "bytes": 6747
+    },
+    {
+      "path": "main/assets/locales/zh-CN/upgrade.ogg",
+      "sha256": "5c1d297e61c648e3ff2bc29d14014e98c8d922b608498d0c962bb7bca9e29593",
+      "bytes": 2847
+    },
+    {
+      "path": "main/assets/locales/zh-CN/welcome.ogg",
+      "sha256": "216abec67fae3895e81ea1d24e733ff9556b22ee3558fa74ed1748b3245e4096",
+      "bytes": 3493
+    },
+    {
+      "path": "main/assets/locales/zh-CN/wificonfig.ogg",
+      "sha256": "1a2143fe9d818b914a01f39365d78fbaca624aef75ff11af03cd299e9833182f",
+      "bytes": 3155
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="680" viewBox="0 0 1440 680">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#426858" stroke-width="1.5"/></marker></defs>
+<style>text{font-family:'PingFang SC','Microsoft YaHei',sans-serif;fill:#21362e}.title{font-size:30px;font-weight:600}.h{font-size:24px;font-weight:600}.b{font-size:20px}.small{font-size:17px;fill:#52685e}.box{fill:#fff;stroke:#aebeb1;stroke-width:2}.line{fill:none;stroke:#426858;stroke-width:2.5;marker-end:url(#a)}</style>
+<rect width="1440" height="680" fill="#f7f8f2"/>
+<text x="42" y="55" class="title">喵伴 × 本地 Mac：对话与转头的两条路径</text>
+<text x="42" y="87" class="small">系统结构示意；设备能力以实机验收为准</text>
+<rect x="40" y="145" width="320" height="200" rx="20" class="box"/>
+<text x="65" y="184" class="h">猫头 · ESP32-S3</text>
+<text x="65" y="224" class="b">双麦采音 / 本地唤醒</text><text x="65" y="260" class="b">Opus 收发 / 扬声器播放</text><text x="65" y="296" class="b">屏幕状态 / 声源方向估计</text>
+<rect x="410" y="115" width="600" height="290" rx="22" fill="#e4eee2" stroke="#aebeb1" stroke-width="2"/>
+<text x="435" y="150" class="h">Mac · MLX 本地推理与会话核心</text>
+<rect x="438" y="178" width="165" height="70" rx="12" class="box"/><text x="453" y="207" class="b">VAD → ASR</text><text x="453" y="232" class="small">Qwen3-ASR 0.6B</text>
+<rect x="634" y="178" width="150" height="70" rx="12" class="box"/><text x="650" y="207" class="b">LLM</text><text x="650" y="232" class="small">Qwen3 4B</text>
+<rect x="815" y="178" width="168" height="70" rx="12" class="box"/><text x="830" y="207" class="b">独立 TTS 服务</text><text x="830" y="232" class="small">Qwen3 0.6B</text>
+<path d="M603 213H628" class="line"/><path d="M784 213H809" class="line"/>
+<rect x="570" y="290" width="360" height="73" rx="12" class="box"/><text x="590" y="319" class="b">24k → 16k / Opus / 发送时钟</text><text x="590" y="345" class="small">轮次所有权 · 有界缓冲 · 播放准备确认</text>
+<path d="M900 249V283" class="line"/>
+<path d="M360 200H430" class="line"/><text x="319" y="125" class="small">局域网 WebSocket</text>
+<path d="M570 325H370" class="line"/><text x="385" y="313" class="small">语音回传</text>
+<rect x="1055" y="145" width="342" height="260" rx="20" class="box"/>
+<text x="1080" y="184" class="h">Mac 网页控制台</text><text x="1080" y="225" class="b">对话记录 / 事件日志</text><text x="1080" y="262" class="b">ASR / LLM / TTS 配置</text><text x="1080" y="299" class="b">SQLite 本地存储</text><text x="1080" y="350" class="small">管理入口：127.0.0.1:8765</text><text x="1080" y="378" class="small">设备专用入口：指定网卡 :8766</text>
+<path d="M1010 270H1047" class="line"/>
+<rect x="40" y="465" width="320" height="160" rx="20" class="box"/>
+<text x="65" y="504" class="h">底座 · ESP32-C3</text><text x="65" y="544" class="b">角度反馈 / 限幅转动</text><text x="65" y="580" class="b">堵转、传感器、超时保护</text>
+<path d="M200 350V457" class="line"/><text x="220" y="397" class="small">DOA → 相对角度 → UART</text>
+<path d="M78 465V352" class="line"/><text x="95" y="432" class="small">状态回传</text>
+<rect x="410" y="465" width="987" height="160" rx="20" fill="#eef0e8" stroke="#bcc6b9"/>
+<text x="435" y="506" class="h">转头在设备本地形成闭环</text><text x="435" y="544" class="b">使用共享原始 PCM；LLM 不直接控制电机；自己播报时抑制跟随</text><text x="435" y="582" class="small">待完善：真实外放自然插话、唤醒后跟随一致性、长时间与多设备实测</text>
+</svg>

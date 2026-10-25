@@ -1,0 +1,27 @@
+# Private runtime, model files and build products
+**/data/
+**/.venv/
+**/__pycache__/
+*.py[cod]
+*.log
+*.sqlite*
+*.db
+.env
+.env.*
+!.env.example
+models/
+**/build/
+**/managed_components/
+**/sdkconfig
+*.bin
+*.safetensors
+*.onnx
+*.wav
+*.mp3
+*.aiff
+.DS_Store
+**/auth.json
+
+# Prepared upstream sounds and generated language header
+*.ogg
+firmware/head/main/assets/lang_config.h

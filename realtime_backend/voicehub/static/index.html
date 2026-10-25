@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f3ed" />
+    <title>声桥 VoiceHub · 实时语音工作台</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" type="module"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail">
+        <a class="brand" href="#overview" aria-label="声桥首页"
+          ><span class="brand-mark">声</span
+          ><span>声桥<small>VOICEHUB / LOCAL</small></span></a
+        >
+        <div class="rail-label">工作空间</div>
+        <nav aria-label="主导航">
+          <button data-view="overview" class="active">
+            <span>◉</span>运行总览
+          </button>
+          <button data-view="conversations">
+            <span>▤</span>对话记录 <b id="session-count">0</b>
+          </button>
+          <button data-view="models"><span>≋</span>模型与语音</button>
+          <button data-view="logs"><span>⌘</span>事件日志</button>
+          <button data-view="lab"><span>↗</span>连接实验室</button>
+        </nav>
+        <div class="rail-bottom">
+          <span class="dot" id="server-dot"></span
+          ><span id="connection-label">正在连接后端</span
+          ><small>独立会话 · 本地存储<br />v0.1 / 开发预览</small>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <span class="eyebrow">YOUR VOICE, CONNECTED.</span>
+            <h1 id="page-title">运行总览</h1>
+          </div>
+          <div class="top-status">
+            <span class="dot"></span>Mac 本地工作台 <span id="clock"></span>
+          </div>
+        </header>
+        <div id="notice" class="notice" role="status" hidden></div>
+        <section id="login" class="panel" hidden>
+          <h2>连接工作台</h2>
+          <p>远程管理需要管理员令牌。令牌保存在服务器的数据目录。</p>
+          <form id="login-form">
+            <label
+              >管理员令牌<input
+                id="admin-token"
+                type="password"
+                autocomplete="off"
+                required /></label
+            ><button class="primary">登录</button>
+          </form>
+        </section>
+        <section data-panel="overview">
+          <div class="hero">
+            <div>
+              <span class="eyebrow">A PLACE FOR EVERY CONVERSATION</span>
+              <h2>让每一种设备，<br />都能自然对话。</h2>
+              <p>
+                统一接入声音、模型与会话。<br />从这个
+                Mac，连接你的下一个语音终端。
+              </p>
+              <button class="primary" id="go-lab">
+                打开连接实验室 <span>↗</span>
+              </button>
+            </div>
+            <div class="signal-art" aria-hidden="true">
+              <div class="orbit one"></div>
+              <div class="orbit two"></div>
+              <div class="orbit three"></div>
+              <div class="signal-core">
+                <span></span><span></span><span></span><span></span
+                ><span></span>
+              </div>
+              <span class="art-label">LISTEN · THINK · SPEAK</span>
+            </div>
+          </div>
+          <div class="metrics">
+            <article>
+              <span>在线客户端</span><strong id="online-count">0</strong
+              ><small>最多 8 个独立会话</small>
+            </article>
+            <article>
+              <span>最近会话</span><strong id="recent-count">0</strong
+              ><small>当前列表中的持久记录</small>
+            </article>
+            <article>
+              <span>人声检测</span><strong id="vad-status">—</strong
+              ><small>Silero ONNX · CPU</small>
+            </article>
+            <article>
+              <span>对话引擎</span><strong id="engine-status">—</strong
+              ><small id="engine-model">正在读取配置</small>
+            </article>
+          </div>
+          <div class="overview-bottom">
+            <article class="panel">
+              <div class="section-heading">
+                <h2>连接中的设备</h2>
+                <span class="tag">LIVE</span>
+              </div>
+              <div id="devices"></div>
+            </article>
+            <article class="panel">
+              <div class="section-heading">
+                <h2>最近活动</h2>
+                <button class="text-button" id="go-logs">查看日志 ↗</button>
+              </div>
+              <div id="activity"></div>
+            </article>
+          </div>
+          <p class="footnote">
+            自然插话依赖客户端持续收音与回声消除。能力声明不等于真实外放验证。
+          </p>
+        </section>
+        <section data-panel="conversations" hidden>
+          <div class="section-intro">
+            <p>每段对话独立保存。生成、播放确认与中断都有迹可循。</p>
+          </div>
+          <div class="conversation-layout">
+            <aside class="panel session-list">
+              <h2>最近会话</h2>
+              <div id="sessions"></div>
+              <button class="secondary" id="more-sessions">更早会话</button>
+            </aside>
+            <article class="panel transcript">
+              <div class="section-heading">
+                <h2 id="conversation-title">选择一段会话</h2>
+                <button id="interrupt-session" class="secondary" disabled>
+                  停止当前回复
+                </button>
+              </div>
+              <button id="more-messages" class="text-button" hidden>
+                加载更早消息
+              </button>
+              <div id="messages">
+                <div class="empty">
+                  <span>▤</span>
+                  <h3>对话会在这里留下记录</h3>
+                  <p>连接一个设备，或到连接实验室开始第一段对话。</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section data-panel="models" hidden>
+          <div class="section-intro">
+            <p>
+              分别选择识别、对话和语音服务。本地推理与兼容 HTTP API
+              可以自由组合。
+            </p>
+            <span class="tag">保存后对新连接生效</span>
+          </div>
+          <form id="settings-form">
+            <div class="provider-grid" id="provider-fields"></div>
+            <div class="settings-grid">
+              <article class="panel">
+                <h2>会话与唤醒</h2>
+                <label
+                  >默认唤醒方式<select id="wake-mode">
+                    <option value="device">设备端唤醒</option>
+                    <option value="backend">后端唤醒（持续上传）</option>
+                    <option value="manual">按键 / 手动激活</option>
+                  </select></label
+                ><label
+                  >后端唤醒词<input
+                    id="wake-phrase"
+                    maxlength="50"
+                    required /></label
+                ><label
+                  >空闲后待机（秒）<input
+                    id="idle-seconds"
+                    type="number"
+                    min="5"
+                    max="600"
+                    required
+                /></label>
+                <p class="hint">
+                  设备端唤醒词需在设备上配置。后端模式先对语音片段转写，再检测唤醒词；不是专用关键词引擎。
+                </p>
+                <label class="check"
+                  ><input
+                    id="barge-in"
+                    type="checkbox"
+                  />允许自然插话（需要客户端 AEC）</label
+                >
+              </article>
+              <article class="panel">
+                <h2>人声检测与记录</h2>
+                <label
+                  >Silero VAD v6 ONNX 路径<input
+                    id="vad-model"
+                    placeholder="留空自动查找本机已缓存模型"
+                /></label>
+                <div class="field-pair">
+                  <label
+                    >起声确认（毫秒）<input
+                      id="onset-ms"
+                      type="number"
+                      min="96"
+                      max="1000"
+                      required /></label
+                  ><label
+                    >句末静音（毫秒）<input
+                      id="silence-ms"
+                      type="number"
+                      min="320"
+                      max="2000"
+                      required
+                  /></label>
+                </div>
+                <label
+                  >人声概率阈值<input
+                    id="speech-threshold"
+                    type="number"
+                    min="0.3"
+                    max="0.95"
+                    step="0.01"
+                    required /></label
+                ><label
+                  >记录保留（天）<input
+                    id="retention-days"
+                    type="number"
+                    min="1"
+                    max="365"
+                    required
+                /></label>
+              </article>
+            </div>
+            <article class="panel prompt-panel">
+              <h2>对话提示词</h2>
+              <label
+                >定义语气、角色和回复方式<textarea
+                  id="system-prompt"
+                  rows="4"
+                  maxlength="8000"
+                ></textarea>
+              </label>
+            </article>
+            <div class="save-bar">
+              <p>
+                API
+                密钥填写环境变量名称。实际密钥在启动服务前设置，工作台不会读取或展示。
+              </p>
+              <button class="primary" type="submit">保存配置</button>
+            </div>
+          </form>
+        </section>
+        <section data-panel="logs" hidden>
+          <div class="section-intro">
+            <p>按会话追踪连接、状态、错误和轮次耗时。音频内容不会写入日志。</p>
+            <div>
+              <label class="sr-only" for="log-filter">筛选日志</label
+              ><select id="log-filter">
+                <option value="all">全部事件</option>
+                <option value="error">仅错误</option>
+                <option value="turn">轮次与播放</option>
+                <option value="session">连接与状态</option></select
+              ><button class="secondary" id="refresh-logs">刷新</button>
+            </div>
+          </div>
+          <article class="panel log-panel">
+            <div class="log-header">
+              <span>时间</span><span>事件</span><span>会话 / 详情</span>
+            </div>
+            <div id="logs"></div>
+            <button id="more-logs" class="text-button">加载更早日志</button>
+          </article>
+        </section>
+        <section data-panel="lab" hidden>
+          <div class="section-intro">
+            <p>网页是一个真实客户端，与其他设备使用同一套 WebSocket 协议。</p>
+            <span class="tag">PROTOCOL V1</span>
+          </div>
+          <div class="lab-grid">
+            <article class="panel client-panel">
+              <div class="section-heading">
+                <h2>浏览器语音终端</h2>
+                <span class="tag" id="client-status">未连接</span>
+              </div>
+              <div class="mic-display">
+                <div id="mic-orb" class="mic-orb">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <rect x="9" y="3" width="6" height="12" rx="3" />
+                    <path d="M5 10v2a7 7 0 0014 0v-2M12 19v3M8 22h8" />
+                  </svg>
+                </div>
+                <h3 id="client-phase">准备好，就开始聊</h3>
+                <p id="client-detail">可先用文字检查模型，再开启麦克风。</p>
+              </div>
+              <label
+                >此客户端的唤醒方式<select id="client-wake">
+                  <option value="manual">手动激活</option>
+                  <option value="backend">后端唤醒</option>
+                  <option value="device">客户端唤醒事件</option>
+                </select></label
+              >
+              <div class="button-row">
+                <button id="connect-text" class="secondary">连接文字</button
+                ><button id="connect-mic" class="primary">开启麦克风</button>
+              </div>
+              <div class="button-row">
+                <button id="activate-client" class="secondary" disabled>
+                  激活聆听</button
+                ><button id="stop-client" class="secondary" disabled>
+                  打断回复</button
+                ><button id="disconnect-client" class="text-button" disabled>
+                  断开
+                </button>
+              </div>
+              <p class="hint">
+                浏览器需要麦克风授权。手机访问需 HTTPS；本机 localhost
+                可直接使用。后端唤醒会持续上传音频。
+              </p>
+            </article>
+            <article class="panel lab-dialogue">
+              <div class="section-heading">
+                <h2>实时对话</h2>
+                <span id="lab-session" class="mono">尚未创建会话</span>
+              </div>
+              <div id="lab-messages" aria-live="polite">
+                <div class="empty">
+                  <span>◎</span>
+                  <h3>从一句「你好」开始</h3>
+                  <p>首次本地推理需要加载模型，请留意事件日志。</p>
+                </div>
+              </div>
+              <form id="text-form">
+                <label class="sr-only" for="client-text">发送消息</label
+                ><input
+                  id="client-text"
+                  placeholder="输入消息，或直接开口说话…"
+                  maxlength="4000"
+                  required
+                /><button class="primary" id="send-text" disabled>
+                  发送 ↑
+                </button>
+              </form>
+            </article>
+          </div>
+        </section>
+        <footer>
+          <span>声桥 / VOICEHUB</span><span>一个后端，多种声音入口。</span>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
