@@ -41,6 +41,9 @@ CONFIG_OTA_URL 默认留空，请通过 menuconfig 设置自己的私有后端 O
 - 唯一 I2S 读取及原始双麦 observer，供方向估计复用。
 - DOA、人声门槛、稳定证据与位置反馈门控；播报时抑制跟随，保留运动保护。
 
+MQTT 开发分支的订阅与握手改动见 [MQTT＋UDP 说明](../docs/MQTT_UDP.md)。
+候选应用已在本次设备部署，MQTT 与 WebSocket 均完成有声对照；这不是任意硬件的直接刷入保证。
+
 ## 底座构建
 
 ```sh

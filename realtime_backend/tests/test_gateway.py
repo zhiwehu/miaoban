@@ -111,6 +111,26 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.type, WSMsgType.BINARY)
         await ws.close()
 
+    async def test_first_audio_metric_records_tail_frame_after_ready_once_per_turn(self):
+        from aiohttp import WSMsgType
+        from voicehub.app import HUB
+        ws,start=await self.ready_client()
+        await ws.send_json({'type':'tts','state':'ready','turn_id':start['turn_id'],
+            'device_state':6,'rx_audio_packets':0,'dropped_audio_packets':0,
+            'decoded_audio_packets':0,'played_audio_packets':0,'output_enabled':True})
+        async with asyncio.timeout(2):
+            while True:
+                message=await ws.receive()
+                if message.type==WSMsgType.TEXT and message.json().get('state')=='stop':break
+        events=self.app[HUB].store.events(start['session_id'])
+        first=[e for e in events if e['type']=='transport.first_audio']
+        ready=[e for e in events if e['type']=='device.playback_state']
+        self.assertEqual(len(first),1)
+        self.assertEqual(first[0]['turn_id'],start['turn_id'])
+        self.assertGreaterEqual(first[0]['created'],ready[0]['created'])
+        self.assertGreater(first[0]['payload']['packet_bytes'],0)
+        await ws.close()
+
     async def test_missing_ready_ack_fails_without_sending_audio(self):
         from unittest.mock import patch
         from aiohttp import WSMsgType
