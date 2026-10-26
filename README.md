@@ -131,3 +131,7 @@ python3 scripts/test_firmware_logic.py
 
 这两组测试不刷写设备。硬件构建与物理效果需要另外验收。
 本次发布的测试结果、采样性能和未完事项见docs/VALIDATION.md。
+
+### 内置模型服务管理
+
+后台「模型与语音」支持为内置 ASR / LLM / TTS 独立启动、停止、重启，实时查看状态和 PID。详见 [内置模型服务说明](docs/managed-model-services.md)。

@@ -32,7 +32,7 @@ def validate(config):
             raise ValueError(f'{section} 配置字段不完整或包含未知字段')
     for kind in ('asr', 'llm', 'tts'):
         c = config[kind]
-        allowed = ('macos', 'http') if kind == 'tts' else ('mlx', 'http')
+        allowed = ('builtin', 'macos', 'http') if kind == 'tts' else ('builtin', 'mlx', 'http')
         if c['provider'] not in allowed:
             raise ValueError(f'{kind} 不支持该提供商')
         for key in ('url', 'key_env', 'model'):

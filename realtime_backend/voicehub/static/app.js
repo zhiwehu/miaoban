@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   view: "overview",
   config: null,
+  services: [],
   sessions: [],
   status: null,
   logs: [],
@@ -392,6 +393,56 @@ function observe() {
   monitor.onerror = () => monitor.close();
 }
 
+const serviceBusy = new Set();
+const serviceLabels = {running: "运行中", starting: "加载中", stopped: "已停止", failed: "失败",
+  blocked: "端口被占用", external: "外部服务", embedded: "随后台运行", system: "系统语音"};
+function renderServices() {
+  for (const item of state.services) {
+    const container = $(item.kind + "-service");
+    if (!container) continue;
+    const status = $(item.kind + "-service-status");
+    const detail = [serviceLabels[item.state] || item.state];
+    if (item.pid) detail.push("PID " + item.pid);
+    if (item.active) detail.push(item.active + " 个请求处理中");
+    if (item.needs_restart) detail.push("模型已修改，请重启生效");
+    if (item.error) detail.push(item.error);
+    if (!item.managed) detail.push("选择内置服务并保存后可操作");
+    status.textContent = detail.join(" · ");
+    status.classList.toggle("error", ["failed", "blocked"].includes(item.state));
+    for (const button of container.querySelectorAll("button")) {
+      button.disabled = !item.managed || serviceBusy.has(item.kind) ||
+        (button.dataset.action === "start" && ["running", "starting"].includes(item.state)) ||
+        (button.dataset.action !== "start" && !item.pid && item.state === "stopped");
+    }
+  }
+}
+async function refreshServices() {
+  state.services = await api("services");
+  renderServices();
+}
+async function controlService(kind, action) {
+  serviceBusy.add(kind);
+  renderServices();
+  try {
+    await api("services/" + kind + "/" + action, {method: "POST"});
+    await refreshServices();
+    notice(action === "stop" ? "服务已停止，模型进程已释放。" : "操作已提交，模型加载状态会自动更新。");
+  } catch (e) {
+    notice(e.message, true);
+    await refreshServices().catch(() => {});
+  } finally {
+    serviceBusy.delete(kind);
+    renderServices();
+  }
+}
+let servicePolling = false;
+setInterval(async () => {
+  if (state.view !== "models" || document.hidden || servicePolling) return;
+  servicePolling = true;
+  try { await refreshServices(); } catch (e) { notice(e.message, true); }
+  finally { servicePolling = false; }
+}, 2000);
+
 function field(label, id, value, type = "text") {
   const l = node("label", "", label);
   const input = node("input");
@@ -427,11 +478,13 @@ function populateConfig(cfg) {
     select.id = kind + "-provider";
     for (const [value, text] of kind === "tts"
       ? [
+          ["builtin", "内置服务（可启停）"],
           ["macos", "macOS 原生语音"],
           ["http", "兼容 HTTP API"],
         ]
       : [
-          ["mlx", "Mac 本地 MLX"],
+          ["builtin", "内置服务（可启停）"],
+          ["mlx", "Mac 本地 MLX（随后台运行）"],
           ["http", "兼容 HTTP API"],
         ]) {
       const option = node("option", "", text);
@@ -481,14 +534,36 @@ function populateConfig(cfg) {
       );
     }
     select.onchange = () => {
+      if (kind === "tts" && select.value === "builtin" && $("tts-model").value === "tts-1") {
+        $("tts-model").value = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit";
+        $("tts-voice").value = "Serena";
+        $("tts-sample_rate").value = 24000;
+      }
       for (const key of ["url", "key_env"])
         $(kind + "-" + key).disabled = select.value !== "http";
       if (kind === "tts")
         $("tts-sample_rate").disabled = select.value === "macos";
     };
+    const service = node("div", "service-controls");
+    service.id = kind + "-service";
+    const status = node("p", "service-state", "正在读取服务状态…");
+    status.id = kind + "-service-status";
+    status.setAttribute("role", "status");
+    const actions = node("div", "button-row");
+    for (const [action, text] of [["start", "启动"], ["stop", "停止"], ["restart", "重启"]]) {
+      const button = node("button", "secondary", text);
+      button.type = "button";
+      button.dataset.action = action;
+      button.setAttribute("aria-label", names[kind][0] + text);
+      button.onclick = () => controlService(kind, action);
+      actions.append(button);
+    }
+    service.append(status, actions);
+    panel.append(service);
     target.append(panel);
     select.onchange();
   }
+  renderServices();
   const mapping = {
     "wake-mode": cfg.wake.mode,
     "wake-phrase": cfg.wake.phrase,
@@ -537,6 +612,7 @@ $("settings-form").onsubmit = async (event) => {
       body: JSON.stringify(cfg),
     });
     populateConfig(result.config);
+    await refreshServices();
     notice("配置已保存。请让客户端重新连接，以使用新配置。");
   } catch (e) {
     notice(e.message, true);
@@ -889,6 +965,7 @@ async function boot() {
   try {
     populateConfig((await api("config")).config);
     await refresh();
+    await refreshServices();
     observe();
   } catch (e) {
     notice(e.message, true);

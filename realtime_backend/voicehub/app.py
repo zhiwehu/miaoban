@@ -21,6 +21,7 @@ from .input import AudioInput
 from .models import Pipeline, LocalModels, ProviderError
 from .session import Session
 from .store import Store
+from .services import ServiceManager, ServiceError
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -69,6 +70,7 @@ class Hub:
         self.root.mkdir(parents=True, exist_ok=True)
         os.chmod(self.root, 0o700)
         self.config = ConfigFile(self.root/'settings.json')
+        self.services = ServiceManager(self.root, self.config.get)
         auth_path = self.root/'auth.json'
         if auth_path.exists():
             self.auth = json.loads(auth_path.read_text())
@@ -99,6 +101,7 @@ class Hub:
     async def start(self):
         self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90, connect=10, sock_read=30))
         self.local = LocalModels()
+        self.local.services = self.services
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -129,6 +132,7 @@ class Hub:
             await self.http.close()
         if self.local:
             self.local.close()
+        await self.services.shutdown()
         self.store.close()
 
     def resume(self, hello):
@@ -364,6 +368,8 @@ async def device_gateway(request, ws):
 
 async def api(request):
     hub, name = request.app[HUB], request.match_info.get('name', request.path.rsplit('/', 1)[-1])
+    if name == 'services':
+        return web.json_response(await hub.services.all_status())
     if name == 'status':
         try:
             vad_path(hub.config.get()['audio']['vad_model'])
@@ -376,7 +382,15 @@ async def api(request):
             wake_mode=s.wake_mode) for s in hub.sessions.values()]))
     if name == 'config':
         if request.method == 'PUT':
-            hub.config.save(await request.json())
+            value = await request.json()
+            from .config import validate
+            validate(value)
+            for kind in ('asr', 'llm', 'tts'):
+                status = await hub.services.status(kind)
+                if status.get('pid') and value[kind]['provider'] != 'builtin':
+                    return web.json_response({'error': {'code':'service_still_running',
+                        'message':'请先停止内置服务，再切换提供商'}}, status=409)
+            hub.config.save(value)
             hub.store.event(dict(type='config.saved', session_id=None, turn_id=None))
             hub.publish(dict(type='config.saved', timestamp=time.time()))
         return web.json_response({'config':hub.config.get(), 'applies_to':'new_connections'})
@@ -395,6 +409,23 @@ async def api(request):
                             secure=request.secure, max_age=86400)
         return response
     raise web.HTTPNotFound()
+
+
+async def service_action(request):
+    hub = request.app[HUB]
+    try:
+        result = await hub.services.action(request.match_info['kind'], request.match_info['action'])
+    except ServiceError as exc:
+        messages = {'service_port_in_use': '服务端口被其他进程占用，请先检查端口',
+                    'external_service_unmanaged': '请先保存为内置服务；外部服务不能由后台控制',
+                    'invalid_service_action': '不支持的服务或操作',
+                    'service_start_failed': '服务启动失败，请检查服务日志'}
+        return web.json_response({'error': {'code': exc.code, 'message': messages.get(exc.code, exc.code)}}, status=409)
+    event = dict(type='service.changed', kind=request.match_info['kind'],
+                 action=request.match_info['action'], state=result['state'], timestamp=time.time())
+    hub.store.event(dict(event, session_id=None, turn_id=None))
+    hub.publish(event)
+    return web.json_response(result)
 
 
 async def messages(request):
@@ -501,6 +532,7 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/events', events)
     app.router.add_get('/api/sessions/{sid}/messages', messages)
     app.router.add_post('/api/sessions/{sid}/interrupt', interrupt)
+    app.router.add_post('/api/services/{kind}/{action}', service_action)
     app.router.add_get('/api/{name}', api)
     app.router.add_put('/api/config', api)
     app.router.add_post('/api/login', api)

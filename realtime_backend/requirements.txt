@@ -2,3 +2,4 @@ aiohttp>=3.14.3,<4
 numpy>=2,<3
 av>=18,<19
 onnxruntime>=1.20,<2
+psutil>=6,<8

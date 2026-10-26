@@ -133,10 +133,18 @@ class Pipeline:
         self.config, self.http, self.local = config, http, local
 
     def headers(self, kind):
+        if self.config[kind]['provider'] == 'builtin':
+            from .services import ServiceError
+            try:
+                return self.local.services.headers(kind)
+            except ServiceError as exc:
+                raise ProviderError(exc.code) from None
         value = os.environ.get(self.config[kind]['key_env'], '')
         return {'Authorization': 'Bearer '+value} if value else {}
 
     def endpoint(self, kind, path):
+        if self.config[kind]['provider'] == 'builtin':
+            return self.local.services.endpoint(kind) + '/' + path
         return self.config[kind]['url'].rstrip('/') + '/' + path
 
     def check(self, response):
