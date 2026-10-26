@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   view: "overview",
   config: null,
+  logSession: null,
   services: [],
   sessions: [],
   status: null,
@@ -79,7 +80,7 @@ async function api(path, options = {}) {
   return response.json();
 }
 function view(name) {
-  if (!["overview", "conversations", "models", "logs", "lab"].includes(name))
+  if (!["overview", "conversations", "connections", "models", "logs", "lab"].includes(name))
     name = "overview";
   state.view = name;
   document
@@ -92,10 +93,12 @@ function view(name) {
     overview: "运行总览",
     conversations: "对话记录",
     models: "模型与语音",
+    connections: "客户端接入",
     logs: "事件日志",
-    lab: "连接实验室",
+    lab: "网页聊天",
   }[name];
   if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  window.dispatchEvent(new CustomEvent("voicehub:view", {detail:name}));
 }
 document
   .querySelectorAll("[data-view]")
@@ -125,14 +128,14 @@ function renderOverview() {
     empty(
       devices,
       "暂时没有在线设备",
-      "前往连接实验室，验证你的第一个客户端。",
+      "前往网页聊天，验证你的第一个客户端。",
     );
   for (const device of s.sessions) {
     const row = node("div", "device-row");
     const text = node("div");
     text.append(
       node("strong", "", device.device_id),
-      node("small", "", device.id.slice(0, 12) + " · " + device.wake_mode),
+      node("small", "", device.id.slice(0, 12) + " · " + (device.protocol || "未知协议") + " · " + device.wake_mode),
     );
     row.append(
       node("span", "device-icon", "◉"),
@@ -312,7 +315,7 @@ $("more-logs").onclick = async () => {
   try {
     const last = state.logs.at(-1);
     if (!last) return;
-    const older = await api("logs?before=" + last.id);
+    const older = await api("logs?before=" + last.id + (state.logSession ? "&session_id=" + encodeURIComponent(state.logSession) : ""));
     state.logs.push(...older);
     renderLogs();
     $("more-logs").hidden = older.length < 100;
@@ -320,12 +323,33 @@ $("more-logs").onclick = async () => {
     notice(e.message, true);
   }
 };
+window.addEventListener("voicehub:open-session", async (event) => {
+  try {
+    const {sid, target} = event.detail;
+    if (target === "logs") {
+      state.logSession = sid;
+      $("log-session-scope").textContent = "当前会话：" + sid;
+      $("log-session-scope").hidden = $("clear-log-session").hidden = false;
+      $("log-filter").value = "all";
+      view("logs");
+      await refresh();
+    } else {
+      view("conversations");
+      await selectSession(sid);
+    }
+  } catch (e) { notice(e.message, true); }
+});
+$("clear-log-session").onclick = () => {
+  state.logSession = null;
+  $("log-session-scope").hidden = $("clear-log-session").hidden = true;
+  refresh().catch(e => notice(e.message, true));
+};
 let refreshTimer;
 async function refresh() {
   const [status, sessions, logs] = await Promise.all([
     api("status"),
     api("sessions"),
-    api("logs"),
+    api("logs" + (state.logSession ? "?session_id=" + encodeURIComponent(state.logSession) : "")),
   ]);
   state.status = status;
   state.sessions = sessions;
@@ -791,7 +815,7 @@ refreshMicrophones().catch(() => {});
 function phase(name, detail) {
   $("client-phase").textContent = labels[name] || name;
   $("client-detail").textContent =
-    detail || "你的声音正在通过统一 WebSocket 协议传输。";
+    detail || "我在听。说完一句话后稍等，就会收到回复。";
   $("mic-orb").className = "mic-orb " + name;
 }
 async function loadLabMessages() {

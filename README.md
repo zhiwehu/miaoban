@@ -135,3 +135,7 @@ python3 scripts/test_firmware_logic.py
 ### 内置模型服务管理
 
 后台「模型与语音」支持为内置 ASR / LLM / TTS 独立启动、停止、重启，实时查看状态和 PID。详见 [内置模型服务说明](docs/managed-model-services.md)。
+
+### 客户端接入向导
+
+后台「客户端接入」提供已验证客户端列表、安装与连接引导、设备协议状态，以及按会话查看对话与日志的入口。普通用户无需操作 IP / MQTT 参数；管理员可展开高级连接设置管理设备监听和网关。详见 [客户端接入](docs/CLIENT_ONBOARDING.md)。

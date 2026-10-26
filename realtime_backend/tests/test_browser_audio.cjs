@@ -21,7 +21,7 @@ async function client({failSource=false}={}) {
     navigator:{mediaDevices:{async getUserMedia(){order.push(['microphone']);return stream},async enumerateDevices(){return []},addEventListener(){}}},
     document:{hidden:false,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},querySelectorAll(){return []},createElement:node},
     location:{hash:'#lab'},history:{replaceState(){}},sessionStorage:{getItem(){return null}},
-    window:{addEventListener(){}},setInterval(){},clearInterval(){},setTimeout(){},clearTimeout(){}};
+    CustomEvent:class {constructor(type,options){this.type=type;this.detail=options?.detail}},window:{addEventListener(){},dispatchEvent(){}},setInterval(){},clearInterval(){},setTimeout(){},clearTimeout(){}};
   const result=await vm.runInNewContext('(async()=>{'+source+'\nreturn {microphone,stopMicrophone};})()',sandbox);
   return {...result,order,track,nodes};
 }

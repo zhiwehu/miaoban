@@ -8,6 +8,7 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" type="module"></script>
+    <script src="/static/connections.js" type="module"></script>
   </head>
   <body>
     <div class="shell">
@@ -24,9 +25,10 @@
           <button data-view="conversations">
             <span>▤</span>对话记录 <b id="session-count">0</b>
           </button>
+          <button data-view="connections"><span>⌁</span>客户端接入</button>
           <button data-view="models"><span>≋</span>模型与语音</button>
           <button data-view="logs"><span>⌘</span>事件日志</button>
-          <button data-view="lab"><span>↗</span>连接实验室</button>
+          <button data-view="lab"><span>↗</span>网页聊天</button>
         </nav>
         <div class="rail-bottom">
           <span class="dot" id="server-dot"></span
@@ -68,7 +70,7 @@
                 Mac，连接你的下一个语音终端。
               </p>
               <button class="primary" id="go-lab">
-                打开连接实验室 <span>↗</span>
+                打开网页聊天 <span>↗</span>
               </button>
             </div>
             <div class="signal-art" aria-hidden="true">
@@ -144,11 +146,30 @@
                 <div class="empty">
                   <span>▤</span>
                   <h3>对话会在这里留下记录</h3>
-                  <p>连接一个设备，或到连接实验室开始第一段对话。</p>
+                  <p>连接一个设备，或到网页聊天开始第一段对话。</p>
                 </div>
               </div>
             </article>
           </div>
+        </section>
+        <section data-panel="connections" hidden>
+          <div class="section-intro"><p>选好客户端，按步骤连上 VoiceHub，就可以开始聊天。</p><button class="secondary" id="connections-refresh">刷新状态</button></div>
+          <p id="connections-notice" class="hint" role="status">正在读取连接状态…</p>
+          <h2 class="onboarding-section-title">1. 选择你要使用的客户端</h2><div id="client-catalog" class="connection-grid"></div>
+          <article class="panel onboarding-guide"><div class="section-heading"><h2 id="client-guide-title">接入向导</h2><span id="client-guide-status" class="tag"></span></div><p id="client-guide-hardware" class="hint"></p><ol id="client-guide-steps"></ol><p id="client-install-note" class="hint"></p><div id="client-install-actions" class="button-row"></div></article>
+          <details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>
+          <div class="connection-grid">
+            <article class="panel"><div class="section-heading"><h2>WebSocket 设备监听</h2><span class="tag" id="ws-device-state">读取中</span></div><p id="ws-console-address" class="hint"></p><p id="ws-device-address" class="hint"></p>
+              <form id="ws-connection-form"><label for="ws-device-host">设备监听 IPv4</label><input id="ws-device-host" required placeholder="选择当前电脑的局域网地址" list="local-addresses"/><label for="ws-device-port">设备监听端口</label><input id="ws-device-port" type="number" min="1" max="65535" required value="8766"/><button class="secondary" type="submit">保存 WebSocket 配置</button></form>
+              <p class="hint">此监听仅提供设备接入，不开放管理台。设备仍需访问令牌。停止或重启会断开该监听上的设备。</p><div class="button-row" id="ws-connection-actions"><button class="secondary" type="button" data-action="start">启动</button><button class="secondary" type="button" data-action="stop">停止</button><button class="secondary" type="button" data-action="restart">重启</button></div>
+            </article>
+            <article class="panel"><div class="section-heading"><h2>MQTT + UDP 网关</h2><span class="tag" id="mqtt-connection-state">读取中</span></div><p id="mqtt-connection-warning" class="hint"></p>
+              <form id="mqtt-connection-form"><label for="mqtt-broker-host">Broker IPv4</label><input id="mqtt-broker-host" required list="local-addresses"/><label for="mqtt-broker-port">Broker 端口</label><input id="mqtt-broker-port" type="number" min="1" max="65535" required/><label for="mqtt-udp-host">UDP 监听 / 通告 IPv4</label><input id="mqtt-udp-host" required list="local-addresses"/><label for="mqtt-udp-port">UDP 音频端口</label><input id="mqtt-udp-port" type="number" min="0" max="65535" required/><fieldset><legend>允许接入的已配置设备</legend><div id="mqtt-configured-devices"></div></fieldset><button class="secondary" type="submit">保存 MQTT 配置</button></form>
+              <p class="hint"><a href="https://github.com/zhiwehu/miaoban/blob/feature/voicehub-control-center/docs/MQTT_UDP.md" target="_blank" rel="noopener noreferrer">Broker 与设备初始化说明</a></p><p class="hint">先停止网关再修改配置。网关连接已有 Broker，不负责安装或启停 Broker。密码、ACL 和配网令牌沿用私有配置。</p><div class="button-row" id="mqtt-connection-actions"><button class="secondary" type="button" data-action="start">启动</button><button class="secondary" type="button" data-action="stop">停止</button><button class="secondary" type="button" data-action="restart">重启</button></div>
+            </article>
+          </div><datalist id="local-addresses"></datalist><p id="local-address-hint" class="hint"></p></details>
+          <article class="panel onboarding-guide"><div class="section-heading"><h2>3. 检查连接，开始聊天</h2><span id="connections-online-count" class="tag">0 在线</span></div><div id="connections-devices"></div></article>
+          <details class="panel onboarding-guide"><summary>查看历史对话和日志</summary><p class="hint">设备离线后也能查看。这里显示最近 20 个会话。</p><div id="connections-recent"></div></details>
         </section>
         <section data-panel="models" hidden>
           <div class="section-intro">
@@ -265,6 +286,7 @@
               ><button class="secondary" id="refresh-logs">刷新</button>
             </div>
           </div>
+          <p class="hint" id="log-session-scope" hidden></p><button class="secondary" id="clear-log-session" hidden>查看全部会话日志</button>
           <article class="panel log-panel">
             <div class="log-header">
               <span>时间</span><span>事件</span><span>会话 / 详情</span>
@@ -275,13 +297,13 @@
         </section>
         <section data-panel="lab" hidden>
           <div class="section-intro">
-            <p>网页是一个真实客户端，与其他设备使用同一套 WebSocket 协议。</p>
-            <span class="tag">PROTOCOL V1</span>
+            <p>选好麦克风并开启，就能用声音聊天；也可以直接发送文字。</p>
+            <span class="tag">语音 / 文字</span>
           </div>
           <div class="lab-grid">
             <article class="panel client-panel">
               <div class="section-heading">
-                <h2>浏览器语音终端</h2>
+                <h2>和 VoiceHub 聊天</h2>
                 <span class="tag" id="client-status">未连接</span>
               </div>
               <div class="mic-display">
