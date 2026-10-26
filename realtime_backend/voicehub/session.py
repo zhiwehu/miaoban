@@ -38,10 +38,10 @@ class Session:
         self.seq += 1
         event = dict(type=kind, session_id=self.id, turn_id=turn.id if turn else None,
                      seq=self.seq, timestamp=time.time(), **data)
-        # PCM and token deltas are intentionally excluded from the persistent event journal.
-        if kind not in ('audio.chunk', 'reply.delta'):
+        # Background wake transcripts are sent only to their own client, never journalled.
+        if kind not in ('audio.chunk', 'reply.delta', 'wake.check'):
             self.store.event(event)
-        if kind != 'audio.chunk':
+        if kind not in ('audio.chunk', 'wake.check'):
             self.publish(event)
         await asyncio.wait_for(self.send(event), 3)
 
@@ -97,12 +97,12 @@ class Session:
                 await self.transition('thinking', turn)
                 if text is None:
                     text = (await self.pipeline.transcribe(pcm)).strip()
-                if not text:
-                    return
                 if was_standby and self.wake_mode == 'backend':
                     phrase = re.sub(r'[\W_]+', '', self.wake_phrase)
                     pattern = r'[\W_]*'.join(re.escape(c) for c in phrase)
                     match = re.search(pattern, text, flags=re.IGNORECASE)
+                    await self.emit('wake.check', turn, matched=bool(match),
+                                    phrase=self.wake_phrase, heard=text[:500])
                     if not match:
                         await self.transition('standby', turn)
                         return
@@ -111,6 +111,8 @@ class Session:
                     text = text[match.end():].lstrip(' ，。！？,.:;!?')
                     if not text:
                         return
+                if not text:
+                    return
                 if transcribed:
                     await self.emit('transcript.final', turn, text=text,
                                     elapsed_ms=round((time.monotonic()-turn.started)*1000))

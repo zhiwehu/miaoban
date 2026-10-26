@@ -118,3 +118,9 @@ tts.stop也带turn_id；支持的设备回复tts.stopped及相同计数，用于
 WebSocket 仍为默认接入，启用 MQTT 不创建另一套会话或模型核心。
 对小智兼容入口（WebSocket / MQTT＋UDP），管理日志中的 `transport.first_audio` 表示
 本轮第一个 Opus 包已由服务端发送，包含 transport 和 packet_bytes；不是实际声学出声确认。
+
+## 服务端唤醒反馈
+
+使用 `wake_mode: "backend"` 时，握手返回当前连接使用的 `wake_phrase`。客户端必须实际持续上传音频并声明 `continuous_audio: true`。
+
+待机时识别语音后，当前客户端会收到 `wake.check`：`matched` 表示是否匹配、`phrase` 为配置的唤醒词、`heard` 为本次识别的文字（最多 500 字符）。该事件仅发给当前连接，不写入事件日志或对话历史，也不广播到管理事件流。未匹配时继续待机；匹配时去掉唤醒词并处理剩余问题。只有唤醒词时进入聆听，不生成空回复。

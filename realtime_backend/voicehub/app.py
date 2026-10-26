@@ -278,7 +278,8 @@ async def device_gateway(request, ws):
                 audio_params=dict(format='opus', sample_rate=16000, channels=1, frame_duration=60)))
         else:
             await ws.send_json(dict(type='hello', version=1, session_id=sid, resume_token=resume,
-                wake_mode=mode, audio=dict(format='pcm_s16le', sample_rate=16000, channels=1),
+                wake_mode=mode, wake_phrase=cfg['wake']['phrase'] if mode == 'backend' else None,
+                audio=dict(format='pcm_s16le', sample_rate=16000, channels=1),
                 capabilities=dict(barge_in=cfg['audio']['barge_in'] and aec,
                                   aec_verification='client_declared', playback_ack=True)))
         await session.emit('session.connected', device_id=device, protocol=getattr(request, 'protocol_name', 'xiaozhi' if legacy else 'v1'),

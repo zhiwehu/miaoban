@@ -119,6 +119,30 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.store.messages('one'))
         self.assertFalse(any(e['type']=='transcript.final' for e in self.events))
 
+    async def test_wake_check_feedback_is_ephemeral_and_does_not_activate(self):
+        self.session.wake_mode = 'backend'
+        async def transcribe(pcm): return '小保同学'
+        self.pipeline.transcribe = transcribe
+        await self.session.submit(pcm=b'input')
+        await self.session.turn.task
+        check = next(e for e in self.events if e['type'] == 'wake.check')
+        self.assertFalse(check['matched'])
+        self.assertEqual(check['heard'], '小保同学')
+        self.assertEqual(check['phrase'], '小宝同学')
+        self.assertFalse(any(e['type'] == 'wake.check' for e in self.store.events()))
+        self.assertEqual(self.session.state, 'standby')
+
+    async def test_wake_phrase_alone_activates_without_creating_empty_reply(self):
+        self.session.wake_mode = 'backend'
+        async def transcribe(pcm): return '小宝，同学！'
+        self.pipeline.transcribe = transcribe
+        await self.session.submit(pcm=b'input')
+        await self.session.turn.task
+        check = next(e for e in self.events if e['type'] == 'wake.check')
+        self.assertTrue(check['matched'])
+        self.assertEqual(self.session.state, 'listening')
+        self.assertFalse(self.store.messages('one'))
+
     async def test_next_sentence_is_synthesized_before_first_finishes_sending(self):
         sent = 0
         second_started_at = []

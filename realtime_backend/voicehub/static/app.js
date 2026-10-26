@@ -654,6 +654,7 @@ let manualDisconnect = false,
   labMessages = [],
   partial = "",
   clientReady = false;
+let activeWakeMode = "manual", activeWakePhrase = "";
 let identity;
 try {
   identity = JSON.parse(sessionStorage.getItem("voicehub-client") || "null");
@@ -879,6 +880,10 @@ function openClient() {
           resume_token: e.resume_token,
         };
         sessionStorage.setItem("voicehub-client", JSON.stringify(identity));
+        activeWakeMode = e.wake_mode;
+        activeWakePhrase = e.wake_phrase || "";
+        $("wake-feedback").hidden = activeWakeMode !== "backend";
+        $("wake-feedback").textContent = '待机时请说“' + activeWakePhrase + '，你好”。只说唤醒词会进入聆听，不会立即回复。';
         setClientReady(true);
         $("connect-text").disabled = $("connect-mic").disabled = false;
         $("client-status").textContent =
@@ -886,9 +891,16 @@ function openClient() {
         $("lab-session").textContent = e.session_id.slice(0, 12);
         await loadLabMessages();
         if (e.wake_mode !== "backend") send({ type: "session.activate" });
-        else phase("standby", "持续上传已开启，等待唤醒词。");
+        else phase("standby", "请说“" + activeWakePhrase + "”唤醒；无需点击激活聆听。");
         if (wantsMic && !e.capabilities.barge_in)
           notice("客户端未声明有效回声消除，自然插话未开启；仍可点击打断。");
+        return;
+      }
+      if (e.type === "wake.check") {
+        $("wake-feedback").hidden = false;
+        $("wake-feedback").textContent = e.matched
+          ? '已匹配“' + e.phrase + '”，进入聆听。'
+          : '未匹配“' + e.phrase + '”。本次识别：' + (e.heard || '（未识别到文字）') + '。请完整说出唤醒词。';
         return;
       }
       if (e.type === "error") {
@@ -905,7 +917,7 @@ function openClient() {
       if (e.type === "session.state")
         phase(
           e.state,
-          e.state === "standby" ? "等待唤醒或手动激活。" : undefined,
+          e.state === "standby" ? (activeWakeMode === "backend" ? "请说“" + activeWakePhrase + "”唤醒。" : "等待唤醒或手动激活。") : undefined,
         );
       if (e.type === "reply.delta") {
         partial += e.text;
@@ -1005,6 +1017,8 @@ $("activate-client").onclick = () => {
   send({ type: "session.activate" });
 };
 $("client-wake").onchange = () => {
+  $("wake-feedback").hidden = $("client-wake").value !== "backend";
+  $("wake-feedback").textContent = '待机时请说“' + (state.config?.wake.phrase || "小宝同学") + '，你好”。无需点击激活聆听。';
   if (socket) connect(wantsMic);
 };
 $("stop-client").onclick = () => {
