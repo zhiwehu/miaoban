@@ -116,7 +116,7 @@ function renderOverview() {
   const cfg = state.config;
   if (cfg) {
     $("engine-status").textContent =
-      cfg.llm.provider === "mlx" ? "本地 MLX" : "HTTP API";
+      cfg.llm.provider === "builtin" ? "内置服务" : "HTTP API";
     $("engine-model").textContent = cfg.llm.model;
   }
   const devices = $("devices");
@@ -484,7 +484,6 @@ function populateConfig(cfg) {
         ]
       : [
           ["builtin", "内置服务（可启停）"],
-          ["mlx", "Mac 本地 MLX（随后台运行）"],
           ["http", "兼容 HTTP API"],
         ]) {
       const option = node("option", "", text);

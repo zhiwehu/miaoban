@@ -384,7 +384,7 @@ async def api(request):
         if request.method == 'PUT':
             value = await request.json()
             from .config import validate
-            validate(value)
+            value = validate(value)
             for kind in ('asr', 'llm', 'tts'):
                 status = await hub.services.status(kind)
                 if status.get('pid') and value[kind]['provider'] != 'builtin':

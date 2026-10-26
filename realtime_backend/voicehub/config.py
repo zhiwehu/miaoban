@@ -9,9 +9,9 @@ from urllib.parse import urlsplit
 
 DEFAULT = {
     'system_prompt': '你是小宝，一个温暖、自然的语音伙伴。用简短中文回答。只输出可直接朗读的正文，不使用emoji、颜文字、动作或表情旁白。',
-    'asr': {'provider': 'mlx', 'model': 'mlx-community/Qwen3-ASR-0.6B-8bit',
+    'asr': {'provider': 'builtin', 'model': 'mlx-community/Qwen3-ASR-0.6B-8bit',
             'url': 'http://127.0.0.1:8000/v1', 'key_env': 'VOICE_ASR_KEY', 'language': 'Chinese'},
-    'llm': {'provider': 'mlx', 'model': 'mlx-community/Qwen3-4B-Instruct-2507-4bit',
+    'llm': {'provider': 'builtin', 'model': 'mlx-community/Qwen3-4B-Instruct-2507-4bit',
             'url': 'http://127.0.0.1:1234/v1', 'key_env': 'VOICE_LLM_KEY', 'max_tokens': 240},
     'tts': {'provider': 'macos', 'model': 'tts-1', 'voice': 'Tingting',
             'url': 'http://127.0.0.1:8000/v1', 'key_env': 'VOICE_TTS_KEY', 'sample_rate': 24000},
@@ -30,9 +30,14 @@ def validate(config):
     for section in ('asr', 'llm', 'tts', 'wake', 'audio'):
         if not isinstance(config[section], dict) or set(config[section]) != set(DEFAULT[section]):
             raise ValueError(f'{section} 配置字段不完整或包含未知字段')
+    # Accept old files and clients, but only expose the canonical service provider.
+    config = copy.deepcopy(config)
+    for kind in ('asr', 'llm'):
+        if config[kind]['provider'] == 'mlx':
+            config[kind]['provider'] = 'builtin'
     for kind in ('asr', 'llm', 'tts'):
         c = config[kind]
-        allowed = ('builtin', 'macos', 'http') if kind == 'tts' else ('builtin', 'mlx', 'http')
+        allowed = ('builtin', 'macos', 'http') if kind == 'tts' else ('builtin', 'http')
         if c['provider'] not in allowed:
             raise ValueError(f'{kind} 不支持该提供商')
         for key in ('url', 'key_env', 'model'):
@@ -72,7 +77,10 @@ class ConfigFile:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
-            self.value = validate(json.loads(self.path.read_text()))
+            original = json.loads(self.path.read_text())
+            self.value = validate(original)
+            if self.value != original:
+                self.save(self.value)
         else:
             self.save(copy.deepcopy(DEFAULT))
 
@@ -80,7 +88,7 @@ class ConfigFile:
         return copy.deepcopy(self.value)
 
     def save(self, value):
-        validate(value)
+        value = validate(value)
         fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.settings-')
         try:
             with os.fdopen(fd, 'w') as f:

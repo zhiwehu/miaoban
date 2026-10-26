@@ -18,6 +18,31 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(f.get(), original)
             self.assertEqual(ConfigFile(f.path).get(), original)
 
+    def test_legacy_mlx_is_migrated_and_persisted_without_changing_model(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)/'settings.json'
+            cfg = ConfigFile(path).get()
+            cfg['asr'].update(provider='mlx', model='custom-asr')
+            cfg['llm'].update(provider='mlx', model='custom-llm')
+            path.write_text(json.dumps(cfg))
+            migrated = ConfigFile(path).get()
+            for kind in ('asr', 'llm'):
+                self.assertEqual(migrated[kind]['provider'], 'builtin')
+                self.assertEqual(migrated[kind]['model'], 'custom-'+kind)
+            self.assertEqual(json.loads(path.read_text()), migrated)
+            self.assertEqual(migrated['tts'], cfg['tts'])
+            self.assertEqual(ConfigFile(path).get(), migrated)
+
+    def test_old_config_submission_is_normalized_without_mutating_input(self):
+        with tempfile.TemporaryDirectory() as root:
+            f = ConfigFile(Path(root)/'settings.json')
+            cfg = f.get()
+            cfg['llm']['provider'] = 'mlx'
+            f.save(cfg)
+            self.assertEqual(f.get()['llm']['provider'], 'builtin')
+            self.assertEqual(cfg['llm']['provider'], 'mlx')
+
     def test_rejects_embedded_keys_and_invalid_urls(self):
         with tempfile.TemporaryDirectory() as root:
             c = ConfigFile(Path(root)/'settings.json').get()

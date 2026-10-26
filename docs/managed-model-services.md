@@ -7,7 +7,7 @@
 - 默认仅监听 127.0.0.1：ASR 8781、LLM 8782、TTS 8767。每个新进程使用独立随机凭证，凭证不会返回管理 API。
 - 只使用本机已缓存模型，不自动下载。安装 `realtime_backend/requirements.txt` 和 `requirements-local.txt`，需 Apple Silicon / MLX。
 - ASR、LLM 使用配置中的 MLX 模型。TTS 使用 Qwen3-TTS CustomVoice（默认推荐 `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit`、Serena、24000 Hz）。TTS 其他模型架构和采样率不支持。
-- 原有 MLX、macOS 与 HTTP 配置继续兼容；HTTP 服务由外部管理。切换提供商前需先停止仍在运行的内置服务。
+- 旧版 ASR / LLM 的 `mlx` 配置在读取或保存时自动迁移为 `builtin`，保留模型及其他参数；页面不再提供随后台运行的 MLX 选项。新配置的 ASR / LLM 默认使用内置服务，需手动启动。macOS 与 HTTP 配置继续兼容；HTTP 服务由外部管理。切换提供商前需先停止仍在运行的内置服务。
 - 服务日志和私有身份记录位于后台数据目录的 `services/`。加载失败、进程异常退出和端口冲突会反映在状态中。端口冲突不会结束或接管未知程序。
 - 可识别并接管同目录旧版 `qwen-tts.pid` 指向的 Qwen TTS 进程；首次重启后替换为带随机鉴权的服务进程。
 

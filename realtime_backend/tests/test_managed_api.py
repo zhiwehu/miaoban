@@ -37,6 +37,9 @@ class ManagedApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
 
     async def test_external_and_invalid_actions_rejected(self):
+        cfg = self.app[HUB].config.get()
+        cfg['asr']['provider'] = 'http'
+        self.app[HUB].config.save(cfg)
         for path in ('asr/start', 'llm/shell', 'broker/stop'):
             response = await self.client.post('/api/services/' + path)
             self.assertEqual(response.status, 409)
