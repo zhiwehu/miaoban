@@ -22,6 +22,7 @@ from .models import Pipeline, LocalModels, ProviderError
 from .session import Session
 from .store import Store
 from .services import ServiceManager, ServiceError
+from .connections import Connections, ConnectionError
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -272,6 +273,9 @@ async def device_gateway(request, ws):
         session = Session(sid, device, hub.store, pipeline, send, publish=hub.publish,
                           wake_mode=mode, wake_phrase=cfg['wake']['phrase'], playback_ack=not legacy,
                           idle_seconds=cfg['wake']['idle_seconds'])
+        session.device_listener = request.app.get(DEVICE_ONLY, False) and getattr(request,'protocol_name',None) != 'mqtt_udp'
+        session.transport_socket = ws
+        session.protocol = getattr(request, 'protocol_name', 'xiaozhi_websocket' if legacy else 'websocket_v1')
         hub.sessions[sid] = session
         if legacy:
             await ws.send_json(dict(type='hello', transport='websocket', version=1, session_id=sid,
@@ -380,7 +384,7 @@ async def api(request):
         return web.json_response(dict(version='0.1.0', online=len(hub.sessions), vad_available=vad,
             mqtt_ready=bool(hub.mqtt and hub.mqtt.ready.is_set()),
             model_validation='not_probed', sessions=[dict(id=s.id, device_id=s.device_id, state=s.state,
-            wake_mode=s.wake_mode) for s in hub.sessions.values()]))
+            wake_mode=s.wake_mode, protocol=getattr(s,'protocol','unknown')) for s in hub.sessions.values()]))
     if name == 'config':
         if request.method == 'PUT':
             value = await request.json()
@@ -410,6 +414,56 @@ async def api(request):
                             secure=request.secure, max_age=86400)
         return response
     raise web.HTTPNotFound()
+
+
+async def client_connection(request):
+    hub = request.app[HUB]
+    if request.match_info['client'] != 'echoear-s3': raise web.HTTPNotFound()
+    connections = hub.connections
+    if not connections.device_ready:
+        return web.json_response({'error':{'code':'device_listener_not_running',
+            'message':'请先启动设备 WebSocket 监听，以提供设备接入和配网入口'}},status=409)
+    protocol = request.query.get('protocol')
+    if protocol == 'xiaozhi_websocket':
+        value = dict(websocket=dict(url=f'ws://{connections.device_host}:{connections.device_port}/xiaozhi/v1/',
+            token=hub.auth['device_token'],version=1))
+    elif protocol == 'mqtt_udp':
+        try: cfg = connections.config()
+        except (ConnectionError, OSError, ValueError):
+            return web.json_response({'error':{'code':'mqtt_not_configured','message':'请先配置 MQTT 网关'}},status=409)
+        device = request.query.get('device','')
+        item = cfg['devices'].get(device)
+        if not item or not item.get('enabled') or not hub.mqtt or not hub.mqtt.ready.is_set():
+            return web.json_response({'error':{'code':'mqtt_device_not_ready',
+                'message':'请先启动 MQTT 网关并选择允许接入的已配置设备'}},status=409)
+        value = dict(device_id=device,ota_url=f'http://{connections.device_host}:{connections.device_port}/xiaozhi/mqtt-ota/{item["provision_token"]}/')
+    else: raise ValueError('invalid_client_protocol')
+    return web.json_response(value,headers={'Content-Disposition':'attachment; filename="voicehub-device-connection.json"'})
+
+
+async def client_firmware(request):
+    from .clients import firmware
+    asset = firmware(request.app[HUB].root,request.match_info['client'])
+    if not asset: raise web.HTTPNotFound()
+    return web.FileResponse(asset['path'],headers={
+        'Content-Disposition':'attachment; filename="echoear-s3-application.bin"',
+        'X-Firmware-SHA256':asset['sha256']})
+
+
+async def connection_api(request):
+    hub = request.app[HUB]
+    try:
+        websocket = request.match_info.get('transport') == 'websocket'
+        if request.method == 'PUT':
+            await (hub.connections.save_websocket(await request.json()) if websocket else hub.connections.save(await request.json()))
+        elif request.method == 'POST':
+            await (hub.connections.websocket_action(request.match_info['action']) if websocket else hub.connections.action(request.match_info['action']))
+    except ConnectionError as exc:
+        return web.json_response({'error':{'code':str(exc),'message':str(exc)}},status=409)
+    value = hub.connections.status()
+    from .clients import catalog
+    value['clients'] = catalog(hub.root)
+    return web.json_response(value)
 
 
 async def service_action(request):
@@ -507,29 +561,24 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
             raise ValueError('Device listener must bind a specific private interface address')
     app = web.Application(middlewares=[guard], client_max_size=65536)
     hub = app[HUB] = Hub(root, pipeline_factory)
+    hub.connections = Connections(hub, mqtt_config, device_host, device_port)
     async def life(app):
         await hub.start()
-        device_runner = None
         try:
-            if mqtt_config:
-                from .mqtt_service import MqttService, load_config
-                hub.mqtt = MqttService(hub, load_config(mqtt_config))
-                await hub.mqtt.start()
-            if device_host:
-                device_runner = web.AppRunner(create_device_app(hub), access_log=None, shutdown_timeout=3)
-                await device_runner.setup()
-                await web.TCPSite(device_runner, device_host, device_port).start()
+            await hub.connections.boot()
             yield
         finally:
-            if hub.mqtt:
-                await hub.mqtt.close()
+            await hub.connections.close()
             await hub.close()
-            if device_runner:
-                await device_runner.cleanup()
     app.cleanup_ctx.append(life)
     app.router.add_get('/ws', gateway)
     app.router.add_get('/xiaozhi/v1/', gateway)
     app.router.add_route('*', '/xiaozhi/ota/{token}/', ota)
+    app.router.add_get('/api/connections', connection_api)
+    app.router.add_put('/api/connections/{transport:mqtt|websocket}', connection_api)
+    app.router.add_post('/api/connections/{transport:mqtt|websocket}/{action}', connection_api)
+    app.router.add_get('/api/clients/{client}/firmware', client_firmware)
+    app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
     app.router.add_get('/api/sessions/{sid}/messages', messages)
     app.router.add_post('/api/sessions/{sid}/interrupt', interrupt)

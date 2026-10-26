@@ -120,3 +120,9 @@ class MqttGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(goodbye['session_id'],hello['session_id'])
         async with asyncio.timeout(2):
             while hello['session_id'] in self.hub.sessions:await asyncio.sleep(.01)
+
+    async def test_disabled_device_cannot_create_a_channel(self):
+        self.gateway.config['devices']['cat']['enabled']=False
+        await self.control({'type':'hello','version':3,'transport':'udp',
+            'audio_params':{'format':'opus','sample_rate':16000,'channels':1,'frame_duration':60}})
+        self.assertNotIn('cat',self.gateway.channels)

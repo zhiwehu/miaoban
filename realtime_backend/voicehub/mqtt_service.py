@@ -17,6 +17,10 @@ def load_config(path):
     if stat.S_IMODE(path.stat().st_mode) & 0o077:
         raise ValueError('MQTT credentials file must have permissions 0600')
     cfg = json.loads(path.read_text())
+    return validate_config(cfg)
+
+
+def validate_config(cfg):
     for field in ('broker_host','udp_host'):
         address = ipaddress.IPv4Address(cfg[field])
         if not address.is_private or address.is_unspecified or address.is_multicast:
@@ -51,6 +55,7 @@ class MqttService:
         self.config, self.hub = config, hub
         self.client, self.task = None, None
         self.ready = asyncio.Event()
+        self.error = None
         self.gateway = MqttGateway(hub, config, self.publish)
 
     def device_config(self, device, provision_token):
@@ -68,6 +73,7 @@ class MqttService:
         await self.client.publish(topic,json.dumps(value,ensure_ascii=False),qos=0,retain=False)
 
     async def start(self):
+        import aiomqtt  # Fail before binding if the optional dependency is unavailable.
         await self.gateway.start()
         self.task = asyncio.create_task(self.run())
 
@@ -83,11 +89,13 @@ class MqttService:
                     self.client = client
                     for device in self.config['devices']:
                         await client.subscribe('voicehub/'+device+'/up',qos=0)
+                    self.error = None
                     self.ready.set()
                     self.hub.publish(dict(type='transport.status',transport='mqtt_udp',ready=True))
                     async for message in client.messages:
                         await self.gateway.control(str(message.topic),bytes(message.payload),message.retain)
             except (aiomqtt.MqttError, OSError, ConnectionError) as exc:
+                self.error = 'broker_unavailable'
                 LOG.warning('MQTT unavailable (%s); reconnecting',type(exc).__name__)
             finally:
                 self.ready.clear()
@@ -96,6 +104,7 @@ class MqttService:
             await asyncio.sleep(1)
 
     async def close(self):
+        self.ready.clear()
         await self.gateway.close()
         if self.task:
             self.task.cancel()

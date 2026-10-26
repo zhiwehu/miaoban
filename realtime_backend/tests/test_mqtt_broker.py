@@ -93,3 +93,13 @@ class MqttBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.broker=subprocess.Popen([shutil.which('mosquitto'),'-c',str(Path(self.tmp.name)/'mqtt/mosquitto.conf')],
             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         await asyncio.wait_for(self.service.ready.wait(),4)
+
+    async def test_console_can_stop_restart_gateway_without_restarting_backend(self):
+        response=await self.web.post('/api/connections/mqtt/stop')
+        self.assertEqual(response.status,200)
+        self.assertIsNone(self.web.app[HUB].mqtt)
+        response=await self.web.post('/api/connections/mqtt/start')
+        self.assertEqual(response.status,200)
+        await asyncio.wait_for(self.web.app[HUB].mqtt.ready.wait(),3)
+        response=await self.web.get('/api/connections')
+        self.assertEqual((await response.json())['mqtt']['state'],'running')
