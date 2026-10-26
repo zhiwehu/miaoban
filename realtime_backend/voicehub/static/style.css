@@ -1015,3 +1015,6 @@ footer {
 .service-controls { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line, #ddd); }
 .service-state { min-height: 44px; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
 .service-state.error { color: #b93831; }
+
+#microphone-level { width: 100%; height: 12px; margin-top: 8px; }
+#microphone-status { overflow-wrap: anywhere; }

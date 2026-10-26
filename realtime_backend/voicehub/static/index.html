@@ -307,6 +307,11 @@
                   <option value="device">客户端唤醒事件</option>
                 </select></label
               >
+              <label>输入麦克风<select id="microphone-device">
+                <option value="">系统默认麦克风</option>
+              </select></label>
+              <label>麦克风音量<meter id="microphone-level" min="0" max="1" value="0"></meter></label>
+              <p class="hint" id="microphone-status" role="status">麦克风未开启</p>
               <div class="button-row">
                 <button id="connect-text" class="secondary">连接文字</button
                 ><button id="connect-mic" class="primary">开启麦克风</button>

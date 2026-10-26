@@ -684,50 +684,109 @@ function clearPlayback() {
 }
 async function audioContext() {
   if (!context || context.state === "closed") {
-    context = new AudioContext({ sampleRate: 16000 });
+    // Let Chrome negotiate the AirPods hardware rate; capture.js converts to 16 kHz.
+    context = new AudioContext();
     await context.audioWorklet.addModule("/static/capture.js");
   }
   await context.resume();
   return context;
 }
+let microphonePackets = 0, microphoneFrames = 0, microphonePeak = 0;
+let microphoneLastFrame = 0, microphoneStarted = 0;
+function renderMicrophone() {
+  const track = stream?.getAudioTracks()[0];
+  const target = $("microphone-status");
+  if (!track) { target.textContent = "麦克风未开启"; $("microphone-level").value = 0; return; }
+  const age = performance.now() - (microphoneLastFrame || microphoneStarted);
+  const state = track.readyState !== "live" ? "输入已断开，请重新开启麦克风" :
+    track.muted ? "输入设备暂无音频" : context?.state !== "running" ? "音频已暂停，请点击开启麦克风恢复" :
+    age > 3000 ? "没有采集到音频帧，请重新开启麦克风或切换输入设备" :
+    microphonePeak < .001 ? "输入接近静音，请检查麦克风选择和耳机佩戴" : "正在采集";
+  target.textContent = [track.label || "默认输入", state,
+    (context?.sampleRate || "—") + " Hz → 16000 Hz",
+    "采集 " + microphoneFrames + " 帧 / 已上传 " + microphonePackets + " 帧"].join(" · ");
+  $("microphone-level").value = Math.min(1, microphonePeak * 5);
+}
+async function refreshMicrophones() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const select = $("microphone-device"), selected = select.value;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  select.replaceChildren();
+  const automatic = node("option", "", "系统默认麦克风"); automatic.value = "";
+  select.append(automatic);
+  let index = 0;
+  for (const device of devices.filter(d => d.kind === "audioinput")) {
+    const option = node("option", "", device.label || "麦克风 " + (++index));
+    option.value = device.deviceId; select.append(option);
+  }
+  select.value = [...select.options].some(o => o.value === selected) ? selected : "";
+}
 async function microphone() {
-  await audioContext();
   if (stream) return;
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 1,
-    },
-    video: false,
-  });
-  micSource = context.createMediaStreamSource(stream);
-  capture = new AudioWorkletNode(context, "voicehub-capture");
-  mute = context.createGain();
-  mute.gain.value = 0;
-  micSource.connect(capture).connect(mute).connect(context.destination);
-  capture.port.onmessage = (event) => {
-    if (socket?.readyState === WebSocket.OPEN && clientReady) {
-      if (socket.bufferedAmount > 64000) {
-        notice("上传音频积压，已断开以避免延迟累积。", true);
-        disconnect();
+  try {
+    const device = $("microphone-device").value;
+    // Opening Bluetooth input may change the hardware route and its sample rate.
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        channelCount: 1, ...(device ? {deviceId: {exact: device}} : {})}, video: false,
+    });
+    // Discard the old output route before constructing the input graph.
+    if (context && context.state !== "closed") await context.close();
+    context = null;
+    await audioContext();
+    micSource = context.createMediaStreamSource(stream);
+    capture = new AudioWorkletNode(context, "voicehub-capture");
+    mute = context.createGain(); mute.gain.value = 0;
+    micSource.connect(capture).connect(mute).connect(context.destination);
+    microphonePackets = microphoneFrames = 0;
+    microphonePeak = 0;
+    microphoneLastFrame = 0; microphoneStarted = performance.now();
+    capture.port.onmessage = (event) => {
+      if (event.data?.type === "level") {
+        microphonePeak = event.data.peak;
+        microphoneLastFrame = performance.now();
+        renderMicrophone();
         return;
       }
-      socket.send(event.data);
-    }
-  };
+      microphoneFrames++;
+      microphoneLastFrame = performance.now();
+      if (socket?.readyState === WebSocket.OPEN && clientReady) {
+        if (socket.bufferedAmount > 64000) {
+          notice("上传音频积压，已断开以避免延迟累积。", true); disconnect(); return;
+        }
+        socket.send(event.data);
+        microphonePackets++;
+      }
+    };
+    const track = stream.getAudioTracks()[0];
+    track.onmute = track.onunmute = renderMicrophone;
+    track.onended = () => { renderMicrophone(); notice("麦克风已断开，请选择输入设备后重新开启。", true); };
+    capture.onprocessorerror = () => notice("音频采集已停止，请重新开启麦克风。", true);
+    renderMicrophone();
+    await refreshMicrophones().catch(() => {});
+  } catch (e) {
+    stopMicrophone();
+    throw e;
+  }
 }
 function stopMicrophone() {
-  if (stream) for (const track of stream.getTracks()) track.stop();
+  if (stream) for (const track of stream.getTracks()) {
+    track.onmute = track.onunmute = track.onended = null;
+    track.stop();
+  }
   stream = null;
-  micSource?.disconnect();
-  capture?.disconnect();
-  mute?.disconnect();
-  capture = null;
-  micSource = null;
-  mute = null;
+  if (capture) { capture.port.onmessage = null; capture.onprocessorerror = null; }
+  micSource?.disconnect(); capture?.disconnect(); mute?.disconnect();
+  capture = null; micSource = null; mute = null;
+  renderMicrophone();
 }
+setInterval(() => { if (stream) renderMicrophone(); }, 1000);
+navigator.mediaDevices?.addEventListener("devicechange", () => refreshMicrophones().catch(() => {}));
+$("microphone-device").onchange = () => {
+  if (stream) connect(true);
+};
+refreshMicrophones().catch(() => {});
+
 function phase(name, detail) {
   $("client-phase").textContent = labels[name] || name;
   $("client-detail").textContent =
@@ -766,8 +825,8 @@ async function connect(useMic = false) {
     }
     clearPlayback();
     stopMicrophone();
-    await audioContext();
     if (useMic) await microphone();
+    else await audioContext();
     openClient();
   } catch (e) {
     stopMicrophone();
@@ -941,7 +1000,13 @@ function disconnect() {
 $("connect-text").onclick = () => connect(false);
 $("connect-mic").onclick = () => connect(true);
 $("disconnect-client").onclick = disconnect;
-$("activate-client").onclick = () => send({ type: "session.activate" });
+$("activate-client").onclick = () => {
+  context?.resume().catch(() => {});
+  send({ type: "session.activate" });
+};
+$("client-wake").onchange = () => {
+  if (socket) connect(wantsMic);
+};
 $("stop-client").onclick = () => {
   clearPlayback();
   send({ type: "interrupt" });

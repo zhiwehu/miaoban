@@ -8,17 +8,25 @@ class VoiceHubCapture extends AudioWorkletProcessor {
     this.count = 0;
     this.samples = new Int16Array(640);
     this.position = 0;
+    this.meterSamples = 0;
+    this.peak = 0;
   }
   process(inputs) {
     const input = inputs[0]?.[0];
     if (!input) return true;
     for (const value of input) {
+      this.peak = Math.max(this.peak, Math.abs(value));
+      if (++this.meterSamples >= sampleRate / 4) {
+        this.port.postMessage({type: "level", peak: this.peak});
+        this.meterSamples = 0;
+        this.peak = 0;
+      }
       this.sum += value;
       this.count++;
       this.phase += 16000;
-      if (this.phase >= sampleRate) {
+      while (this.phase >= sampleRate) {
         this.phase -= sampleRate;
-        const sample = this.sum / this.count;
+        const sample = this.count ? this.sum / this.count : value;
         this.sum = 0;
         this.count = 0;
         this.samples[this.position++] = Math.round(
