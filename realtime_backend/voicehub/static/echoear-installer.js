@@ -1,6 +1,6 @@
 import {PROFILE,sha256,inspectDevice,encodeBackup,decodeBackup,validateBackup,upgrade,restore} from './echoear-upgrade-core.mjs';
 const $=id=>document.getElementById(id);
-const messages={wrong_device:'这不是支持的 EchoEar 16 MB 设备，请勿继续安装。',protected_device:'设备启用了安全保护，本向导不支持升级，请联系管理员。',
+const messages={invalid_image:'读取的应用镜像格式不完整，请重新检查设备。',wrong_image:'当前应用镜像的芯片或配置不符合这个升级包。',invalid_image_checksum:'读取的应用校验和未通过，请重新检查设备。',invalid_image_hash:'读取的应用指纹校验未通过，请重新检查设备。',wrong_device:'芯片型号或实际 Flash 容量不在支持范围内，已停止检查。',protected_device:'设备启用了安全保护，本向导不支持升级，请联系管理员。',
  unsupported_partition_table:'设备分区与升级包不匹配，已停止操作。',unrecognized_existing_firmware:'无法确认这台设备已安装适配系统，已停止操作。',
  invalid_ota_data:'无法确认设备的启动分区，已停止操作。',pending_ota_validation:'设备上次升级尚未确认，请先让设备正常启动。',
  backup_wrong_device:'这份备份不属于当前设备，请选择正确备份。',backup_checksum_failed:'备份校验未通过，请勿用它恢复。',
@@ -19,7 +19,7 @@ function controls(){
  $('echoear-disconnect').disabled=busy||!transport;
  $('echoear-heard').disabled=!$('echoear-heard').dataset.ready;
 }
-async function action(fn){if(busy)return;busy=true;controls();try{await fn();}catch(e){status(!writing&&(e.name==='AbortError'||e.name==='NotFoundError')?'已取消。设备没有开始安装。':messages[e.message]||'操作没有完成。请检查数据线、关闭占用串口的软件，再重新连接；已有备份可用于恢复。');}finally{busy=false;writing=false;controls();}}
+async function action(fn){if(busy)return;busy=true;controls();try{await fn();}catch(e){console.warn('EchoEar operation failed:',e.name,e.message);status(!writing&&(e.name==='AbortError'||e.name==='NotFoundError')?'已取消。设备没有开始安装。':messages[e.message]||'操作没有完成。请检查数据线、关闭占用串口的软件，再重新连接；已有备份可用于恢复。');}finally{busy=false;writing=false;controls();}}
 async function disconnect(){
  if(loader){try{await loader.after('hard_reset');}catch{}}
  if(transport){try{await transport.disconnect();}catch{}}
@@ -44,7 +44,7 @@ $('echoear-connect').onclick=()=>action(async()=>{
   terminal:{clean(){},writeLine(){},write(){}}});
  status('正在连接设备，请稍等…',0);await loader.main();
  device=await inspectDevice(loader,release,status);expectedMac=device.mac;
- $('echoear-device-info').textContent='已识别兼容的 EchoEar，当前应用版本 '+device.current.version+'。设备型号、容量、分区和现有固件检查通过。';
+ $('echoear-device-info').textContent='已识别兼容的 EchoEar（ESP32-S3，实际 Flash '+device.flashSize+'），当前应用版本 '+device.current.version+'。设备型号、容量、分区和现有固件检查通过。';
  status('设备检查通过。下一步保存备份。',100);
 });
 $('echoear-backup').onclick=()=>action(async()=>{

@@ -20,6 +20,8 @@ test('protected devices fail before any flash operation',()=>{
   {chipId:9,flashCryptCnt:0,parsedFlags:{SECURE_BOOT_EN:true}}])assert.throws(()=>validateSecurity(info,'16MB'));
  assert.throws(()=>validateSecurity({chipId:9,flashCryptCnt:0,parsedFlags:{}},'8MB'));
  validateSecurity({chipId:9,flashCryptCnt:0,parsedFlags:{}},'16MB');
+ validateSecurity({chipId:9,flashCryptCnt:0,parsedFlags:{}},'32MB');
+ assert.throws(()=>validateSecurity({chipId:9,flashCryptCnt:0,parsedFlags:{}},undefined));
 });
 test('backup integrity, identity and permitted address ranges are checked',async()=>{
  const regions=[{name:'nvs',address:0x9000,data:new Uint8Array(0x4000)},
@@ -88,5 +90,13 @@ test('unvalidated release, wrong identity, altered image and altered device stat
 test('unknown firmware fingerprint is not accepted just because chip and partition match',async()=>{
  const f=await fixture();f.manifest.install.upgrade_from_sha256=['f'.repeat(64)];
  await assert.rejects(()=>inspectDevice(f.loader,f.manifest),/unrecognized_existing_firmware/);
+ assert.deepEqual(f.writes,[]);
+});
+
+test('32MB physical Flash still requires exact layout and known application',async()=>{
+ const f=await fixture();f.loader.detectFlashSize=async()=> '32MB';
+ assert.equal((await inspectDevice(f.loader,f.manifest)).current.sha256,await sha256(f.old));
+ f.manifest.install.partition_sha256='0'.repeat(64);
+ await assert.rejects(()=>inspectDevice(f.loader,f.manifest),/unsupported_partition_table/);
  assert.deepEqual(f.writes,[]);
 });

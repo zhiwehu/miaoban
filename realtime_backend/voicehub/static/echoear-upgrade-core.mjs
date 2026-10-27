@@ -1,11 +1,11 @@
 // Exact existing-device upgrade profile. No arbitrary-address or erase-all API.
-export const PROFILE={board:'echoear-s3',flashSize:'16MB',table:0x8000,nvs:0x9000,nvsSize:0x4000,
+export const PROFILE={board:'echoear-s3',flashSizes:['16MB','32MB'],table:0x8000,nvs:0x9000,nvsSize:0x4000,
  ota:0xd000,otaSize:0x2000,apps:[0x20000,0x410000],appSize:0x3f0000};
 const fail=code=>{throw new Error(code);};
 export async function sha256(bytes){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');}
 export function crc32(bytes,seed=0xffffffff){let crc=(seed^0xffffffff)>>>0;for(const b of bytes){crc^=b;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;}
 export function validateSecurity(info,flashSize){
- if(!info||info.chipId!==9||flashSize!=='16MB')fail('wrong_device');
+ if(!info||info.chipId!==9||!PROFILE.flashSizes.includes(flashSize))fail('wrong_device');
  if(info.flashCryptCnt!==0||!info.parsedFlags||info.parsedFlags.SECURE_BOOT_EN||info.parsedFlags.SECURE_DOWNLOAD_ENABLE)fail('protected_device');
 }
 export function makeBootRecord(sequence){
@@ -87,7 +87,9 @@ export function validateBackup(backup,device){
  for(const r of backup.regions){const a=allowed[r.name];if(!a||r.address!==a[0]||r.data.length!==a[1])fail('invalid_backup_range');}
 }
 export async function inspectDevice(loader,manifest,progress=()=>{}){
- const security=await loader.getSecurityInfo();validateSecurity(security,await loader.detectFlashSize());
+ const security=await loader.getSecurityInfo(),flashSize=await loader.detectFlashSize();
+ progress('检测到芯片 ID '+security.chipId+'，实际 Flash '+(flashSize||'未知')+'，正在核对分区。',0);
+ validateSecurity(security,flashSize);
  const mac=await loader.chip.readMac(loader);
  const table=await loader.readFlash(PROFILE.table,4096);const layout=await validateLayout(table,manifest.install);
  const ota=await loader.readFlash(PROFILE.ota,PROFILE.otaSize),boot=selectBoot(ota);
@@ -95,7 +97,7 @@ export async function inspectDevice(loader,manifest,progress=()=>{}){
  const image=await inspectImage(bytes);
  if(!(manifest.install.upgrade_from_sha256||[]).includes(image.sha256)&&image.sha256!==manifest.sha256)fail('unrecognized_existing_firmware');
  if(boot.sequence>=0xfffffffd)fail('invalid_ota_sequence');
- return{mac,layout,boot,ota,table,current:image,targetSlot:1-boot.slot};
+ return{mac,layout,flashSize,boot,ota,table,current:image,targetSlot:1-boot.slot};
 }
 async function writeAndVerify(loader,address,data,progress){
  await loader.writeFlash({fileArray:[{address,data}],flashSize:'keep',flashMode:'keep',flashFreq:'keep',eraseAll:false,compress:true,

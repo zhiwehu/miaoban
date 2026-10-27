@@ -10,7 +10,7 @@ CATALOG = [
          installation='无需安装，打开网页聊天即可使用。',
          steps=['点击下方按钮，打开网页客户端。','选择要使用的麦克风，点击“开启麦克风”并允许浏览器使用。',
                 '先选“手动激活”，说一句“你好”。看到识别文字并听见回复，就连接成功了。']),
-    dict(id='echoear-s3',name='EchoEar 猫头',hardware='ESP32-S3 / EchoEar / 16 MB',
+    dict(id='echoear-s3',name='EchoEar 猫头',hardware='ESP32-S3 / EchoEar / 16 MB 分区布局（Flash 16 或 32 MB）',
          verified='已验证的硬件客户端',protocols=['xiaozhi_websocket','mqtt_udp'],
          installation='只给对应型号的设备安装固件。升级前备份，并保留原有设置、唤醒词和资源。',
          source_url='https://github.com/zhiwehu/miaoban/tree/feature/voicehub-control-center/firmware/head',
