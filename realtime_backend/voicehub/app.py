@@ -416,6 +416,17 @@ async def api(request):
     raise web.HTTPNotFound()
 
 
+async def client_verification(request):
+    from .client_verification import evidence
+    if request.match_info['client']!='echoear-s3':raise web.HTTPNotFound()
+    device=request.query.get('device','').lower()
+    if not re.fullmatch(r'[0-9a-f]{2}(?::[0-9a-f]{2}){5}',device):raise ValueError('invalid_device_id')
+    hub=request.app[HUB]
+    session=next((s for s in hub.sessions.values() if s.device_id.lower()==device),None)
+    if not session:return web.json_response(dict(online=False,recognized=False,replied=False,playback_reported=False))
+    return web.json_response(dict(online=True,session_id=session.id,**evidence(hub.store.events(session.id,limit=200))))
+
+
 async def client_connection(request):
     hub = request.app[HUB]
     if request.match_info['client'] != 'echoear-s3': raise web.HTTPNotFound()
@@ -426,7 +437,8 @@ async def client_connection(request):
     protocol = request.query.get('protocol')
     if protocol == 'xiaozhi_websocket':
         value = dict(websocket=dict(url=f'ws://{connections.device_host}:{connections.device_port}/xiaozhi/v1/',
-            token=hub.auth['device_token'],version=1))
+            token=hub.auth['device_token'],version=1),
+            ota_url=f'http://{connections.device_host}:{connections.device_port}/xiaozhi/ota/{hub.auth["device_token"]}/')
     elif protocol == 'mqtt_udp':
         try: cfg = connections.config()
         except (ConnectionError, OSError, ValueError):
@@ -462,7 +474,7 @@ async def connection_api(request):
         return web.json_response({'error':{'code':str(exc),'message':str(exc)}},status=409)
     value = hub.connections.status()
     from .clients import catalog
-    value['clients'] = catalog(hub.root)
+    value['clients'] = await asyncio.to_thread(catalog, hub.root)
     return web.json_response(value)
 
 
@@ -578,6 +590,7 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_put('/api/connections/{transport:mqtt|websocket}', connection_api)
     app.router.add_post('/api/connections/{transport:mqtt|websocket}/{action}', connection_api)
     app.router.add_get('/api/clients/{client}/firmware', client_firmware)
+    app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
     app.router.add_get('/api/sessions/{sid}/messages', messages)

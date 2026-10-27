@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+from functools import lru_cache
 
 CATALOG = [
     dict(id='web',name='网页语音客户端',hardware='Chrome / 麦克风或耳机',
@@ -20,7 +21,9 @@ CATALOG = [
 ]
 
 
-def firmware(root, client):
+@lru_cache(maxsize=8)
+def _firmware_cached(root, client, file_identity):
+    # Stat identity invalidates cached image validation when an administrator publishes a file.
     if client != 'echoear-s3': return None
     folder = Path(root)/'firmware'/client
     try:
@@ -32,9 +35,25 @@ def firmware(root, client):
         if path.is_symlink() or not 1024 <= path.stat().st_size <= 16*1024*1024: return None
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != manifest.get('sha256'): return None
-        return dict(version=manifest['version'],sha256=digest,size=path.stat().st_size,
+        from .firmware_release import install_metadata
+        install = install_metadata(manifest)
+        if install:
+            from .firmware_release import inspect_application
+            details = inspect_application(path.read_bytes())
+            if details['sha256'] != digest: return None
+        return dict(version=manifest['version'],sha256=digest,size=path.stat().st_size,install=install,
                     download='/api/clients/'+client+'/firmware',path=path)
     except (OSError,ValueError,TypeError): return None
+
+
+def firmware(root, client):
+    if client != 'echoear-s3': return None
+    folder=Path(root)/'firmware'/client
+    try:
+        manifest=(folder/'manifest.json').stat();image=(folder/'application.bin').stat()
+        identity=(manifest.st_mtime_ns,manifest.st_size,image.st_mtime_ns,image.st_size)
+        return _firmware_cached(str(Path(root).resolve()),client,identity)
+    except OSError:return None
 
 
 def catalog(root):
