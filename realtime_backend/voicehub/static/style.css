@@ -1046,3 +1046,6 @@ footer {
   .rail { min-width:0; overflow:hidden; }
   nav { min-width:0; max-width:100%; }
 }
+
+#echoear-install-progress { width:100%; height:12px; margin-top:16px; }
+#echoear-installer h3 { margin-top:24px; }

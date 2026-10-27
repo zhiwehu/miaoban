@@ -30,3 +30,5 @@
 许可证核对记录截至 2026-10-25。
 
 MQTT 开发分支另使用外部 Mosquitto Broker、aiomqtt 和 cryptography，适用各自许可；不内嵌其源码或二进制。
+
+浏览器 EchoEar 升级器本地打包 Espressif `esptool-js` 0.7.0（Apache-2.0），其 bundle 包含 pako 2.1.0（MIT AND Zlib）。原始许可及固定下载来源、完整性值位于 `realtime_backend/voicehub/static/vendor/esptool-js-0.7.0/`。页面不从 CDN 加载刷写脚本。

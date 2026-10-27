@@ -33,6 +33,8 @@ function drawCatalog() {
 }
 function drawGuide() {
   const client=data.clients.find(c=>c.id===selected) || data.clients[0];
+  $('echoear-installer').hidden=client.id!=='echoear-s3';
+  window.dispatchEvent(new CustomEvent('voicehub:firmware',{detail:client.firmware}));
   $('client-guide-title').textContent='2. '+(client.id==='web'?'打开网页，开始使用':'准备设备并连接');
   $('client-guide-status').textContent=client.id==='web'?'无需安装':'请先确认设备型号';
   $('client-guide-hardware').textContent=client.hardware;
@@ -43,12 +45,14 @@ function drawGuide() {
   if(client.id==='web') {const start=link('打开网页，开始聊天','#lab');start.classList.add('primary');actions.append(start);}
   else {
     if(client.firmware) {
-      actions.append(link('下载应用固件 '+client.firmware.version,client.firmware.download));
+      if(client.firmware.install?.validated!==false)actions.append(link('下载应用固件 '+client.firmware.version,client.firmware.download));
+      else actions.append(el('p','新版应用已构建，正在等待实机验收。通过验收后，这里会开放安装。','hint'));
       const checksum=el('details');checksum.append(el('summary','查看固件校验信息'),el('small','SHA256 '+client.firmware.sha256,'mono'));actions.append(checksum);
     } else actions.append(el('p','这台服务器还没有提供固件安装包，请联系管理员准备。设备已经安装适配固件的，可以继续配置连接。','hint'));
     const install=el('details',undefined,'connection-install-details');install.append(el('summary','安装说明与其他连接方式'));
     if(client.source_url) install.append(link('查看固件源码',client.source_url));
     if(client.build_url) install.append(link('查看安装与构建说明',client.build_url));
+    if(client.firmware?.install?.validated===false)install.append(link('下载候选固件（管理员测试）',client.firmware.download));
     actions.append(install);
     if(data.websocket.device_ready) {
       install.append(el('p','设备连接地址：ws://'+data.websocket.device_host+':'+data.websocket.device_port+'/xiaozhi/v1/','hint'));

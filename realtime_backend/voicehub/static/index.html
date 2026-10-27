@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" type="module"></script>
     <script src="/static/connections.js" type="module"></script>
+    <script src="/static/echoear-installer.js" type="module"></script>
   </head>
   <body>
     <div class="shell">
@@ -157,7 +158,16 @@
           <p id="connections-notice" class="hint" role="status">正在读取连接状态…</p>
           <h2 class="onboarding-section-title">1. 选择你要使用的客户端</h2><div id="client-catalog" class="connection-grid"></div>
           <article class="panel onboarding-guide"><div class="section-heading"><h2 id="client-guide-title">接入向导</h2><span id="client-guide-status" class="tag"></span></div><p id="client-guide-hardware" class="hint"></p><ol id="client-guide-steps"></ol><p id="client-install-note" class="hint"></p><div id="client-install-actions" class="button-row"></div></article>
-          <details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>
+          <article id="echoear-installer" class="panel onboarding-guide" hidden>
+            <h2>猫头升级与联网助手</h2><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
+            <h3>连接数据线，检查并备份设备</h3><p id="echoear-serial-note" class="hint"></p><p id="echoear-device-info" class="hint"></p>
+            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">1. 连接并检查设备</button><button type="button" class="secondary" id="echoear-backup" disabled>2. 保存升级前备份</button><button type="button" class="primary" id="echoear-upgrade" disabled>3. 安装升级</button><button type="button" class="text-button" id="echoear-disconnect" disabled>断开 USB</button></div>
+            <progress id="echoear-install-progress" max="100" value="0" aria-label="升级进度"></progress><p id="echoear-install-status" role="status">先连接设备并检查，确认兼容后再备份和安装。</p>
+            <details><summary>升级没有完成？从备份恢复</summary><p class="hint">仅恢复同一台设备的备份，会还原升级前的应用与设备设置。请先连接并检查设备，再选择此前保存的 .vhbackup 文件。</p><label for="echoear-restore-file">选择备份文件并恢复</label><input id="echoear-restore-file" type="file" accept=".vhbackup" disabled/><button type="button" class="secondary" id="echoear-restore" disabled>确认恢复这台设备的备份</button></details>
+            <h3>设置设备网络</h3><p class="hint">设备已经能连接这台 VoiceHub 时，可以跳过配网，直接测试对话。需要重新配网时，在设备启动、尚未连上 Wi-Fi 的阶段按一下 BOOT 键，按设备屏幕或语音提示操作。</p><ol><li>让 VoiceHub 和设备连接到能互相访问的网络。</li><li>按设备说明进入配网模式，用电脑或手机连接设备显示的热点。</li><li>复制下方连接入口，在设备配网页的“高级设置 → 自定义 OTA 地址”粘贴并保存，然后设置 Wi-Fi。</li></ol>
+            <button type="button" class="secondary" id="echoear-copy-setup">复制我的 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">连接入口含设备访问凭据，请仅用于自己的设备。</p>
+            <h3>说一句“你好”，确认可以对话</h3><p id="echoear-verify-status" role="status">识别 USB 设备后，会自动检查这台设备是否上线及是否产生语音回复。</p><button type="button" class="primary" id="echoear-heard" disabled>我听到了回复，完成接入</button>
+          </article><details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>
           <div class="connection-grid">
             <article class="panel"><div class="section-heading"><h2>WebSocket 设备监听</h2><span class="tag" id="ws-device-state">读取中</span></div><p id="ws-console-address" class="hint"></p><p id="ws-device-address" class="hint"></p>
               <form id="ws-connection-form"><label for="ws-device-host">设备监听 IPv4</label><input id="ws-device-host" required placeholder="选择当前电脑的局域网地址" list="local-addresses"/><label for="ws-device-port">设备监听端口</label><input id="ws-device-port" type="number" min="1" max="65535" required value="8766"/><button class="secondary" type="submit">保存 WebSocket 配置</button></form>

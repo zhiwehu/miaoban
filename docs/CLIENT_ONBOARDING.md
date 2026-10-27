@@ -48,3 +48,29 @@
 - `GET /api/clients/echoear-s3/firmware`：下载清单校验通过的应用文件。
 
 上述接口沿用管理员认证和同源写操作限制，不在设备专用监听提供。
+
+## 已有 EchoEar 的浏览器升级助手
+
+客户端选择 EchoEar 后显示 USB 升级、备份恢复、配网和语音验收助手。仅桌面 Chrome / Edge、HTTPS 或 localhost、Web Serial 和本地文件保存均可用时启用。
+
+连接后核对 ESP32-S3、16 MB、未启用安全启动/Flash 加密、精确分区表以及已知应用指纹。无法确认板型或分区时不提供写入。芯片相同不等于板型相同。
+
+备份通过用户选择的文件保存在本机，保存后读取文件校验，才允许下一步。备份含 NVS 设备设置、OTA 选择信息和升级将覆盖的非活动应用槽；原活动应用和资源区不写入。备份不上传到 VoiceHub。
+
+升级先写非活动应用槽并读回校验，再切换一个 OTA 选择扇区；禁止整片擦除。断电可能导致升级未完成，旧有效 OTA 记录仍保留。恢复时核对设备 MAC、分区与备份内容，只恢复允许范围，最后恢复启动选择。实际断电恢复仍需硬件验收，模拟测试不等同于实机证据。
+
+配网助手复制该 VoiceHub 的设备配置入口；在猫头配网页的“高级设置 → 自定义 OTA 地址”保存，然后设置 Wi-Fi。Wi-Fi 密码由设备配网页处理，不发送到 VoiceHub。升级本身不自动重写 Wi-Fi 或服务器设置。
+
+自动验收关联同一设备、同一轮次的语音识别和回复；播放计数增加只标为“设备上报播放”，仍需用户点击“我听到了回复”确认声音。不会把生成音频自动当成用户已听见。
+
+### 构建与发布
+
+使用 ESP-IDF 5.4.0 环境运行 `scripts/build_echoear_upgrade.py --work <新的隔离目录> --component-cache <已有依赖缓存>`。脚本仅复制受 Git 跟踪的公开固件源码，设置版本和不刷资源配置，记录源码与 SDK 来源；不连接设备。
+
+用 `scripts/package_echoear_release.py --help` 查看打包参数。打包器检查应用镜像、分区类型/地址/校验表，生成应用、清单和 ZIP。默认 `install.validated=false`，普通用户的安装按钮保持关闭。
+
+管理员须提供与同一应用 SHA256 匹配的实机记录，并确认 identity_verified、backup_verified、upgrade_readback_verified、wifi_provisioned、voice_reply_verified、restore_verified 六项，打包器才将 validated 标为 true。不要用软件测试结果填写实机记录。
+
+浏览器刷写依赖为本地固定打包的 [Espressif esptool-js 0.7.0](https://github.com/espressif/esptool-js/tree/v0.7.0)，接口依据其官方文档和固定版本源码；OTA 记录及 CRC 算法依据本地 ESP-IDF 5.4.0 bootloader_common_loader.c，校验向量与官方 seeded CRC32 一致。
+
+当前候选的构建与软件验收状态见 [EchoEar 升级验证记录](ECHOEAR_UPGRADE_VALIDATION.md)。构建脚本收集依赖许可，打包时通过 `--licenses <构建目录>/licenses` 一同纳入 ZIP。
