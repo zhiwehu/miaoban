@@ -1,3 +1,5 @@
+import {createMcpUi} from './mcp-ui.js';
+
 const $ = (id) => document.getElementById(id);
 const state = {
   view: "overview",
@@ -33,6 +35,9 @@ const eventLabels = {
   "config.saved": "配置已保存",
   "transcript.final": "识别完成",
   "reply.final": "回复生成完成",
+  "tool.started": "工具查询中",
+  "tool.completed": "工具查询完成",
+  "tool.failed": "工具查询失败",
   error: "处理错误",
 };
 const time = (value) =>
@@ -79,8 +84,15 @@ async function api(path, options = {}) {
   }
   return response.json();
 }
+const mcp = createMcpUi({api,node,notice,onConfig:cfg => {
+  state.config = cfg;
+  // Synchronize only these switches; preserve unsaved model/voice form fields.
+  $('tool-weather').checked = cfg.tools.weather;
+  $('tool-news').checked = cfg.tools.news;
+  $('tool-system-info').checked = cfg.tools.system_info;
+}});
 function view(name) {
-  if (!["overview", "conversations", "connections", "models", "logs", "lab"].includes(name))
+  if (!["overview", "conversations", "connections", "models", "mcp", "logs", "lab"].includes(name))
     name = "overview";
   state.view = name;
   document
@@ -93,6 +105,7 @@ function view(name) {
     overview: "运行总览",
     conversations: "对话记录",
     models: "模型与语音",
+    mcp: "MCP 工具",
     connections: "客户端接入",
     logs: "事件日志",
     lab: "网页聊天",
@@ -105,6 +118,10 @@ document
   .forEach((el) => (el.onclick = () => view(el.dataset.view)));
 $("go-lab").onclick = () => view("lab");
 $("go-logs").onclick = () => view("logs");
+$("mcp-settings").onclick = () => {
+  view('models');
+  $('tool-planner').focus();
+};
 window.onhashchange = () => view(location.hash.slice(1));
 view(location.hash.slice(1));
 setInterval(() => ($("clock").textContent = time()), 1000);
@@ -210,13 +227,24 @@ function renderMessages(target, messages, sid, includeLive = true, scrollMode = 
   const previousHeight = target.scrollHeight;
   const follow = previousHeight - previousTop - target.clientHeight < 80;
   target.replaceChildren();
-  for (const m of messages) target.append(bubble(m));
+  const rendered = new Set();
+  const appendCalls = tid => {
+    if (!tid || rendered.has(tid)) return;
+    target.append(...mcp.renderCalls(sid,tid));
+    rendered.add(tid);
+  };
+  for (const m of messages) {
+    if (m.role === 'assistant') appendCalls(m.turn_id);
+    target.append(bubble(m));
+    if (m.role === 'user') appendCalls(m.turn_id);
+  }
   for (const [key, value] of state.live) {
     if (
       includeLive &&
       value.sid === sid &&
       !messages.some((m) => m.turn_id === key && m.role === "assistant")
-    )
+    ) {
+      appendCalls(key);
       target.append(
         bubble({
           role: "assistant",
@@ -225,6 +253,7 @@ function renderMessages(target, messages, sid, includeLive = true, scrollMode = 
           created: value.created,
         }),
       );
+    }
   }
   if (!target.children.length)
     empty(target, "对话已经准备好", "发送一句话，或开启麦克风。");
@@ -234,7 +263,10 @@ function renderMessages(target, messages, sid, includeLive = true, scrollMode = 
 }
 async function selectSession(sid, preserveScroll = false) {
   state.selected = sid;
-  state.messages = await api("sessions/" + sid + "/messages");
+  const messages = await api("sessions/" + sid + "/messages");
+  await mcp.loadCalls(sid,messages);
+  if (state.selected !== sid) return;
+  state.messages = messages;
   $("conversation-title").textContent =
     state.sessions.find((s) => s.id === sid)?.device_id || sid.slice(0, 12);
   $("interrupt-session").disabled = !state.status?.sessions.some(
@@ -255,6 +287,7 @@ $("more-messages").onclick = async () => {
       "sessions/" + state.selected + "/messages?before=" + state.messages[0].id,
     );
     state.messages = [...older, ...state.messages];
+    await mcp.loadCalls(state.selected,older);
     renderMessages($("messages"), state.messages, state.selected, true, "prepend");
     $("more-messages").hidden = older.length < 100;
   } catch (e) {
@@ -292,7 +325,7 @@ function renderLogs() {
     const payload = item.payload || {};
     const values = Object.entries(payload)
       .filter(([k]) => !["seq", "timestamp", "text"].includes(k))
-      .map(([k, v]) => k + ": " + String(v))
+      .map(([k, v]) => k + ": " + (typeof v === 'object' ? JSON.stringify(v) : String(v)))
       .join(" · ");
     detail.append(
       node("div", "mono", item.session_id?.slice(0, 12) || "system"),
@@ -380,6 +413,11 @@ function observe() {
   };
   monitor.onmessage = (event) => {
     const e = JSON.parse(event.data);
+    mcp.track(e);
+    if (e.type.startsWith('tool.')) {
+      if (state.selected === e.session_id) renderMessages($('messages'),state.messages,state.selected);
+      if (identity?.session_id === e.session_id) renderLab();
+    }
     if (e.type === "reply.delta") {
       const item = state.live.get(e.turn_id) || {
         sid: e.session_id,
@@ -409,6 +447,9 @@ function observe() {
     scheduleRefresh();
   };
   monitor.onclose = () => {
+    mcp.unconfirm();
+    if (state.selected) renderMessages($('messages'),state.messages,state.selected);
+    renderLab();
     $("server-dot").classList.add("off");
     $("connection-label").textContent = "事件流重连中";
     clearTimeout(monitorRetry);
@@ -600,6 +641,15 @@ function populateConfig(cfg) {
   };
   for (const [id, value] of Object.entries(mapping)) $(id).value = value;
   $("barge-in").checked = cfg.audio.barge_in;
+  $("tool-weather").checked = cfg.tools.weather;
+  $("tool-planner").value = cfg.tools.planner || "llm";
+  $("tool-planner").disabled = !("planner" in cfg.tools);
+  $("tool-news").checked = cfg.tools.news;
+  $("tool-system-info").checked = cfg.tools.system_info;
+  $("tool-city").value = cfg.tools.default_city;
+  $("tool-news-source").value = cfg.tools.news_source;
+  $("tool-news-limit").value = cfg.tools.news_limit;
+  $("tool-timeout").value = cfg.tools.timeout_seconds;
   renderOverview();
 }
 $("settings-form").onsubmit = async (event) => {
@@ -629,6 +679,16 @@ $("settings-form").onsubmit = async (event) => {
     });
     cfg.system_prompt = $("system-prompt").value;
     cfg.retention_days = Number($("retention-days").value);
+    cfg.tools = {
+      ...("planner" in state.config.tools ? {planner: $("tool-planner").value} : {}),
+      weather: $("tool-weather").checked,
+      news: $("tool-news").checked,
+      system_info: $("tool-system-info").checked,
+      default_city: $("tool-city").value.trim(),
+      news_source: $("tool-news-source").value,
+      news_limit: Number($("tool-news-limit").value),
+      timeout_seconds: Number($("tool-timeout").value),
+    };
     const result = await api("config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -820,7 +880,11 @@ function phase(name, detail) {
 }
 async function loadLabMessages() {
   if (!identity?.session_id) return;
-  labMessages = await api("sessions/" + identity.session_id + "/messages");
+  const sid = identity.session_id;
+  const messages = await api("sessions/" + sid + "/messages");
+  await mcp.loadCalls(sid,messages);
+  if (identity?.session_id !== sid) return;
+  labMessages = messages;
   renderLab();
 }
 function renderLab() {
@@ -895,6 +959,8 @@ function openClient() {
     void (async () => {
       if (socket !== ws) return;
       const e = JSON.parse(event.data);
+      mcp.track(e);
+      if (e.type.startsWith('tool.')) renderLab();
       if (e.type === "hello") {
         $("notice").hidden = true;
         retries = 0;
@@ -1068,6 +1134,7 @@ async function boot() {
     populateConfig((await api("config")).config);
     await refresh();
     await refreshServices();
+    if (state.view === 'mcp') await mcp.refreshCatalogue();
     observe();
   } catch (e) {
     notice(e.message, true);

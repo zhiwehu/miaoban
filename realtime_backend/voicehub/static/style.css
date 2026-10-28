@@ -1049,3 +1049,35 @@ footer {
 
 #echoear-install-progress { width:100%; height:12px; margin-top:16px; }
 #echoear-installer h3 { margin-top:24px; }
+
+/* MCP tools share the workbench's paper surfaces and compact typography. */
+.mcp-service { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px; }
+.mcp-service h2, .mcp-tool h2 { margin:0 0 6px; }
+.mcp-service .hint { margin-bottom:0; }
+.mcp-tool-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+.mcp-tool { min-width:0; }
+.mcp-tool .section-heading { align-items:flex-start; flex-wrap:wrap; gap:12px; }
+.mcp-tool .check { margin:0; white-space:nowrap; }
+.mcp-tool p, .mcp-extension p { line-height:1.85; }
+.mcp-example { padding:12px; background:var(--paper); font-size:12px; border-left:2px solid var(--teal); }
+.mcp-schema summary { cursor:pointer; padding:10px 0; font-size:12px; color:var(--teal); }
+.mcp-parameters { font-size:11px; overflow-wrap:anywhere; }
+.mcp-parameters dt { font-weight:600; margin-top:14px; }
+.mcp-parameters dd { margin:5px 0 0; color:var(--muted); line-height:1.8; }
+.mcp-extension { margin-top:20px; }
+#mcp-load-status { font-size:12px; color:var(--muted); }
+.tool-call { margin:10px 0 18px; border:1px solid var(--line); border-left:3px solid var(--teal); border-radius:6px; background:var(--white); overflow:hidden; }
+.tool-call summary { cursor:pointer; display:flex; align-items:center; flex-wrap:wrap; gap:9px; padding:12px; font-size:12px; }
+.tool-call summary::after { content:'详情'; font-size:10px; color:var(--muted); margin-left:auto; }
+.tool-call[open] summary::after { content:'收起'; }
+.tool-call-mark { font-size:9px; letter-spacing:1px; background:var(--mint); color:var(--teal); padding:3px 5px; border-radius:3px; }
+.tool-call-state { font-size:11px; color:var(--muted); }
+.tool-call-time { font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.tool-call.running .tool-call-state { color:var(--teal); }
+.tool-call.failed { border-left-color:#a23c2e; }
+.tool-call.failed .tool-call-state, .tool-call-error { color:#a23c2e; }
+.tool-call.cancelled, .tool-call.unknown { border-left-color:var(--muted); }
+.tool-call-body { border-top:1px solid var(--line); padding:0 12px 12px; }
+.tool-call-body pre { font-size:11px; line-height:1.65; overflow-wrap:anywhere; white-space:pre-wrap; background:var(--paper); padding:10px; margin:8px 0; }
+.tool-call-caption, .tool-call-error { font-size:11px; line-height:1.8; margin-bottom:0; }
+@media(max-width:1150px) { .mcp-tool-grid { grid-template-columns:1fr; } }

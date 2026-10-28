@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from .tools import ToolNotice, ToolStatus
 
 
 @dataclass
@@ -136,6 +137,24 @@ class Session:
                         async for delta in source:
                             if turn.cancelled:
                                 return
+                            if isinstance(delta, ToolStatus):
+                                metadata={}
+                                if delta.arguments is not None:metadata['arguments']=delta.arguments
+                                if delta.planner:metadata['planner']=delta.planner
+                                await self.emit('tool.'+delta.phase, turn, tool=delta.name,
+                                                elapsed_ms=delta.elapsed_ms, code=delta.code, **metadata)
+                                continue
+                            if isinstance(delta, ToolNotice):
+                                if pending.strip():
+                                    await sentences.put(pending)
+                                    pending = ''
+                                turn.text += delta.text
+                                await self.emit('reply.delta', turn, text=delta.text)
+                                await sentences.put(delta.text)
+                                delivered = asyncio.Event()
+                                await sentences.put(delivered)
+                                await delivered.wait()
+                                continue
                             turn.text += delta
                             pending += delta
                             await self.emit('reply.delta', turn, text=delta)
@@ -153,6 +172,9 @@ class Session:
                 async def synthesize():
                     audio_samples = 0
                     while (sentence := await sentences.get()) is not None:
+                        if isinstance(sentence, asyncio.Event):
+                            await audio.put(sentence)
+                            continue
                         async with contextlib.aclosing(self.pipeline.speech(sentence)) as source:
                             async for pcm_chunk in source:
                                 for offset in range(0, len(pcm_chunk), 1280):  # <=40 ms @ 16 kHz s16le
@@ -172,12 +194,32 @@ class Session:
                     deadline = None
                     audio_samples = 0
                     while (block := await audio.get()) is not None:
+                        if isinstance(block, asyncio.Event):
+                            if deadline is None:
+                                raise RuntimeError('tool_preamble_unavailable')
+                            # Complete the last 60ms Opus frame and cover codec lookahead.
+                            # Keep one stream/turn: an interim audio.end would incorrectly
+                            # count its playback acknowledgement as the final reply's ACK.
+                            padding = (-audio_samples) % 960 + 960
+                            for size in range(0, padding, 640):
+                                samples = min(640, padding-size)
+                                await asyncio.sleep(max(0, deadline-time.monotonic()))
+                                await self.emit('audio.chunk', turn,
+                                                data=base64.b64encode(b'\0\0'*samples).decode())
+                                audio_samples += samples
+                                deadline += samples/16000
+                            await asyncio.sleep(max(0, deadline + lead - time.monotonic()))
+                            block.set()
+                            await self.transition('thinking', turn)
+                            continue
                         if deadline is None:
                             await self.transition('speaking', turn)
                             await self.emit('audio.start', turn, sample_rate=16000,
                                             format='pcm_s16le', channels=1,
                                             elapsed_ms=round((time.monotonic()-turn.started)*1000))
                             deadline = time.monotonic() - lead
+                        elif self.state != 'speaking':
+                            await self.transition('speaking', turn)
                         deadline = max(deadline, time.monotonic() - lead)
                         await asyncio.sleep(max(0, deadline-time.monotonic()))
                         await self.emit('audio.chunk', turn, data=base64.b64encode(block).decode())

@@ -61,6 +61,21 @@ class Store:
                 'ORDER BY id DESC LIMIT ?', (sid, sid, before or 2**63-1, min(limit, 200)))
         return [dict(r, payload=json.loads(r['payload'])) for r in rows]
 
+    def tool_events(self, sid, turn_ids):
+        """Fetch call evidence for visible turns, unaffected by noisy audio/state logs."""
+        turn_ids = list(dict.fromkeys(turn_ids))
+        if not turn_ids:
+            return []
+        if len(turn_ids) > 100 or any(not isinstance(tid, str) or not 1 <= len(tid) <= 80 for tid in turn_ids):
+            raise ValueError('invalid_turn_ids')
+        slots = ','.join('?' for _ in turn_ids)
+        rows = self.db.execute(f'''SELECT * FROM events WHERE session_id=? AND
+            ((type IN ('tool.started','tool.completed','tool.failed','error','turn.completed')
+              AND turn_id IN ({slots})) OR
+             (type='playback.clear' AND json_extract(payload,'$.interrupted_turn_id') IN ({slots})))
+            ORDER BY id DESC LIMIT 600''', [sid, *turn_ids, *turn_ids])
+        return list(reversed([dict(r, payload=json.loads(r['payload'])) for r in rows]))
+
     def prune(self, days=30):
         cutoff = time.time() - days * 86400
         self.db.execute('DELETE FROM events WHERE created<?', (cutoff,))

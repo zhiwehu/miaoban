@@ -19,10 +19,17 @@ DEFAULT = {
     'audio': {'barge_in': True, 'vad_model': '', 'speech_threshold': .65,
               'onset_ms': 160, 'silence_ms': 640, 'max_utterance_seconds': 15},
     'retention_days': 30,
+    'tools': {'weather': True, 'news': True, 'system_info': True,
+              'default_city': '', 'news_source': 'bbc', 'news_limit': 3,
+              'timeout_seconds': 20, 'planner': 'llm'},
 }
 
 
 def validate(config):
+    if isinstance(config, dict) and 'tools' not in config:
+        config = {**config, 'tools': copy.deepcopy(DEFAULT['tools'])}
+    elif isinstance(config,dict) and isinstance(config.get('tools'),dict) and 'planner' not in config['tools']:
+        config={**config,'tools':{**config['tools'],'planner':'llm'}}
     if not isinstance(config, dict) or set(config) != set(DEFAULT):
         raise ValueError('配置字段不完整或包含未知字段')
     if not isinstance(config['system_prompt'], str) or len(config['system_prompt']) > 8000:
@@ -69,6 +76,20 @@ def validate(config):
         raise ValueError('音频配置无效')
     if type(a['speech_threshold']) not in (int, float) or not .3 <= a['speech_threshold'] <= .95:
         raise ValueError('人声阈值需为 0.3–0.95')
+    t = config['tools']
+    if not isinstance(t, dict) or set(t) != set(DEFAULT['tools']):
+        raise ValueError('工具配置字段不完整或包含未知字段')
+    if any(type(t[name]) is not bool for name in ('weather', 'news', 'system_info')):
+        raise ValueError('工具开关需要为布尔值')
+    if not isinstance(t['default_city'], str) or len(t['default_city']) > 80:
+        raise ValueError('默认城市最多 80 字符')
+    if t['news_source'] not in ('chinanews', 'bbc'):
+        raise ValueError('无效新闻源')
+    if t['planner'] not in ('llm','rex'):
+        raise ValueError('无效工具规划器')
+    for key, low, high in [('news_limit', 1, 5), ('timeout_seconds', 5, 30)]:
+        if type(t[key]) is not int or not low <= t[key] <= high:
+            raise ValueError(f'tools.{key} 需要为 {low}–{high} 的整数')
     return config
 
 

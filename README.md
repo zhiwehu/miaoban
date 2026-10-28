@@ -27,10 +27,23 @@
 唤醒后转头一致性、真实外放自然插话、长时间与多设备运行尚未完整验收。
 后台支持取消机制并不等于当前ESP32已完成全双工AEC。
 
+## MCP 工具与本地决策
+
+新增天气、新闻和本机系统信息三个只读 MCP 工具，支持参数校验、缺参追问，
+耗时调用前先播报提示。网页聊天和对话记录显示调用参数、状态、耗时和失败原因，
+独立 MCP 页面可查看参数并启停工具。
+
+默认可用对话模型生成受限计划；可选本地 Rex + rank-16 LoRA 联合分类和参数抽取。
+本仓库包含训练、评估和运行代码，不包含基础模型、adapter 权重或训练产物。
+用户上传和外部 MCP 服务导入尚未开放。
+
+- [工具、Rex 准备与验证说明](docs/MCP.md)
+- [管理界面及扩展设计](realtime_backend/docs/SPEC-mcp-management.md)
+
 ## 目录
 
 ```text
-realtime_backend/           独立后端、网页、67项测试、启动脚本
+realtime_backend/           独立后端、网页、启动脚本与回归测试
 firmware/base_controller/  底座ESP32-C3控制器源码
 firmware/shared/           串口协议解析
 firmware/head/             EchoEar 猫头源码工程、依赖锁和构建配置

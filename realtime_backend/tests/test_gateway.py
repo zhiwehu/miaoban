@@ -8,6 +8,31 @@ from tests.test_sessions import Pipeline
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_legacy_tool_preamble_sends_opus_tail_before_tool_starts(self):
+        from voicehub.app import HUB
+        from voicehub.tools import ToolNotice, ToolStatus
+        ws = await self.client.ws_connect('/xiaozhi/v1/')
+        await ws.send_json({'type':'hello','version':1,'device_id':'mcp-legacy',
+                           'audio_params':{'format':'opus','sample_rate':16000}})
+        hello = await ws.receive_json()
+        session = self.app[HUB].sessions[hello['session_id']]
+        async def chat(history):
+            yield ToolNotice('news', '我查一下。')
+            yield ToolStatus('news', 'started')
+            yield '查询结果。'
+        session.pipeline.chat = chat
+        await ws.send_json({'type':'input.text','text':'查询新闻'})
+        async with asyncio.timeout(2):
+            while True:
+                message = await ws.receive()
+                if message.type.name == 'TEXT' and message.json().get('state') == 'stop':
+                    break
+        events = self.app[HUB].store.events(session.id)
+        first = next(e for e in events if e['type']=='transport.first_audio')
+        tool = next(e for e in events if e['type']=='tool.started')
+        self.assertLess(first['created'], tool['created'])
+        await ws.close()
+
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.app = create_app(self.tmp.name, pipeline_factory=lambda c,h,l: Pipeline())

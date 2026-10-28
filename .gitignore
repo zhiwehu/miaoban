@@ -25,3 +25,6 @@ models/
 # Prepared upstream sounds and generated language header
 *.ogg
 firmware/head/main/assets/lang_config.h
+
+# Local smoke/benchmark output
+/diagnostics/

@@ -23,6 +23,7 @@ from .session import Session
 from .store import Store
 from .services import ServiceManager, ServiceError
 from .connections import Connections, ConnectionError
+from .rex_planner import RexPlanner
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -88,6 +89,7 @@ class Hub:
         self.factory = pipeline_factory
         self.maintenance = None
         self.mqtt = None
+        self.planner = RexPlanner()
 
     def publish(self, event):
         for watcher in list(self.watchers):
@@ -103,6 +105,7 @@ class Hub:
         self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90, connect=10, sock_read=30))
         self.local = LocalModels()
         self.local.services = self.services
+        self.local.planner = self.planner
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -133,6 +136,7 @@ class Hub:
             await self.http.close()
         if self.local:
             self.local.close()
+        await self.planner.close()
         await self.services.shutdown()
         self.store.close()
 
@@ -373,6 +377,15 @@ async def device_gateway(request, ws):
 
 async def api(request):
     hub, name = request.app[HUB], request.match_info.get('name', request.path.rsplit('/', 1)[-1])
+    if name == 'mcp':
+        from .tools import catalogue
+        cfg = hub.config.get()['tools']
+        return web.json_response(dict(
+            servers=[dict(id='common-tools', name='常用 MCP 工具', transport='stdio',
+                          kind='builtin', startup='on_demand')],
+            tools=[{**tool, 'server_id':'common-tools', 'enabled':cfg[tool['name']]}
+                   for tool in catalogue()], planner=cfg['planner'],
+            external_import_supported=False))
     if name == 'services':
         return web.json_response(await hub.services.all_status())
     if name == 'status':
@@ -414,6 +427,17 @@ async def api(request):
                             secure=request.secure, max_age=86400)
         return response
     raise web.HTTPNotFound()
+
+
+async def tool_calls(request):
+    hub = request.app[HUB]
+    sid = request.match_info['sid']
+    turn_ids = request.query.getall('turn_id', [])
+    if not turn_ids:
+        turn_ids = [m['turn_id'] for m in hub.store.messages(sid)]
+    session = hub.sessions.get(sid)
+    active = session.turn.id if session and session.turn else None
+    return web.json_response(dict(events=hub.store.tool_events(sid, turn_ids), active_turn_id=active))
 
 
 async def client_verification(request):
@@ -594,6 +618,7 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
     app.router.add_get('/api/sessions/{sid}/messages', messages)
+    app.router.add_get('/api/sessions/{sid}/tool-calls', tool_calls)
     app.router.add_post('/api/sessions/{sid}/interrupt', interrupt)
     app.router.add_post('/api/services/{kind}/{action}', service_action)
     app.router.add_get('/api/{name}', api)

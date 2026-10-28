@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f4f3ed" />
     <title>声桥 VoiceHub · 实时语音工作台</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" type="module"></script>
     <script src="/static/connections.js" type="module"></script>
@@ -28,6 +28,7 @@
           </button>
           <button data-view="connections"><span>⌁</span>客户端接入</button>
           <button data-view="models"><span>≋</span>模型与语音</button>
+          <button data-view="mcp"><span>◇</span>MCP 工具</button>
           <button data-view="logs"><span>⌘</span>事件日志</button>
           <button data-view="lab"><span>↗</span>网页聊天</button>
         </nav>
@@ -265,6 +266,22 @@
               </article>
             </div>
             <article class="panel prompt-panel">
+              <h2>常用 MCP 工具</h2>
+              <label>工具决策与参数提取<select id="tool-planner"><option value="llm">对话模型规划</option><option value="rex">本地 Rex 小模型（分类＋参数抽取）</option></select></label>
+              <p class="hint">Rex 在独立本地进程中运行，需要已训练的联合 adapter；必要参数缺失时会先追问。</p>
+              <p class="hint">查询前先语音回应，完成后播报结果。天气和新闻需要联网；系统信息在本机读取。</p>
+              <label class="check"><input id="tool-weather" type="checkbox" />天气查询</label>
+              <label>默认城市（可选）<input id="tool-city" maxlength="80" placeholder="例如：上海；留空时由对话确定城市" /></label>
+              <label class="check"><input id="tool-news" type="checkbox" />新闻摘要</label>
+              <div class="field-pair">
+                <label>新闻源<select id="tool-news-source"><option value="chinanews">中新网（中文）</option><option value="bbc">BBC World（英文，可中文播报）</option></select></label>
+                <label>默认条数<input id="tool-news-limit" type="number" min="1" max="5" required /></label>
+              </div>
+              <label class="check"><input id="tool-system-info" type="checkbox" />本机系统信息（CPU、内存、磁盘）</label>
+              <label>查询超时（秒）<input id="tool-timeout" type="number" min="5" max="30" required /></label>
+              <p class="hint">新闻读取选定来源的 RSS 最新条目，支持关键词筛选。服务不可达时会语音说明；可在事件日志查看查询进度。保存后重新连接客户端生效。</p>
+            </article>
+            <article class="panel prompt-panel">
               <h2>对话提示词</h2>
               <label
                 >定义语气、角色和回复方式<textarea
@@ -282,6 +299,23 @@
               <button class="primary" type="submit">保存配置</button>
             </div>
           </form>
+        </section>
+        <section data-panel="mcp" hidden>
+          <div class="section-intro">
+            <div><p>让对话连接实时信息与本机能力。</p><p class="hint" id="mcp-summary">正在读取工具列表…</p></div>
+            <div class="button-row"><button class="secondary" id="mcp-refresh">刷新列表</button><button class="secondary" id="mcp-settings">默认参数与决策设置</button></div>
+          </div>
+          <article class="panel mcp-service">
+            <div><h2>常用 MCP 服务</h2><p class="hint">内置服务 · 按需启动 · stdio</p></div>
+            <p id="mcp-planner" class="tag">正在读取决策方式…</p>
+          </article>
+          <p id="mcp-load-status" role="status"></p>
+          <div id="mcp-tool-list" class="mcp-tool-grid"></div>
+          <article class="panel mcp-extension">
+            <h2>以后如何增加 MCP？</h2>
+            <p>可以扩展为导入 MCP 服务配置，再发现工具、校验参数并由用户启用。</p>
+            <p class="hint">当前支持上方三个内置工具，尚未开放用户上传或外部服务导入。新增工具还需要让决策层识别它；导入配置本身不会自动训练 Rex。</p>
+          </article>
         </section>
         <section data-panel="logs" hidden>
           <div class="section-intro">

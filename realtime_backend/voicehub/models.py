@@ -190,8 +190,14 @@ class Pipeline:
         return json.loads(raw)
 
     async def chat(self, history):
+        from .tool_chat import chat
+        async with contextlib.aclosing(chat(self, history)) as source:
+            async for item in source:
+                yield item
+
+    async def raw_chat(self, history, *, system_prompt=None):
         c = self.config['llm']
-        messages = [{'role':'system', 'content':self.config['system_prompt']}] + history
+        messages = [{'role':'system', 'content':system_prompt if system_prompt is not None else self.config['system_prompt']}] + history
         if c['provider'] == 'mlx':
             def generate(stop):
                 import mlx_lm

@@ -40,6 +40,8 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         await self.server.start_server()
         self.http=ClientSession()
         config=copy.deepcopy(DEFAULT)
+        for name in ('weather', 'news', 'system_info'):
+            config['tools'][name] = False
         for key in ('asr','llm','tts'):
             config[key]['provider']='http'
             config[key]['url']=str(self.server.make_url('/')).rstrip('/')
