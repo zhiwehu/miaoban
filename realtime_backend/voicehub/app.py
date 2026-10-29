@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -28,6 +29,7 @@ from .mcp_extensions import ExtensionManager
 from .workflows.manager import WorkflowManager
 from .background import Operations
 from .skills import Skills
+from .calendar_reminders import CalendarReminders
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -99,6 +101,7 @@ class Hub:
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
 
         self.skills=Skills(self.root,self.workflows)
+        self.calendar=CalendarReminders(self.root,self.operations,self.sessions,self.publish,lambda:self.config.get()['tools']['calendar'])
 
     def operation_changed(self,event):
         self.store.event(event);self.publish(event)
@@ -127,6 +130,8 @@ class Hub:
         self.local.workflows = self.workflows
         self.local.operations = self.operations
         self.local.skills = self.skills
+        self.local.calendar = self.calendar.store
+        self.local.calendar_reminders = self.calendar
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -137,6 +142,11 @@ class Hub:
             for session in list(self.sessions.values()):
                 with contextlib.suppress(Exception):
                     await session.idle()
+            try:await self.calendar.tick()
+            except Exception as exc:
+                if tick%60==0:
+                    logging.getLogger(__name__).warning('Calendar reminder dispatch failed: %s',type(exc).__name__)
+                    self.publish({'type':'calendar.error','message':'提醒调度暂时失败，请检查平台日志。'})
             tick += 1
             if tick % 3600 == 0:
                 self.store.prune(self.config.get()['retention_days'])
@@ -431,7 +441,7 @@ async def api(request):
             from .config import validate
             current=hub.config.get()
             if isinstance(value,dict) and isinstance(value.get('tools'),dict):
-                for key in ('music','music_directory','file_organizer','file_directory'):
+                for key in ('music','music_directory','file_organizer','file_directory','calendar'):
                     value['tools'].setdefault(key,current['tools'][key])
             value = validate(value)
             for kind in ('asr', 'llm', 'tts'):
@@ -652,6 +662,12 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
+    from .calendar_api import calendar_api
+    app.router.add_get('/api/calendar/settings',calendar_api)
+    app.router.add_put('/api/calendar/settings',calendar_api)
+    app.router.add_get('/api/calendar/events',calendar_api)
+    app.router.add_post('/api/calendar/events',calendar_api)
+    app.router.add_post('/api/calendar/events/{identity}/cancel',calendar_api)
     from .skills_api import skills_api
     app.router.add_get('/api/skills',skills_api)
     app.router.add_post('/api/skills',skills_api)

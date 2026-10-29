@@ -47,7 +47,7 @@ export function setupSkills({api,node}){
     for(const file of job.artifacts || []){const link=node('a','connection-link','下载 '+file.filename);link.href='/api/artifacts/'+encodeURIComponent(file.artifact_id);row.append(link);}
     if(job.workflow_id && job.status==='waiting'){const link=node('a','connection-link','查看任务并补充 / 确认');link.href='#mcp';link.onclick=()=>window.dispatchEvent(new Event('voicehub:workflow-open'));row.append(link);}
     if(['queued','running'].includes(job.status)){const cancel=node('button','secondary','取消任务');cancel.onclick=async()=>{cancel.disabled=true;try{await write('operations/'+job.id+'/cancel','POST',{});await refresh();}catch(e){status.textContent=e.message;}};row.append(cancel);}
-    else row.append(node('p','hint',job.session_id.startsWith('ui-')?'页面任务：结果已保存。':job.delivery==='announced'?'结果已播报':'等待原语音会话空闲时播报；断线后可恢复原会话或在这里查看。'));
+    else row.append(node('p','hint',job.delivery==='superseded'?'提示已被新的输入替代。':job.delivery==='cancelled'?'提醒通知已取消。':job.session_id.startsWith('ui-')?'页面任务：结果已保存。':job.delivery==='announced'?'结果已播报':'等待原语音会话空闲时播报；断线后可恢复原会话或在这里查看。'));
     target.append(row);
    }
    if(!operations.length)target.append(node('p','hint','暂无后台任务。语音调用的技能与 MCP 会在这里显示执行情况。'));

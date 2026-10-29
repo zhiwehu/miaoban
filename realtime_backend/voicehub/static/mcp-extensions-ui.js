@@ -1,12 +1,14 @@
 // Explicitly opt-in user code, library settings, and tool tests. No HTML from server data.
+import {setupCalendar} from './calendar-ui.js';
 import {setupWorkflows} from './workflows-ui.js';
 import {setupFileOrganizer} from './file-organizer-ui.js';
 
 export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
   const $=id=>document.getElementById(id);
+  const calendarUi=setupCalendar({api,node,notice});
   const workflows=setupWorkflows({api,node});
   const settingsStorage=$('mcp-tool-settings-storage');
-  const settingsPanels={music:$('music-settings-form').closest('article'),file_organizer:$('file-settings-form').closest('article')};
+  const settingsPanels={calendar:calendarUi.panel,music:$('music-settings-form').closest('article'),file_organizer:$('file-settings-form').closest('article')};
   const filesUi=setupFileOrganizer({api,node,onConfig,refreshCatalogue:refresh});
   let musicDirty=false;
   $('music-directory').oninput=()=>musicDirty=true;
@@ -91,7 +93,7 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     }catch(e){$('mcp-remote-status').textContent='保存失败：'+e.message;}finally{button.disabled=false;}
   };
   function render(data){
-    filesUi.render(data);workflows.render();
+    filesUi.render(data);workflows.render();calendarUi.render();
     if(!musicDirty){$('music-directory').value=data.music_directory || '';$('music-enabled').checked=data.music_enabled;}
     const target=$('mcp-external-servers');target.replaceChildren();
     const servers=data.servers.filter(s=>s.kind!=='builtin');
@@ -129,7 +131,7 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
   function toolTest(tool){
     const details=node('details','mcp-schema');details.append(node('summary','','手动测试调用'));
     const form=node('form'),label=node('label','','参数 JSON'),input=node('textarea');
-    input.rows=4;input.value=JSON.stringify(tool.name==='music'?{action:'search'}:tool.name==='file_organizer'?{action:'preview'}:
+    input.rows=4;input.value=JSON.stringify(tool.name==='calendar'?{action:'query'}:tool.name==='music'?{action:'search'}:tool.name==='file_organizer'?{action:'preview'}:
       Object.fromEntries((tool.inputSchema.required || []).map(key=>[key,''])),null,2);
     input.setAttribute('aria-label',tool.name+'测试参数');label.append(input);
     const button=node('button','secondary','执行测试');button.type='submit';button.disabled=!tool.enabled;
@@ -142,5 +144,5 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     form.append(label,button,status,output);details.append(form);return details;
   }
   function parkSettings(){for(const panel of Object.values(settingsPanels))settingsStorage.append(panel);}
-  return {render,toolTest,parkSettings,toolSettings:name=>settingsPanels[name],emailCard:workflows.emailCard,refreshWorkflows:workflows.schedule};
+  return {render,toolTest,parkSettings,toolSettings:name=>settingsPanels[name],emailCard:workflows.emailCard,refreshWorkflows:workflows.schedule,trackCalendar:calendarUi.track};
 }

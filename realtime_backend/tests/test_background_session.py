@@ -71,3 +71,50 @@ class BackgroundSessionTests(unittest.IsolatedAsyncioTestCase):
   await self.wait_for(lambda:self.session.turn is None)
   self.session.last_activity=time.monotonic()-100;await self.session.idle()
   self.assertEqual(self.session.state,'listening');self.assertTrue(self.ops.tasks)
+ async def test_calendar_notification_cancelled_before_speech_is_not_announced(self):
+  from voicehub.calendar_reminders import CalendarReminders,notification_id
+  from datetime import datetime,timedelta,timezone
+  import time
+  calendar=CalendarReminders(self.tmp.name,self.ops,{'one':self.session},lambda event:None,lambda:True);self.pipeline.local.calendar_reminders=calendar
+  now=time.time();event=calendar.store.create('待取消提醒',(datetime.now(timezone.utc)+timedelta(minutes=1)).isoformat(),remind_minutes=1,device_id='fixture',now=now)
+  await calendar.tick(now+1);calendar.store.cancel(event['event_id'])
+  await self.wait_for(lambda:self.ops.get(notification_id(event['event_id']))['delivery']=='cancelled')
+  self.assertFalse(any(e['type']=='reply.final' and '日程提醒' in e.get('text','') for e in self.events))
+ async def test_calendar_reminder_survives_barge_in_and_finishes_once(self):
+  from voicehub.calendar_reminders import CalendarReminders,notification_id
+  from datetime import datetime,timedelta,timezone
+  import time
+  calendar=CalendarReminders(self.tmp.name,self.ops,{'one':self.session},lambda event:None,lambda:True);self.pipeline.local.calendar_reminders=calendar
+  announcing=asyncio.Event();allow=asyncio.Event()
+  async def speech(text):
+   if text.startswith('日程提醒') and not allow.is_set():announcing.set();await allow.wait()
+   yield b'\0\0'*320
+  self.pipeline.speech=speech;now=time.time();event=calendar.store.create('提醒测试',(datetime.now(timezone.utc)+timedelta(minutes=1)).isoformat(),remind_minutes=1,device_id='fixture',now=now)
+  await calendar.tick(now+1);await announcing.wait();await self.session.submit('插话');allow.set()
+  await self.wait_for(lambda:self.ops.get(notification_id(event['event_id']))['delivery']=='announced')
+  self.assertEqual(len([e for e in self.events if e['type']=='reply.final' and e.get('text','').startswith('日程提醒')]),1)
+ async def test_answering_calendar_question_suppresses_stale_question_replay(self):
+  from voicehub.calendar_store import CalendarStore
+  from voicehub.calendar_chat import route
+  from voicehub.config import DEFAULT
+  import json
+  calendar=CalendarStore(self.tmp.name);self.pipeline.local.calendar=calendar;self.pipeline.local.data_root=self.tmp.name;self.pipeline.config=DEFAULT
+  count=0
+  async def raw_chat(*args,**kwargs):
+   nonlocal count
+   count+=1;yield json.dumps({'title':'开会','date':'明天'} if count==1 else {'title':'开会','date':'明天','time':'15:00'})
+  async def chat(history):
+   source=route(self.pipeline,history)
+   if source:
+    async for item in source:yield item
+   else:yield '普通回答。'
+  question=asyncio.Event()
+  async def speech(text):
+   if '请明确日程' in text:question.set();await asyncio.Event().wait()
+   yield b'\0\0'*320
+  self.pipeline.raw_chat=raw_chat;self.pipeline.chat=chat;self.pipeline.speech=speech
+  await self.session.submit('明天提醒我开会');await question.wait();await self.session.submit('下午三点')
+  await self.wait_for(lambda:bool(calendar.load()['events']))
+  self.assertTrue(any(r['delivery']=='superseded' for r in self.ops.recent('one')))
+  self.assertEqual(len(calendar.load()['events']),1)
+  await self.wait_for(lambda:not self.ops.tasks)

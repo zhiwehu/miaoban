@@ -40,7 +40,7 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         await self.server.start_server()
         self.http=ClientSession()
         config=copy.deepcopy(DEFAULT)
-        for name in ('weather', 'news', 'system_info'):
+        for name in ('weather', 'news', 'system_info','calendar'):
             config['tools'][name] = False
         for key in ('asr','llm','tts'):
             config[key]['provider']='http'

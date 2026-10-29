@@ -31,7 +31,9 @@ async def rex_plan(pipeline,history,cfg):
 async def chat(pipeline, history):
     from .workflows.chat import route
     from .skill_chat import route as skill_route
+    from .calendar_chat import route as calendar_route
     workflow=skill_route(pipeline,history)
+    if workflow is None:workflow=calendar_route(pipeline,history)
     if workflow is None:workflow=route(pipeline,history)
     if workflow is not None:
         pipeline._previous_tool_plan=None

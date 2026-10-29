@@ -183,7 +183,9 @@ class WorkflowManager:
   if tool.get('kind')=='external':result=await self.extensions.call(name,args,self.config()['tools']['timeout_seconds'])
   else:
    if name=='news':args={'source':self.config()['tools']['news_source'],'limit':self.config()['tools']['news_limit'],**args}
-   async with CommonToolsClient(timeout=self.config()['tools']['timeout_seconds'],data_root=self.root) as client:result=await client.call(name,args)
+   env={}
+   if name=='calendar':env={'VOICEHUB_SESSION_ID':task['session_id'],'VOICEHUB_DEVICE_ID':getattr(pipeline,'device_id',''),'VOICEHUB_REQUEST_ID':task['id']+':'+step['id']}
+   async with CommonToolsClient(timeout=self.config()['tools']['timeout_seconds'],data_root=self.root,env=env) as client:result=await client.call(name,args)
   if result.get('isError'):raise MCPError(result.get('structuredContent',{}).get('error',{}).get('code','workflow_tool_failed'))
   text='\n'.join(c.get('text','') for c in result.get('content',[]) if c.get('type')=='text')
   if len(text)>16000:raise ValueError('workflow_output_limit')

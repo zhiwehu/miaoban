@@ -18,6 +18,7 @@ class Turn:
     text: str = ''
     recorded: bool = False
     delivery: str = ''
+    notification_id: str = ''
     started: float = field(default_factory=time.monotonic)
 
 
@@ -27,6 +28,7 @@ class Session:
         self.id, self.device_id = sid, device_id
         self.store, self.pipeline, self.send = store, pipeline, send
         self.pipeline.session_id=sid
+        self.pipeline.device_id=device_id
         self.publish = publish or (lambda event: None)
         self.wake_mode, self.wake_phrase = wake_mode, wake_phrase
         self.playback_ack, self.idle_seconds = playback_ack, idle_seconds
@@ -81,6 +83,10 @@ class Session:
     async def interrupt(self, reason='manual'):
         turn = self.turn
         if turn and not turn.cancelled:
+            if self.operations and turn.notification_id and reason!='disconnect':
+                record=self.operations.get(turn.notification_id)
+                if record.get('calendar_question') and record['delivery']=='pending':
+                    record['delivery']='superseded';self.operations.save(record)
             turn.cancelled = True  # Invalidate BEFORE cancelling provider or awaiting network I/O.
             if turn.task:
                 turn.task.cancel()
@@ -322,8 +328,17 @@ class Session:
                 while self.turn or self.input_active or time.monotonic()-self.last_activity<.5:
                     await asyncio.sleep(.1)
                 if self.closed:return
-                text='后台任务结果：'+record['text'][:120]+('。完整结果可在技能页查看。' if len(record['text'])>120 else '')
-                turn=self.turn=Turn()
+                calendar=getattr(getattr(self.pipeline,'local',None),'calendar_reminders',None)
+                if record.get('kind')=='calendar' and calendar:
+                    event=calendar.store.get(record['event_id'])
+                    if not calendar.enabled():calendar.store.mark(event['event_id'],'muted');calendar.cancel_notification(event['event_id'])
+                    elif event['status']=='cancelled':calendar.cancel_notification(record['event_id'])
+                    elif time.time()-event['remind_at']>calendar.store.settings()['late_minutes']*60:
+                        calendar.store.mark(event['event_id'],'missed');calendar.cancel_notification(event['event_id'])
+                if self.operations.get(record['id'])['delivery']!='pending':
+                    self.notification_ids.discard(record['id']);continue
+                text=('' if record.get('kind')=='calendar' else '后台任务结果：')+record['text'][:120]+('。完整结果可在技能页查看。' if len(record['text'])>120 else '')
+                turn=self.turn=Turn(notification_id=record['id'])
                 turn.task=asyncio.create_task(self._run(turn,None,None,announcement=text))
                 self.tasks.add(turn.task);turn.task.add_done_callback(self.tasks.discard)
                 await asyncio.gather(turn.task,return_exceptions=True)
