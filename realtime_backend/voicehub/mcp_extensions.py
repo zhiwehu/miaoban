@@ -15,6 +15,7 @@ import zipfile
 
 from jsonschema import Draft202012Validator, ValidationError, SchemaError
 from .mcp_client import CommonToolsClient, MCPError
+from .mcp_http import HttpToolsClient, checked_remote
 
 TOOL_NAME=re.compile(r'[a-zA-Z0-9_.-]{1,128}')
 NAME=re.compile(r'[a-zA-Z][a-zA-Z0-9_-]{0,31}')
@@ -108,21 +109,24 @@ class ExtensionManager:
             servers=manifest['mcpServers']
             if not isinstance(servers,dict) or len(servers)!=1:raise ValueError('one_server_per_upload')
             identity,definition=next(iter(servers.items()))
-            if not isinstance(definition,dict) or set(definition)-{'command','args','env','type'}:raise ValueError('server_config_invalid')
-            if definition.get('type','stdio')!='stdio':raise ValueError('only_stdio_transport_supported')
-            executable=definition.get('command','');arguments=definition.get('args',[])
-            environment=definition.get('env',{})
-            if (not isinstance(executable,str) or not Path(executable).is_absolute() or
-                not Path(executable).is_file() or not os.access(executable,os.X_OK)):
-                raise ValueError('absolute_executable_required')
-            if (not isinstance(arguments,list) or len(arguments)>50 or
-                any(not isinstance(arg,str) or len(arg)>2048 or '\0' in arg for arg in arguments)):
-                raise ValueError('server_arguments_invalid')
-            if (not isinstance(environment,dict) or len(environment)>30 or any(
-                not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,79}',key) or not isinstance(value,str)
-                or len(value)>4096 or '\0' in value for key,value in environment.items())):
-                raise ValueError('server_environment_invalid')
-            command=[executable,*arguments];kind='external_stdio'
+            if isinstance(definition,dict) and definition.get('type') in ('http','streamable-http'):
+                remote=checked_remote(definition);command=None;environment={};kind='remote_http'
+            else:
+                if not isinstance(definition,dict) or set(definition)-{'command','args','env','type'}:raise ValueError('server_config_invalid')
+                if definition.get('type','stdio')!='stdio':raise ValueError('only_stdio_transport_supported')
+                executable=definition.get('command','');arguments=definition.get('args',[])
+                environment=definition.get('env',{})
+                if (not isinstance(executable,str) or not Path(executable).is_absolute() or
+                    not Path(executable).is_file() or not os.access(executable,os.X_OK)):
+                    raise ValueError('absolute_executable_required')
+                if (not isinstance(arguments,list) or len(arguments)>50 or
+                    any(not isinstance(arg,str) or len(arg)>2048 or '\0' in arg for arg in arguments)):
+                    raise ValueError('server_arguments_invalid')
+                if (not isinstance(environment,dict) or len(environment)>30 or any(
+                    not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,79}',key) or not isinstance(value,str)
+                    or len(value)>4096 or '\0' in value for key,value in environment.items())):
+                    raise ValueError('server_environment_invalid')
+                command=[executable,*arguments];kind='external_stdio'
         if not isinstance(identity,str) or not NAME.fullmatch(identity) or identity=='common-tools':raise ValueError('server_id_invalid')
         if identity in self.records:raise ValueError('server_already_exists')
         if len(self.records)>=20:raise ValueError('server_count_limit')
@@ -142,10 +146,12 @@ class ExtensionManager:
         record=dict(id=identity,name=name,kind=kind,command=command,env=environment,
                     cwd=str(directory if files else self.root),enabled=False,tools=[],
                     sha256=hashlib.sha256(raw).hexdigest())
+        if remote:record.update(remote,transport='streamable_http')
         self.records[identity]=record;self._save()
         return next(r for r in self.public_servers() if r['id']==identity)
 
     def client(self,record,timeout=10):
+        if record['kind']=='remote_http':return HttpToolsClient(record,timeout)
         return CommonToolsClient(timeout=timeout,command=record['command'],cwd=record['cwd'],env=record['env'])
 
     def _tools(self,record,tools):

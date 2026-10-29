@@ -1,6 +1,6 @@
 # MCP 工具、Rex 决策与参数抽取
 
-三个工具各自放在 `realtime_backend/voicehub/mcp_tools/`，文件包含参数 Schema、
+各工具分别放在 `realtime_backend/voicehub/mcp_tools/`，文件包含参数 Schema、
 提示语和异步 execute 实现，注册表负责发现；common_tools.py 处理 stdio MCP 协议。
 天气使用 Open-Meteo，新闻读取中新网/BBC RSS，本机信息只读 CPU、内存、磁盘和运行时长。
 
@@ -45,7 +45,7 @@ python scripts/evaluate_rex_slots.py --output ../diagnostics/rex-slots-v2
 耗时工具前的提示顺序已验证，但首次加载、LLM/TTS 生成仍可能较慢，不保证即时语音响应。
 天气源可能瞬时超时，BBC 在本地测试中持续超时；可选择中新网。
 
-本次开源目录 Python 后端 133 项测试通过，Node 调用状态测试 3 项通过。
+本次开源目录 Python 后端 165 项测试通过，Node 调用状态测试 3 项通过。
 管理页曾在隔离 Chrome 中验证实时状态、历史恢复、开关持久化和 320–1440 像素布局。
 不把静音测试音频、客户端播放回执或已生成音频等同于机器人实体扬声器/AEC 验收。
 
@@ -56,3 +56,30 @@ node --test tests/test_mcp_calls.mjs
 
 训练数据检查另行运行（先生成数据）：`python -m unittest training.test_data training.test_slot_data`。
 真实 smoke 脚本需要相应模型/网络资源，输出在本地 diagnostics/，不会自动上传。
+
+## 音乐与用户扩展
+
+MCP 页设置后端音乐目录并启用后，可搜索、播放、暂停、继续、停止；当前输出至 Mac 默认音频设备，未将歌曲流发送给 ESP32。上传支持单个 stdio JSON 配置或包含 mcp.json 的 Python ZIP。上传不执行，明确确认以当前用户权限运行后才做真实发现验证；不自动安装依赖，不提供 OS 沙箱。页面提供可下载的无依赖回显示例和 JSON 参数测试入口。
+
+新增外部工具由动态工具目录 LLM 决策并校验参数，原 Rex adapter 不会自动学会新分类。详见 [音乐与扩展规范](../realtime_backend/docs/SPEC-mcp-music-extensions.md)。
+
+Streamable HTTP 现已支持地址、Bearer/自定义认证、JSON/SSE 响应、参数调用。保存后明确启用才联网验证，支持2025会话和显式2026无会话模式；不支持旧版HTTP+SSE、OAuth登录或自动重放。详见 [HTTP 接入说明](../realtime_backend/docs/SPEC-mcp-http.md)。
+
+## 日期误路由修复与 v3 候选训练
+
+明确日期/星期问题由本机时钟直接回答，并清除上一轮待补参数；不再交给天气分类。
+新增 scripts/router_stress_cases.py 和 evaluate_router_stress.py 生成、评估扩大后的冻结边界集，
+包括概念、否定、上下文与缺参。v3 数据生成器排除该冻结集和旧测试集，按模板族划分。
+
+继续训练需先按上文准备 v1/v2 数据、模型、v2 adapter 与 Rex 运行环境，然后在 realtime_backend/ 执行：
+
+```sh
+python scripts/evaluate_router_stress.py --output ../diagnostics/2026-10-29/router-stress-v1
+python scripts/build_router_v3_data.py --output data/training/router-slots-v3
+python -m unittest training.test_v3_data
+python scripts/train_rex_adapter.py --joint --init-adapter data/adapters/rex-mcp-router-r16-slots-v2 \
+  --data data/training/router-slots-v3 --output data/adapters/rex-mcp-router-r16-slots-v3
+python scripts/evaluate_router_v3.py
+```
+
+v3 是可评估的候选训练流程；本次提交没有自动切换生产 adapter，也不包含权重或本地训练/诊断产物。

@@ -48,6 +48,17 @@ async def _extension_api(request):
             for name in ('mcp.json','server.py'):archive.writestr(name,(root/name).read_bytes())
         return web.Response(body=output.getvalue(),content_type='application/zip',
                             headers={'Content-Disposition':'attachment; filename="local-echo-mcp.zip"'})
+    if request.path=='/api/mcp/remote':
+        body=await request.json()
+        if not isinstance(body,dict) or set(body)-{'id','name','url','headers','allow_private','protocol_version'}:raise ValueError('remote_config_invalid')
+        identity=body.get('id');name=body.pop('name',identity);body.pop('id',None)
+        if not isinstance(identity,str):raise ValueError('server_id_invalid')
+        if not isinstance(name,str) or not 1<=len(name)<=80:raise ValueError('server_name_invalid')
+        raw=json.dumps({'mcpServers':{identity:{'type':'http','name':name,**body}}}).encode()
+        async with manager.lock:
+            record=manager.import_bytes(raw)
+        hub.store.event(dict(type='mcp.imported',server_id=record['id']))
+        return web.json_response({'server':record},status=201)
     if request.path=='/api/mcp/import':
         raw=await request.clone(client_max_size=2*1024*1024).read()
         async with manager.lock:record=manager.import_bytes(raw)

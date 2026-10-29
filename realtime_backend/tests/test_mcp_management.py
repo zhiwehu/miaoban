@@ -98,3 +98,15 @@ class McpManagementTests(unittest.IsolatedAsyncioTestCase):
     async def test_excessive_history_scope_rejected(self):
         response = await self.client.get('/api/sessions/one/tool-calls',params=[('turn_id',str(i)) for i in range(101)])
         self.assertEqual(response.status,400)
+
+    async def test_remote_save_is_disabled_and_credentials_never_return(self):
+        body={'id':'remote-demo','name':'远程测试','url':'https://example.com/mcp','headers':{'Authorization':'Bearer private-fixture'}}
+        response=await self.client.post('/api/mcp/remote',json=body)
+        self.assertEqual(response.status,201);record=(await response.json())['server']
+        self.assertEqual(record['name'],'远程测试');self.assertFalse(record['enabled'])
+        self.assertEqual(record['transport'],'streamable_http');self.assertNotIn('private-fixture',str(record))
+        response=await self.client.get('/api/mcp');self.assertNotIn('private-fixture',str(await response.json()))
+        response=await self.client.post('/api/mcp/servers/remote-demo/enable',json={'trust':False})
+        self.assertEqual(response.status,400)
+        response=await self.client.post('/api/mcp/remote',json={**body,'id':'invalid-name','name':[]})
+        self.assertEqual(response.status,400);self.assertNotIn('invalid-name',self.app[HUB].extensions.records)

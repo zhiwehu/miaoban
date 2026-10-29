@@ -636,6 +636,7 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     from .mcp_management import extension_api
     app.router.add_get('/api/mcp/example',extension_api)
     app.router.add_post('/api/mcp/import',extension_api)
+    app.router.add_post('/api/mcp/remote',extension_api)
     app.router.add_post('/api/mcp/servers/{server}/{action:enable|disable|delete}',extension_api)
     app.router.add_post('/api/mcp/tools/{tool}/test',extension_api)
     app.router.add_get('/api/sessions/{sid}/messages', messages)

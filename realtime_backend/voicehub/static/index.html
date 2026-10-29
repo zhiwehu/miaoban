@@ -322,8 +322,26 @@
             <p id="music-status" role="status" class="hint"></p><div id="music-library"></div>
           </article>
           <article class="panel mcp-extension">
+            <h2>连接远程 MCP</h2>
+            <p class="hint">填写 Streamable HTTP 服务的完整端点，例如 https://example.com/mcp。保存时不会连接；启用后才验证工具。暂不支持旧版 HTTP+SSE 和 OAuth 登录。</p>
+            <form id="mcp-remote-form">
+              <label>服务 ID<input id="mcp-remote-id" required maxlength="32" pattern="[a-zA-Z][a-zA-Z0-9_-]{0,31}" placeholder="例如：my-remote" /></label>
+              <label>显示名称<input id="mcp-remote-name" maxlength="80" placeholder="例如：我的远程工具" /></label>
+              <label>MCP 服务地址<input id="mcp-remote-url" type="url" required maxlength="2048" placeholder="https://example.com/mcp" /></label>
+              <label>Bearer Token（可选）<input id="mcp-remote-token" type="password" autocomplete="off" maxlength="4000" placeholder="仅填写 Token，不含 Bearer 前缀" /></label>
+              <details class="mcp-schema"><summary>协议版本与自定义认证</summary>
+                <label>协议版本<select id="mcp-remote-version"><option value="2025-11-25">2025-11-25（会话模式，兼容 2025 服务）</option><option value="2026-07-28">2026-07-28（无会话模式）</option><option value="2025-06-18">2025-06-18</option><option value="2025-03-26">2025-03-26</option></select></label>
+                <label>自定义认证请求头 JSON<textarea id="mcp-remote-headers" rows="3" placeholder='{"X-API-Key":"你的密钥"}' autocomplete="off" spellcheck="false"></textarea></label>
+                <p class="hint">认证信息仅保存于后端，不会回填到页面或提供给模型。暂不支持修改已保存凭据；需要更换时删除后重新添加。</p>
+              </details>
+              <label class="check"><input type="checkbox" id="mcp-remote-private" />允许此服务访问本地或局域网地址（HTTP 会明文传输）</label>
+              <div class="button-row"><button class="primary" type="submit">保存远程服务</button></div>
+            </form>
+            <p id="mcp-remote-status" role="status" class="hint"></p>
+          </article>
+          <article class="panel mcp-extension">
             <h2>上传自己的 MCP</h2>
-            <p>上传 JSON stdio 服务配置（command 为已安装程序的绝对路径），或根目录含 mcp.json 和 Python 服务的 ZIP 包。上传后处于停用状态，启用时才会运行并验证。</p>
+            <p>上传 JSON 服务配置（stdio 填 command，HTTP 填 type 和 url），或根目录含 mcp.json 和 Python 服务的 ZIP 包。上传后处于停用状态，启用时才会运行并验证。</p>
             <p class="hint">本地代码启用后以当前系统用户权限运行，并非安全沙箱。远程服务会收到调用参数。仅启用你信任的服务；不会自动安装依赖。ZIP 最大 2 MB、50 个文件，每个服务最多 20 个工具。</p>
             <a class="connection-link" href="/api/mcp/example" download="local-echo-mcp.zip">下载可上传的回显示例</a>
             <form id="mcp-upload-form"><label>MCP 配置或插件包<input type="file" id="mcp-upload-file" accept=".json,.zip" required /></label><div class="button-row"><button class="primary" type="submit">上传并检查文件</button></div></form>

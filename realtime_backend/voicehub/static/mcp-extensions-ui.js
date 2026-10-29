@@ -64,6 +64,25 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
       $('mcp-upload-file').value='';await refresh();
     }catch(e){$('mcp-upload-status').textContent='上传失败：'+e.message;}finally{button.disabled=false;}
   };
+  $('mcp-remote-form').onsubmit=async event=>{
+    event.preventDefault();const button=event.submitter;button.disabled=true;
+    $('mcp-remote-status').textContent='正在检查并保存配置…';
+    try{
+      const headers=JSON.parse($('mcp-remote-headers').value.trim() || '{}');
+      if(!headers || typeof headers!=='object' || Array.isArray(headers))throw new Error('请求头必须是 JSON 对象。');
+      const token=$('mcp-remote-token').value.trim();
+      if(token){
+        if(Object.keys(headers).some(key=>key.toLowerCase()==='authorization'))throw new Error('Bearer Token 与自定义 Authorization 请只填写一种。');
+        headers.Authorization='Bearer '+token;
+      }
+      const id=$('mcp-remote-id').value.trim();
+      await api('mcp/remote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        id,name:$('mcp-remote-name').value.trim() || id,url:$('mcp-remote-url').value.trim(),headers,
+        allow_private:$('mcp-remote-private').checked,protocol_version:$('mcp-remote-version').value})});
+      $('mcp-remote-form').reset();await refresh();
+      $('mcp-remote-status').textContent='已保存，尚未连接。请在下方确认信任后启用并验证。';
+    }catch(e){$('mcp-remote-status').textContent='保存失败：'+e.message;}finally{button.disabled=false;}
+  };
   function render(data){
     if(!musicDirty){$('music-directory').value=data.music_directory || '';$('music-enabled').checked=data.music_enabled;}
     const target=$('mcp-external-servers');target.replaceChildren();
