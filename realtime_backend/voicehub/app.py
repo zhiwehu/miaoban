@@ -25,6 +25,7 @@ from .services import ServiceManager, ServiceError
 from .connections import Connections, ConnectionError
 from .rex_planner import RexPlanner
 from .mcp_extensions import ExtensionManager
+from .workflows.manager import WorkflowManager
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -92,6 +93,11 @@ class Hub:
         self.mqtt = None
         self.planner = RexPlanner()
         self.extensions = ExtensionManager(self.root)
+        self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
+
+    def workflow_changed(self,value):
+        event=dict(type='workflow.changed',**value)
+        self.store.event(event);self.publish(event)
 
     def publish(self, event):
         for watcher in list(self.watchers):
@@ -110,6 +116,7 @@ class Hub:
         self.local.planner = self.planner
         self.local.extensions = self.extensions
         self.local.data_root = self.root
+        self.local.workflows = self.workflows
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -136,6 +143,7 @@ class Hub:
         for watcher in self.watchers:
             if not watcher.full():
                 watcher.put_nowait(None)
+        await self.workflows.close()
         if self.http:
             await self.http.close()
         if self.local:
@@ -633,6 +641,15 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
+    from .workflow_api import workflow_api
+    app.router.add_get('/api/workflow-settings',workflow_api)
+    app.router.add_put('/api/workflow-settings',workflow_api)
+    app.router.add_get('/api/workflow-settings/mcp-config',workflow_api)
+    app.router.add_get('/api/workflows',workflow_api)
+    app.router.add_post('/api/workflows',workflow_api)
+    app.router.add_get('/api/workflows/{identity}',workflow_api)
+    app.router.add_post('/api/workflows/{identity}/actions',workflow_api)
+    app.router.add_get('/api/artifacts/{identity}',workflow_api)
     from .file_management import files_api
     app.router.add_get('/api/files',files_api)
     app.router.add_post('/api/files/{action:preview|execute|undo}',files_api)

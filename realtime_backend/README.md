@@ -20,3 +20,7 @@ VOICEHUB_PYTHON="$PWD/.venv/bin/python" ./run.sh
 .venv/bin/python -m unittest discover -s tests -q
 node --test tests/test_mcp_calls.mjs
 ```
+
+### 动态任务链和独立邮件 MCP
+
+MCP 页面支持自然语言任务规划、受控文件生成、SMTP 配置和逐次发送确认。独立邮件 MCP 提供草稿、状态和发送接口；授权码不进入模型上下文。使用方式、支持格式与限制见 [任务链与邮件 MCP](docs/MCP-email-workflows.md)。

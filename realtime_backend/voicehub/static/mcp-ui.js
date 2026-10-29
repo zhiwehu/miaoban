@@ -27,6 +27,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
   const $ = id => document.getElementById(id);
   const extensions=setupMcpExtensions({api,node,notice,onConfig,refresh:()=>refreshCatalogue()});
   function track(event, live = true) {
+    if(event.type==='workflow.changed'){extensions.refreshWorkflows();return;}
     const e = normalizeToolEvent(event);
     if (!e.session_id) return;
     if (live) {

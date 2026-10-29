@@ -1,0 +1,9 @@
+"""Planner-facing contracts; SMTP credentials and authorization tokens are omitted."""
+def schema(properties,required=()):return {'type':'object','properties':properties,'required':list(required),'additionalProperties':False}
+def string(limit=400):return {'type':'string','minLength':1,'maxLength':limit}
+NATIVE=[
+ {'name':'text.compose','description':'根据指令与来源内容编写文本；不编造缺失事实。sources省略时使用本轮及此前对话。','inputSchema':schema({'instruction':string(600),'sources':{'type':'array','items':{},'maxItems':5}},['instruction']),'outputs':{'content':'string'}},
+ {'name':'document.create','description':'将content保存为受控文件。支持txt、md、csv、基础docx，返回artifact_id；不能传入电脑路径。','inputSchema':schema({'title':string(100),'format':{'type':'string','enum':['txt','md','csv','docx']},'content':string(12000)},['title','format','content']),'outputs':{'artifact_id':'string','filename':'string','sha256':'string','format':'string','size':'integer'}},
+ {'name':'contacts.lookup','description':'解析姓名或明确邮箱地址。找不到/重名会向用户追问邮箱，不猜测。','inputSchema':schema({'query':string(254)},['query']),'outputs':{'email':'string','name':'string'}},
+ {'name':'email.prepare','description':'准备邮件草稿，不发送。to必须为邮箱地址，可引用contacts.lookup.email；attachments只接受本任务artifact_id。','inputSchema':schema({'to':{**string(254),'pattern':r'^[^\s@]+@[^\s@]+\.[^\s@]+$'},'subject':string(200),'body':{'type':'string','maxLength':8000},'attachments':{'type':'array','items':{**string(32),'pattern':'^[a-f0-9]{32}$'},'maxItems':5}},['to','subject','body','attachments']),'outputs':{'draft_id':'string','to':'string','subject':'string','attachments':'array'}},
+ {'name':'email.send','description':'将已准备的草稿提交SMTP，必须引用email.prepare.draft_id。执行器会先等待用户确认，模型不能确认。','inputSchema':schema({'draft_id':{**string(32),'pattern':'^[a-f0-9]{32}$'}},['draft_id']),'outputs':{'status':'string','message_id':'string','draft_id':'string'}}]

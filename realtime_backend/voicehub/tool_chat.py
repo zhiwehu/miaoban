@@ -28,6 +28,13 @@ async def rex_plan(pipeline,history,cfg):
 
 
 async def chat(pipeline, history):
+    from .workflows.chat import route
+    workflow=route(pipeline,history)
+    if workflow is not None:
+        pipeline._previous_tool_plan=None
+        async with contextlib.aclosing(workflow) as source:
+            async for value in source:yield value
+        return
     latest=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'')
     answer=calendar_answer(latest)
     if answer is not None:

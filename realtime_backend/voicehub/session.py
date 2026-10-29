@@ -25,6 +25,7 @@ class Session:
                  wake_phrase='小宝同学', playback_ack=True, idle_seconds=30):
         self.id, self.device_id = sid, device_id
         self.store, self.pipeline, self.send = store, pipeline, send
+        self.pipeline.session_id=sid
         self.publish = publish or (lambda event: None)
         self.wake_mode, self.wake_phrase = wake_mode, wake_phrase
         self.playback_ack, self.idle_seconds = playback_ack, idle_seconds

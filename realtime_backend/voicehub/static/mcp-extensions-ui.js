@@ -1,8 +1,10 @@
 // Explicitly opt-in user code, library settings, and tool tests. No HTML from server data.
+import {setupWorkflows} from './workflows-ui.js';
 import {setupFileOrganizer} from './file-organizer-ui.js';
 
 export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
   const $=id=>document.getElementById(id);
+  const workflows=setupWorkflows({api,node});
   const filesUi=setupFileOrganizer({api,node,onConfig,refreshCatalogue:refresh});
   let musicDirty=false;
   $('music-directory').oninput=()=>musicDirty=true;
@@ -87,7 +89,7 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     }catch(e){$('mcp-remote-status').textContent='保存失败：'+e.message;}finally{button.disabled=false;}
   };
   function render(data){
-    filesUi.render(data);
+    filesUi.render(data);workflows.render();
     if(!musicDirty){$('music-directory').value=data.music_directory || '';$('music-enabled').checked=data.music_enabled;}
     const target=$('mcp-external-servers');target.replaceChildren();
     const servers=data.servers.filter(s=>s.kind!=='builtin');
@@ -137,5 +139,5 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     };
     form.append(label,button,status,output);details.append(form);return details;
   }
-  return {render,toolTest};
+  return {render,toolTest,refreshWorkflows:workflows.schedule};
 }

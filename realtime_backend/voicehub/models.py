@@ -195,15 +195,17 @@ class Pipeline:
             async for item in source:
                 yield item
 
-    async def raw_chat(self, history, *, system_prompt=None):
+    async def raw_chat(self, history, *, system_prompt=None, max_tokens=None):
         c = self.config['llm']
+        token_limit=c['max_tokens'] if max_tokens is None else max_tokens
+        if type(token_limit) is not int or not 16<=token_limit<=2048:raise ProviderError('invalid_token_limit')
         messages = [{'role':'system', 'content':system_prompt if system_prompt is not None else self.config['system_prompt']}] + history
         if c['provider'] == 'mlx':
             def generate(stop):
                 import mlx_lm
                 model, tokenizer = self.local.model('llm', c['model'])
                 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                for result in mlx_lm.stream_generate(model, tokenizer, prompt, max_tokens=c['max_tokens']):
+                for result in mlx_lm.stream_generate(model, tokenizer, prompt, max_tokens=token_limit):
                     if stop.is_set():
                         break
                     yield result.text
@@ -213,7 +215,7 @@ class Pipeline:
         else:
             async with self.http.post(self.endpoint('llm', 'chat/completions'),
                     headers=self.headers('llm'), json=dict(model=c['model'], messages=messages,
-                                                         max_tokens=c['max_tokens'], stream=True)) as response:
+                                                         max_tokens=token_limit, stream=True)) as response:
                 self.check(response)
                 count = 0
                 async for event in sse(response):
