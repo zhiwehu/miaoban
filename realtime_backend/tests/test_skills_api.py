@@ -5,7 +5,7 @@ from voicehub.app import create_app,HUB
 from tests.test_sessions import Pipeline
 class SkillsApiTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.app=create_app(self.tmp.name,pipeline_factory=lambda *args:Pipeline());self.client=TestClient(TestServer(self.app));await self.client.start_server()
+  self.tmp=tempfile.TemporaryDirectory();self.app=create_app(self.tmp.name,skills_enabled=True,pipeline_factory=lambda *args:Pipeline());self.client=TestClient(TestServer(self.app));await self.client.start_server()
  async def asyncTearDown(self):await self.client.close();self.tmp.cleanup()
  async def test_parameter_validation_snapshot_and_background_run(self):
   response=await self.client.get('/api/skills');self.assertEqual(len((await response.json())['skills']),3)

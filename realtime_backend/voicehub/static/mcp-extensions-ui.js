@@ -1,10 +1,12 @@
 // Explicitly opt-in user code, library settings, and tool tests. No HTML from server data.
+import {setupOperations} from './operations-ui.js';
 import {setupCalendar} from './calendar-ui.js';
 import {setupWorkflows} from './workflows-ui.js';
 import {setupFileOrganizer} from './file-organizer-ui.js';
 
 export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
   const $=id=>document.getElementById(id);
+  const operations=setupOperations({api,node});
   const calendarUi=setupCalendar({api,node,notice});
   const workflows=setupWorkflows({api,node});
   const settingsStorage=$('mcp-tool-settings-storage');
@@ -93,7 +95,7 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     }catch(e){$('mcp-remote-status').textContent='保存失败：'+e.message;}finally{button.disabled=false;}
   };
   function render(data){
-    filesUi.render(data);workflows.render();calendarUi.render();
+    filesUi.render(data);workflows.render();calendarUi.render();operations.render();
     if(!musicDirty){$('music-directory').value=data.music_directory || '';$('music-enabled').checked=data.music_enabled;}
     const target=$('mcp-external-servers');target.replaceChildren();
     const servers=data.servers.filter(s=>s.kind!=='builtin');
@@ -144,5 +146,5 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     form.append(label,button,status,output);details.append(form);return details;
   }
   function parkSettings(){for(const panel of Object.values(settingsPanels))settingsStorage.append(panel);}
-  return {render,toolTest,parkSettings,toolSettings:name=>settingsPanels[name],emailCard:workflows.emailCard,refreshWorkflows:workflows.schedule,trackCalendar:calendarUi.track};
+  return {render,toolTest,parkSettings,toolSettings:name=>settingsPanels[name],emailCard:workflows.emailCard,refreshWorkflows:workflows.schedule,trackCalendar:calendarUi.track,refreshOperations:operations.schedule};
 }

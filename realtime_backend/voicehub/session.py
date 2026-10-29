@@ -337,7 +337,7 @@ class Session:
                         calendar.store.mark(event['event_id'],'missed');calendar.cancel_notification(event['event_id'])
                 if self.operations.get(record['id'])['delivery']!='pending':
                     self.notification_ids.discard(record['id']);continue
-                text=('' if record.get('kind')=='calendar' else '后台任务结果：')+record['text'][:120]+('。完整结果可在技能页查看。' if len(record['text'])>120 else '')
+                text=('' if record.get('kind')=='calendar' else '后台任务结果：')+record['text'][:120]+('。完整结果可在 MCP 页查看。' if len(record['text'])>120 else '')
                 turn=self.turn=Turn(notification_id=record['id'])
                 turn.task=asyncio.create_task(self._run(turn,None,None,announcement=text))
                 self.tasks.add(turn.task);turn.task.add_done_callback(self.tasks.discard)

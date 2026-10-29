@@ -73,7 +73,7 @@ async def guard(request, handler):
 
 
 class Hub:
-    def __init__(self, root, pipeline_factory):
+    def __init__(self, root, pipeline_factory, *, skills_enabled=False):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         os.chmod(self.root, 0o700)
@@ -100,7 +100,7 @@ class Hub:
         self.operations=Operations(self.root,publish=self.operation_changed)
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
 
-        self.skills=Skills(self.root,self.workflows)
+        self.skills=Skills(self.root,self.workflows) if skills_enabled else None
         self.calendar=CalendarReminders(self.root,self.operations,self.sessions,self.publish,lambda:self.config.get()['tools']['calendar'])
 
     def operation_changed(self,event):
@@ -635,13 +635,13 @@ def create_device_app(hub):
     return app
 
 
-def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port=8766, mqtt_config=None):
+def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port=8766, mqtt_config=None, skills_enabled=False):
     if device_host:
         address = ipaddress.ip_address(device_host)
         if not address.is_private or address.is_unspecified or address.is_multicast:
             raise ValueError('Device listener must bind a specific private interface address')
     app = web.Application(middlewares=[guard], client_max_size=65536)
-    hub = app[HUB] = Hub(root, pipeline_factory)
+    hub = app[HUB] = Hub(root, pipeline_factory, skills_enabled=skills_enabled)
     hub.connections = Connections(hub, mqtt_config, device_host, device_port)
     async def life(app):
         await hub.start()
@@ -669,10 +669,16 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_post('/api/calendar/events',calendar_api)
     app.router.add_post('/api/calendar/events/{identity}/cancel',calendar_api)
     from .skills_api import skills_api
-    app.router.add_get('/api/skills',skills_api)
-    app.router.add_post('/api/skills',skills_api)
-    app.router.add_put('/api/skills/{identity}',skills_api)
-    app.router.add_post('/api/skills/{identity}/run',skills_api)
+    if skills_enabled:
+        app.router.add_get('/api/skills',skills_api)
+        app.router.add_post('/api/skills',skills_api)
+        app.router.add_put('/api/skills/{identity}',skills_api)
+        app.router.add_post('/api/skills/{identity}/run',skills_api)
+    else:
+        async def paused_skills(request):
+            return web.json_response({'error':{'code':'skills_paused','message':'技能功能已暂停，请直接使用 MCP 工具。'}},status=404)
+        app.router.add_route('*','/api/skills',paused_skills)
+        app.router.add_route('*','/api/skills/{tail:.*}',paused_skills)
     app.router.add_get('/api/operations',skills_api)
     app.router.add_post('/api/operations/{identity}/cancel',skills_api)
     from .workflow_api import workflow_api

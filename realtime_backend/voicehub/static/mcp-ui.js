@@ -29,6 +29,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
   const extensions=setupMcpExtensions({api,node,notice,onConfig,refresh:()=>refreshCatalogue()});
   function track(event, live = true) {
     if(event.type.startsWith('calendar.')){extensions.trackCalendar(event);return;}
+    if(event.type==='operation.changed'){extensions.refreshOperations();return;}
     if(event.type==='workflow.changed'){extensions.refreshWorkflows();return;}
     const e = normalizeToolEvent(event);
     if (!e.session_id) return;

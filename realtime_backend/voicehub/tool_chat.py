@@ -29,6 +29,10 @@ async def rex_plan(pipeline,history,cfg):
 
 
 async def chat(pipeline, history):
+    latest=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'')
+    if getattr(getattr(pipeline,'local',None),'skills',None) is None and re.search(r'(?:执行|运行|启动|调用)\s*(?:skill|技能)',latest,re.IGNORECASE):
+        yield '技能功能已暂停。你可以直接查询天气、日程，或使用其他 MCP 工具。'
+        return
     from .workflows.chat import route
     from .skill_chat import route as skill_route
     from .calendar_chat import route as calendar_route
