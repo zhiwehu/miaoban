@@ -7,7 +7,17 @@ const phases = {running:'正在调用', completed:'调用成功', failed:'调用
 const fields = {city:'城市',day_offset:'日期偏移',source:'新闻来源',limit:'条数',keyword:'关键词',sections:'查询项',action:'操作',query:'歌名关键词',track_id:'歌曲标识'};
 const errors = {upstream_timeout:'上游服务响应超时，请稍后重试。',tool_timeout:'工具调用超时，请稍后重试。',
   upstream_connection_failed:'无法连接上游服务，请检查网络。',tool_unavailable:'工具暂时不可用。',
-  tool_invalid_data:'工具返回的数据或参数无效。'};
+  tool_invalid_data:'工具返回的数据或参数无效。',
+  weather_geocoding_timeout:'城市定位服务连接超时，请稍后重试。',
+  weather_forecast_timeout:'天气预报服务连接超时，请稍后重试。',
+  weather_geocoding_connection_failed:'暂时无法连接城市定位服务。',
+  weather_forecast_connection_failed:'暂时无法连接天气预报服务。',
+  weather_geocoding_unavailable:'城市定位服务暂时不可用。',
+  weather_forecast_unavailable:'天气预报服务暂时不可用。',
+  weather_certificate_error:'天气服务证书验证失败，请检查后端证书和网络。',
+  weather_rate_limited:'天气服务请求过于频繁，请稍后再查。',
+  weather_service_error:'天气服务返回异常，本次未取得天气数据。',
+  weather_invalid_data:'天气服务数据格式异常。',weather_timeout:'天气查询在限定时间内未完成。'};
 const duration = ms => ms < 1000 ? Math.round(ms)+' ms' : (ms/1000).toFixed(1)+' 秒';
 
 export function createMcpUi({api, node, notice, onConfig}) {

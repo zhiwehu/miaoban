@@ -21,3 +21,5 @@ initialize → notifications/initialized → tools/list → tools/call。保留�
 
 运行：`/Users/huzhiwei/ai/mac_voice_agent/.venv/bin/python -m unittest discover -s tests -v`
 （在 realtime_backend 目录）。外部 API 的连通性另做只读冒烟检查。
+
+天气网络容错：固定 Open-Meteo GET 的连接超时、断连和502/503/504最多额外重试一次；400/429与证书失败不重试。每次请求总限6秒、连接3秒、读取4秒，两阶段及重试总预算16秒，上层更短超时仍优先。区分城市定位与预报的失败代码，语音及调用卡片显示对应说明；保留取消，不返回缓存天气冒充实时数据。

@@ -3,8 +3,9 @@ import json
 from datetime import datetime, timezone
 
 
-async def fetch(http, url, *, params=None, json_response=False):
-    async with http.get(url, params=params, allow_redirects=False) as response:
+async def fetch(http, url, *, params=None, json_response=False, timeout=None):
+    options={'timeout':timeout} if timeout is not None else {}
+    async with http.get(url, params=params, allow_redirects=False, **options) as response:
         if response.status != 200:
             raise ValueError('upstream_http_'+str(response.status))
         raw = bytearray()

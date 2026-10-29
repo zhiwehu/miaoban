@@ -146,6 +146,11 @@ async def chat(pipeline, history):
     except (MCPError, OSError, ValueError, TimeoutError) as exc:
         code = 'tool_timeout' if isinstance(exc, TimeoutError) else str(exc) if isinstance(exc, MCPError) else 'tool_unavailable'
         yield ToolStatus(name, 'failed', round((time.monotonic()-started)*1000), code)
+        if name=='weather':
+            from .mcp_tools.weather import ERROR_MESSAGES
+            if code in ERROR_MESSAGES:
+                yield ERROR_MESSAGES[code]
+                return
         if name=='music' and code.startswith('music_'):
             yield '本地音乐暂时无法使用，请在 MCP 工具页检查音乐目录、启用状态和播放器。'
             return

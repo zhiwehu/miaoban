@@ -24,7 +24,8 @@ async def call_tool(http, name, arguments):
                       'music_directory_unavailable':'音乐目录不存在或当前无法读取。',
                       'music_disabled':'本地音乐工具尚未启用。','music_player_unavailable':'当前主机未提供 afplay 播放器。',
                       'music_playback_failed':'播放器启动失败，请检查音频格式。','music_player_busy':'旧播放器尚未退出，请先停止后重试。'}
-        if str(exc) in music_errors:
+        known_errors={**music_errors,**TOOLS['weather'].ERROR_MESSAGES}
+        if str(exc) in known_errors:
             code=str(exc)
         elif isinstance(exc, TimeoutError):
             code = 'upstream_timeout'
@@ -34,7 +35,7 @@ async def call_tool(http, name, arguments):
             code = str(exc)
         else:
             code = 'tool_invalid_data'
-        message = music_errors.get(code,'工具查询失败，请检查参数、网络或新闻源后重试。')
+        message = known_errors.get(code,'工具查询失败，请检查参数、网络或新闻源后重试。')
         return {'content':[{'type':'text','text':message}], 'isError':True,
                 'structuredContent':{'error':{'code':code, 'message':message}}}
 
