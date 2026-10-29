@@ -393,7 +393,7 @@ async def api(request):
                           kind='builtin', startup='on_demand'),*hub.extensions.public_servers()],
             tools=[{**tool, 'server_id':'common-tools', 'enabled':cfg[tool['name']]}
                    for tool in catalogue()]+hub.extensions.catalogue(enabled_only=False), planner=cfg['planner'],
-            external_import_supported=True,music_directory=cfg['music_directory'],music_enabled=cfg['music']))
+            external_import_supported=True,music_directory=cfg['music_directory'],music_enabled=cfg['music'],file_directory=cfg['file_directory'],file_organizer_enabled=cfg['file_organizer']))
     if name == 'services':
         return web.json_response(await hub.services.all_status())
     if name == 'status':
@@ -412,7 +412,7 @@ async def api(request):
             from .config import validate
             current=hub.config.get()
             if isinstance(value,dict) and isinstance(value.get('tools'),dict):
-                for key in ('music','music_directory'):
+                for key in ('music','music_directory','file_organizer','file_directory'):
                     value['tools'].setdefault(key,current['tools'][key])
             value = validate(value)
             for kind in ('asr', 'llm', 'tts'):
@@ -633,6 +633,9 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
+    from .file_management import files_api
+    app.router.add_get('/api/files',files_api)
+    app.router.add_post('/api/files/{action:preview|execute|undo}',files_api)
     from .mcp_management import extension_api
     app.router.add_get('/api/mcp/example',extension_api)
     app.router.add_post('/api/mcp/import',extension_api)

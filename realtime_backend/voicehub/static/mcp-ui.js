@@ -1,8 +1,8 @@
 import {normalizeToolEvent, toolCallsForTurn} from './mcp-calls.mjs';
 import {setupMcpExtensions} from './mcp-extensions-ui.js';
 
-const names = {weather:'天气查询', news:'新闻摘要', system_info:'系统信息',music:'本地音乐'};
-const examples = {weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存',music:'播放音乐 / 暂停音乐 / 播放《歌名》'};
+const names = {weather:'天气查询', news:'新闻摘要', system_info:'系统信息',music:'本地音乐',file_organizer:'文件整理'};
+const examples = {weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存',music:'播放音乐 / 暂停音乐 / 播放《歌名》',file_organizer:'整理一下指定目录里的文件'};
 const phases = {running:'正在调用', completed:'调用成功', failed:'调用失败', cancelled:'已取消', unknown:'状态未确认'};
 const fields = {city:'城市',day_offset:'日期偏移',source:'新闻来源',limit:'条数',keyword:'关键词',sections:'查询项',action:'操作',query:'歌名关键词',track_id:'歌曲标识'};
 const errors = {upstream_timeout:'上游服务响应超时，请稍后重试。',tool_timeout:'工具调用超时，请稍后重试。',
@@ -70,7 +70,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       const body = node('div','tool-call-body');
       body.append(node('p','hint',call.name+' · '+(call.planner === 'rex' ? '本地 Rex 决策' :
         call.planner === 'llm' ? '对话模型决策' : call.planner === 'dynamic_llm' ? '动态工具目录 · 对话模型决策' :
-        call.planner === 'music_rules' ? '明确音乐指令解析' : '决策方式未记录')));
+        call.planner === 'file_rules' ? '明确文件整理指令解析' : call.planner === 'music_rules' ? '明确音乐指令解析' : '决策方式未记录')));
       body.append(node('p','tool-call-caption','调用参数'),
         node('pre','',call.arguments === undefined ? '历史记录未保存参数' : JSON.stringify(call.arguments,null,2)));
       if (call.phase === 'failed') body.append(node('p','tool-call-error',
@@ -125,7 +125,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       if(tool.server_id==='common-tools')heading.append(title,label);
       else heading.append(title,node('span','tag',tool.enabled?'外部服务 · 已启用':'外部服务 · 已停用'));
       card.append(heading,node('p','',tool.description),node('p','hint',tool.server_id!=='common-tools' ?
-        '用户 MCP · 通过下方服务开关控制' : tool.name==='music' ? '播放控制 · 后端电脑音频输出' :
+        '用户 MCP · 通过下方服务开关控制' : tool.name==='file_organizer' ? '本机文件元数据 · 预览后页面确认' : tool.name==='music' ? '播放控制 · 后端电脑音频输出' :
         tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
       const schema = node('details','mcp-schema');
       schema.append(node('summary','','查看调用参数'));

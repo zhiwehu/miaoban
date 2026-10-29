@@ -322,6 +322,17 @@
             <p id="music-status" role="status" class="hint"></p><div id="music-library"></div>
           </article>
           <article class="panel mcp-extension">
+            <h2>指定目录文件整理</h2>
+            <p class="hint">只整理所选目录第一层的普通文件，按类型归入分类文件夹。子目录、隐藏文件和链接会跳过；不读取文件内容，不删除或覆盖文件。先预览再确认，支持撤销最近一次整理。</p>
+            <form id="file-settings-form">
+              <label>允许整理的目录（后端电脑绝对路径）<input id="file-directory" maxlength="2048" placeholder="例如：/Users/你的用户名/Downloads/待整理" /></label>
+              <label class="check"><input type="checkbox" id="file-enabled" />启用指定目录文件整理</label>
+              <div class="button-row"><button class="primary" type="submit">保存整理设置</button><button class="secondary" type="button" id="file-preview">生成整理预览</button><button class="secondary" type="button" id="file-refresh">刷新整理计划</button></div>
+            </form>
+            <p class="hint">试着说：“整理一下指定目录里的文件”。语音只生成方案，请在这里核对完整清单并确认执行。最多扫描 2000 项、整理 1000 个文件；操作过程中请勿更改目录或文件。</p>
+            <p id="file-status" class="hint" role="status"></p><div id="file-plans"></div>
+          </article>
+          <article class="panel mcp-extension">
             <h2>连接远程 MCP</h2>
             <p class="hint">填写 Streamable HTTP 服务的完整端点，例如 https://example.com/mcp。保存时不会连接；启用后才验证工具。暂不支持旧版 HTTP+SSE 和 OAuth 登录。</p>
             <form id="mcp-remote-form">

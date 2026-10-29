@@ -57,3 +57,17 @@ def is_conversational_turn(text):
 def music_candidate(text):
     """The optional music planner must not become a dependency of unrelated chat."""
     return re.search(r'音乐|歌曲|歌单|专辑|唱片|播放|暂停|想听|听听|放首|来一首|放一首|听一首|\b(?:music|song|play|pause|resume|album|playlist)\b',text,re.IGNORECASE) is not None
+
+
+def file_plan(text):
+    prefix=r'(?:(?:请|帮我|麻烦你)[\s，,]*)*'
+    text=text.strip().rstrip('。！？!?,， ')
+    target=r'(?:这个|指定|授权|当前|已配置)?(?:目录|文件夹)?(?:里|中|内|下|的)*(?:文件)?'
+    if re.fullmatch(prefix+r'(?:整理|分类|归类)(?:一下)?'+target+r'(?:按类型)?',text):return {'action':'preview'}
+    if re.fullmatch(prefix+r'把'+target+r'按(?:文件)?类型(?:整理|分类|归类)(?:一下)?',text):return {'action':'preview'}
+    if re.fullmatch(prefix+r'(?:统计|看看|查看)(?:一下)?'+target+r'(?:有多少|数量|类型|概况)',text):return {'action':'scan'}
+    return None
+
+
+def file_candidate(text):
+    return re.search(r'文件|文件夹|目录|整理|归类|\b(?:files?|folder|directory|organize)\b',text,re.IGNORECASE) is not None

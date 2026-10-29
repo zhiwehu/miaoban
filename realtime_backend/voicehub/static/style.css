@@ -1090,3 +1090,7 @@ footer {
 .mcp-imported-server h3 { overflow-wrap:anywhere; }
 #music-library { display:flex; flex-wrap:wrap; gap:10px; }
 #music-library .connection-device { flex-basis:100%; justify-content:space-between; }
+
+.file-plan-list{max-height:320px;overflow:auto;margin:16px 0;border-top:1px solid var(--line)}
+.file-plan-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+@media(max-width:600px){.file-plan-row{grid-template-columns:1fr;gap:4px}}
