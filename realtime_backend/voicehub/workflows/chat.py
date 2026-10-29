@@ -7,6 +7,7 @@ from ..extension_routing import is_conversational_turn
 from ..local_calendar import calendar_answer
 
 def candidate(text):
+ if re.match(r"^(?:请)?(?:不要|先别|别执行|暂时不要)",text):return False
  if re.fullmatch(r'(?:你|平台|这里)?(?:能|可以|支持|会)(?:生成文件|生成文档|发送邮件|发邮件|做复杂任务)(?:吗|么)[？?。！!]*',text):return False
  if text.startswith(('解释','介绍','如何','怎么')):return False
  if re.search(r'生成|创建|写一份|做一份|保存为|发邮件|发送邮件|邮件发送|发送到.*邮箱|发给',text):return True
@@ -21,7 +22,7 @@ def route(pipeline,history):
  text=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'').strip()
  compact=re.sub(r'[\s，。！？,.!?]+','',text);active=manager.active(scope)
  confirmation=compact in ('确认发送','确认发送邮件','确认执行任务')
- cancel=compact in ('取消任务','取消发送','不要发送','先别发','先别发送','不用了','再见','拜拜')
+ cancel=compact in ('取消任务','取消发送','不要发送','先别发','先别发送')
  resume=compact in ('继续任务','恢复任务','重试任务')
  if confirmation or (active and (cancel or resume or compact=='查看任务')):return control(manager,pipeline,history,active,compact)
  if active and active['status']=='waiting_input' and calendar_answer(text) is None and not is_conversational_turn(text):
@@ -32,8 +33,7 @@ def route(pipeline,history):
  return None
 
 async def start(manager,pipeline,history,text,active=None):
- if active:await manager.cancel(active['id'],pipeline.session_id)
- yield ToolNotice('workflow','我先规划任务，再按步骤处理，请稍等。')
+ yield ToolNotice('workflow','收到，我来处理任务。')
  task=manager.create(text,pipeline.session_id)
  try:
   await manager.plan(task['id'],pipeline)
@@ -45,7 +45,7 @@ async def start(manager,pipeline,history,text,active=None):
   current=manager._load(task['id'])
   if current['status']=='planning':current.update(status='interrupted',error='workflow_interrupted');manager._save(current)
   raise
- except (ValueError,TimeoutError):
+ except Exception:
   current=manager._load(task['id']);current.update(status='failed',error='workflow_planning_failed');manager._save(current)
   yield '这次还没能生成可执行的任务计划，请补充具体要求；尚未执行任务。'
 
@@ -62,7 +62,7 @@ async def answer(manager,pipeline,history,task,text):
 
 async def control(manager,pipeline,history,task,text):
  if not task:yield '当前没有等待处理或确认的任务，不会发送邮件。';return
- if text in ('取消任务','取消发送','不要发送','先别发','先别发送','不用了','再见','拜拜'):
+ if text in ('取消任务','取消发送','不要发送','先别发','先别发送'):
   await manager.cancel(task['id'],pipeline.session_id);yield '未完成任务已取消。'+('再见。' if text in ('再见','拜拜') else '已生成的文件会保留。');return
  if text=='查看任务':yield '当前任务状态：'+task['status']+'。'+task.get('question','');return
  try:

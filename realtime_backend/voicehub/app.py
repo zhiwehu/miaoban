@@ -26,6 +26,8 @@ from .connections import Connections, ConnectionError
 from .rex_planner import RexPlanner
 from .mcp_extensions import ExtensionManager
 from .workflows.manager import WorkflowManager
+from .background import Operations
+from .skills import Skills
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -93,7 +95,13 @@ class Hub:
         self.mqtt = None
         self.planner = RexPlanner()
         self.extensions = ExtensionManager(self.root)
+        self.operations=Operations(self.root,publish=self.operation_changed)
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
+
+        self.skills=Skills(self.root,self.workflows)
+
+    def operation_changed(self,event):
+        self.store.event(event);self.publish(event)
 
     def workflow_changed(self,value):
         event=dict(type='workflow.changed',**value)
@@ -117,6 +125,8 @@ class Hub:
         self.local.extensions = self.extensions
         self.local.data_root = self.root
         self.local.workflows = self.workflows
+        self.local.operations = self.operations
+        self.local.skills = self.skills
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -143,6 +153,7 @@ class Hub:
         for watcher in self.watchers:
             if not watcher.full():
                 watcher.put_nowait(None)
+        await self.operations.close()
         await self.workflows.close()
         if self.http:
             await self.http.close()
@@ -641,6 +652,13 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
+    from .skills_api import skills_api
+    app.router.add_get('/api/skills',skills_api)
+    app.router.add_post('/api/skills',skills_api)
+    app.router.add_put('/api/skills/{identity}',skills_api)
+    app.router.add_post('/api/skills/{identity}/run',skills_api)
+    app.router.add_get('/api/operations',skills_api)
+    app.router.add_post('/api/operations/{identity}/cancel',skills_api)
     from .workflow_api import workflow_api
     app.router.add_get('/api/workflow-settings',workflow_api)
     app.router.add_put('/api/workflow-settings',workflow_api)

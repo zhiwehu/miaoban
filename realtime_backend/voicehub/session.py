@@ -17,6 +17,7 @@ class Turn:
     played: asyncio.Event = field(default_factory=asyncio.Event)
     text: str = ''
     recorded: bool = False
+    delivery: str = ''
     started: float = field(default_factory=time.monotonic)
 
 
@@ -33,6 +34,14 @@ class Session:
         self.tasks, self.closed = set(), False
         self.last_activity = time.monotonic()
         self.store.session(sid, device_id)
+        self.input_active=False
+        self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
+        self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
+        self.notification_callback=self.queue_notification
+        self.announcer=None
+        if self.operations:
+            self.operations.bind(sid,self.notification_callback)
+            self.announcer=asyncio.create_task(self.announce_results())
 
     async def emit(self, kind, turn=None, **data):
         if self.closed or (turn and (turn.cancelled or self.turn is not turn)):
@@ -65,6 +74,7 @@ class Session:
     def record_reply(self, turn, status):
         if not turn.recorded:
             turn.recorded = True
+            turn.delivery = status
             if turn.text:
                 self.store.message(self.id, turn.id, 'assistant', turn.text, status)
 
@@ -90,16 +100,17 @@ class Session:
         self.tasks.add(turn.task)
         turn.task.add_done_callback(self.tasks.discard)
 
-    async def _run(self, turn, text, pcm):
+    async def _run(self, turn, text, pcm, announcement=None):
         was_standby = self.state == 'standby'
         activated = not was_standby or self.wake_mode != 'backend'
         transcribed = text is None
         try:
             async with asyncio.timeout(120):
                 await self.transition('thinking', turn)
+                if announcement is not None:text=announcement
                 if text is None:
                     text = (await self.pipeline.transcribe(pcm)).strip()
-                if was_standby and self.wake_mode == 'backend':
+                if announcement is None and was_standby and self.wake_mode == 'backend':
                     phrase = re.sub(r'[\W_]+', '', self.wake_phrase)
                     pattern = r'[\W_]*'.join(re.escape(c) for c in phrase)
                     match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -115,11 +126,12 @@ class Session:
                         return
                 if not text:
                     return
-                if transcribed:
+                if transcribed and announcement is None:
                     await self.emit('transcript.final', turn, text=text,
                                     elapsed_ms=round((time.monotonic()-turn.started)*1000))
-                self.store.message(self.id, turn.id, 'user', text, 'confirmed')
-                await self.emit('message.user', turn, text=text)
+                if announcement is None:
+                    self.store.message(self.id, turn.id, 'user', text, 'confirmed')
+                    await self.emit('message.user', turn, text=text)
                 history = [{'role': m['role'], 'content': m['content'] +
                             ('（回复被打断）' if m['status'] == 'interrupted' else '')}
                            for m in self.store.messages(self.id, limit=20)]
@@ -134,7 +146,16 @@ class Session:
                 sentences = asyncio.Queue(maxsize=4)
                 async def produce():
                     pending = ''
-                    async with contextlib.aclosing(self.pipeline.chat(history)) as source:
+                    async def notification():yield announcement
+                    async def cancel_operation():
+                        running=[r for r in self.operations.recent(self.id) if r['status'] in ('queued','running')]
+                        if running:
+                            await self.operations.cancel(running[0]['id']);yield '已请求停止最近一项后台任务，请查看任务记录核实已执行的操作。'
+                        else:yield '当前没有运行中的后台任务。'
+                    cancelling=announcement is None and self.operations and re.sub(r'[\s，。！？,.!?]','',text) in ('取消任务','取消后台任务') and bool(self.operations.tasks)
+                    source=notification() if announcement is not None else cancel_operation() if cancelling else self.pipeline.chat(history)
+                    detached=False
+                    try:
                         async for delta in source:
                             if turn.cancelled:
                                 return
@@ -153,8 +174,22 @@ class Session:
                                 await self.emit('reply.delta', turn, text=delta.text)
                                 await sentences.put(delta.text)
                                 delivered = asyncio.Event()
-                                await sentences.put(delivered)
-                                await delivered.wait()
+                                gate=asyncio.Event()
+                                if self.operations and announcement is None:
+                                    try:
+                                        operation=self.operations.start(self.id,turn.id,text,source,gate,self.emit_operation)
+                                        manager=getattr(getattr(self.pipeline,'local',None),'workflows',None)
+                                        if manager:manager.transfer_owner(asyncio.current_task(),self.operations.tasks[operation['id']])
+                                    except ValueError:
+                                        message='后台任务数量已满，请等待已有任务完成。'
+                                        turn.text+=message;await self.emit('reply.delta',turn,text=message)
+                                        await sentences.put(message);break
+                                    detached=True
+                                try:
+                                    await sentences.put(delivered)
+                                    await delivered.wait()
+                                finally:gate.set()
+                                if detached:break
                                 continue
                             turn.text += delta
                             pending += delta
@@ -162,6 +197,8 @@ class Session:
                             if re.search(r'[。！？!?\n]', pending) or len(pending) >= 70:
                                 await sentences.put(pending)
                                 pending = ''
+                    finally:
+                        if not detached:await source.aclose()
                     if not turn.text.strip():
                         raise RuntimeError('empty_reply')
                     if pending.strip():
@@ -268,7 +305,38 @@ class Session:
                     with contextlib.suppress(Exception):
                         await self.transition('listening' if activated else 'standby')
 
+    async def emit_operation(self,event):
+        # Tool execution belongs to the original request, even after its audio is cleared.
+        self.store.event(event);self.publish(event)
+        if not self.closed:
+            with contextlib.suppress(Exception):await asyncio.wait_for(self.send(event),3)
+
+    def queue_notification(self,record):
+        if record['id'] not in self.notification_ids and not self.notifications.full():
+            self.notification_ids.add(record['id']);self.notifications.put_nowait(record)
+
+    async def announce_results(self):
+        try:
+            while True:
+                record=await self.notifications.get()
+                while self.turn or self.input_active or time.monotonic()-self.last_activity<.5:
+                    await asyncio.sleep(.1)
+                if self.closed:return
+                text='后台任务结果：'+record['text'][:120]+('。完整结果可在技能页查看。' if len(record['text'])>120 else '')
+                turn=self.turn=Turn()
+                turn.task=asyncio.create_task(self._run(turn,None,None,announcement=text))
+                self.tasks.add(turn.task);turn.task.add_done_callback(self.tasks.discard)
+                await asyncio.gather(turn.task,return_exceptions=True)
+                self.notification_ids.discard(record['id'])
+                if turn.delivery in ('generated','played') and not turn.cancelled:self.operations.announced(record['id'])
+                elif not self.closed and turn.delivery!='failed':
+                    # An interrupted announcement is retried only after the next quiet turn.
+                    self.last_activity=time.monotonic();self.queue_notification(record)
+        except asyncio.CancelledError:pass
+
     async def idle(self):
+        if self.operations and (self.notification_ids or any(self.operations.get(identity)['session_id']==self.id for identity in self.operations.tasks)):
+            return  # Keep the voice channel available for long-running completion announcements.
         if not self.turn and self.state == 'listening' and time.monotonic()-self.last_activity > self.idle_seconds:
             await self.transition('standby')
 
@@ -278,6 +346,9 @@ class Session:
         await self.interrupt('disconnect')
         self.closed = True
         self.state = 'disconnected'
+        if self.operations:self.operations.unbind(self.id,self.notification_callback)
+        if self.announcer:
+            self.announcer.cancel();await asyncio.gather(self.announcer,return_exceptions=True)
         await asyncio.gather(*self.tasks, return_exceptions=True)
         self.store.event(dict(type='session.disconnected', session_id=self.id, turn_id=None,
                               timestamp=time.time()))

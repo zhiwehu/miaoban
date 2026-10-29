@@ -14,13 +14,13 @@ export function toolCallsForTurn(events, sid, tid, activeTurn) {
   for (const e of relevant) {
     if (e.type === 'tool.started') {
       calls.set(e.tool, {name:e.tool, phase:'running', arguments:e.arguments,
-        planner:e.planner, started:e.timestamp});
+        planner:e.planner, started:e.timestamp, background:e.background === true});
     } else if (['tool.completed','tool.failed'].includes(e.type)) {
       const call = calls.get(e.tool) || {name:e.tool, started:e.timestamp};
       calls.set(e.tool, {...call, phase:e.type.split('.')[1], elapsed:e.elapsed_ms, code:e.code});
     } else if (['playback.clear','error','turn.completed'].includes(e.type)) {
       for (const call of calls.values()) {
-        if (call.phase !== 'running') continue;
+        if (call.phase !== 'running' || call.background) continue;
         call.phase = e.type === 'error' || e.reason === 'error' ? 'failed' :
           e.type === 'turn.completed' ? 'unknown' : 'cancelled';
         call.code = e.code || '';
@@ -29,7 +29,7 @@ export function toolCallsForTurn(events, sid, tid, activeTurn) {
     }
   }
   for (const call of calls.values()) {
-    if (call.phase === 'running' && activeTurn !== tid) call.phase = 'unknown';
+    if (call.phase === 'running' && !call.background && activeTurn !== tid) call.phase = 'unknown';
   }
   return [...calls.values()];
 }

@@ -29,6 +29,9 @@ class WorkflowManager:
      if step['status']=='running':
       unknown=step['tool']=='email.send' or step.get('effect',False);step['status']='unknown' if unknown else 'interrupted'
     task.update(status='unknown' if unknown else 'interrupted',approved=None,confirmation=None);self._save(task)
+ def transfer_owner(self,old,new):
+  for identity,job in list(self.jobs.items()):
+   if job is old:self.jobs[identity]=new
  def _load(self,identity):return read_json(record_path(self.path,identity))
  def _save(self,task):
   task['updated']=time.time();task['revision']=task.get('revision',0)+1;atomic_json(record_path(self.path,task['id']),task)
@@ -195,7 +198,7 @@ class WorkflowManager:
    self.jobs[identity]=asyncio.current_task();step=None
    try:
     task['status']='running';self._save(task)
-    async with asyncio.timeout(90):
+    async with asyncio.timeout(900):
      for step in task['steps']:
       if step['status']=='completed':continue
       tool=next((t for t in self.tools() if t['name']==step['tool']),None)
@@ -214,6 +217,7 @@ class WorkflowManager:
         else:yield '下一步需要执行'+tool['name']+'，请在任务链页面核对操作并确认，或说“确认执行任务”。'
         return
       yield ToolNotice(tool['name'],'正在处理任务中的下一步，请稍等。')
+      self.jobs[identity]=asyncio.current_task()
       step['status']='running';step['resolved_arguments']=args;self._save(task);start=time.monotonic()
       yield ToolStatus(tool['name'],'started',arguments=args,planner='workflow')
       result=await self._invoke(task,step,tool,args,pipeline,history)
@@ -226,17 +230,25 @@ class WorkflowManager:
      task['status']='completed';self._save(task)
      submitted=any(s['tool']=='email.send' for s in task['steps']);files=[s['result']['filename'] for s in task['steps'] if s['tool']=='document.create']
      yield '任务已完成。'+('生成文件：'+'、'.join(files)+'。' if files else '')+('邮件已提交到 SMTP 服务，不代表收件人已阅读。' if submitted else '')
-   except asyncio.CancelledError:
+   except (asyncio.CancelledError,GeneratorExit):
     if step and step.get('status')=='running':step['status']='unknown' if step.get('effect') else 'interrupted'
     task.update(status='unknown' if step and step.get('status')=='unknown' else 'interrupted',approved=None,confirmation=None);self._save(task);raise
-   except (ValueError,OSError,MCPError,TimeoutError,KeyError,TypeError) as exc:
+   except Exception as exc:
     code=str(exc) if isinstance(exc,(ValueError,MCPError)) and str(exc).replace('_','').isalnum() else 'workflow_execution_failed'
     uncertain=bool(step and step.get('effect') and (isinstance(exc,(TimeoutError,OSError)) or code.startswith('mcp_') or code in ('mail_delivery_unknown','mail_operation_failed')))
+    if step and step['tool']=='email.send':
+     try:uncertain=uncertain or self.mail._load(args['draft_id'])['status'] in ('sending','unknown','submitted')
+     except (ValueError,KeyError,OSError):uncertain=True
     if step:step.update(status='unknown' if uncertain else 'failed',error=code)
     task.update(status='unknown' if uncertain else 'failed',error=code,approved=None,confirmation=None);self._save(task)
     if step:yield ToolStatus(step['tool'],'failed',code=code)
     yield '这一步的执行结果无法确认，已停止任务，不会自动重试发送。请核实邮件记录。' if uncertain else '任务在当前步骤暂停，尚未完成。请在任务链页面查看错误并处理后继续。'
-   finally:self.jobs.pop(identity,None)
+   finally:
+    from ..background import current_operation
+    operation=current_operation.get()
+    if operation is not None:
+     operation.update(workflow_id=identity,workflow_status=task['status'],artifacts=[{k:s['result'][k] for k in ('artifact_id','filename')} for s in task['steps'] if s['tool']=='document.create' and s.get('status')=='completed'])
+    self.jobs.pop(identity,None)
  async def close(self):
   jobs=list({job for job in [*self.jobs.values(),*self.background] if job is not asyncio.current_task()})
   for job in jobs:job.cancel()

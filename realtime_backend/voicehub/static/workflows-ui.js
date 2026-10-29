@@ -99,5 +99,6 @@ export function setupWorkflows({api,node}) {
     }catch(e){status.textContent='读取任务失败：'+e.message;}finally{loading=false;if(again){again=false;schedule();}}
   }
   function schedule(){clearTimeout(timer);timer=setTimeout(refresh,250);}
+  window.addEventListener('voicehub:workflow-open',()=>{panel.open=true;void refresh();});
   return {render:refresh,schedule,emailCard};
 }

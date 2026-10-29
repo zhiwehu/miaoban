@@ -26,3 +26,12 @@ test('failed tools keep error codes; abandoned history is never shown as still r
   assert.equal(toolCallsForTurn([start,failed],'s','t',null)[0].code,'upstream_timeout');
   assert.deepEqual(toolCallsForTurn([start,failed],'other','t',null),[]);
 });
+
+test('background calls remain running across interruption and foreground completion',()=>{
+ const events=[{type:'tool.started',session_id:'s',turn_id:'t',tool:'slow',background:true,timestamp:1},
+  {type:'playback.clear',session_id:'s',interrupted_turn_id:'t',timestamp:2},
+  {type:'turn.completed',session_id:'s',turn_id:'t',timestamp:3}];
+ const [call]=toolCallsForTurn(events,'s','t','new');assert.equal(call.phase,'running');
+ events.push({type:'tool.completed',session_id:'s',turn_id:'t',tool:'slow',timestamp:4,elapsed_ms:3000});
+ assert.equal(toolCallsForTurn(events,'s','t','new')[0].phase,'completed');
+});

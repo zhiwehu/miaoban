@@ -76,3 +76,20 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
    async def raw_chat(self,*args,**kwargs):yield json.dumps({'tool':'email.send','arguments':{'draft_id':'step1.draft_id'}})
   task=self.manager.create('测试错误引用','session-one');await self.manager.plan(task['id'],Planner())
   self.assertEqual(self.manager.get(task['id'])['status'],'waiting_input');self.assertFalse(self.sent)
+ async def test_provider_failure_records_failed_state_instead_of_leaving_running(self):
+  from voicehub.models import ProviderError
+  async def invoke(*args):raise ProviderError('provider_failed')
+  self.manager._invoke=invoke
+  task,_=await self.start({'steps':[{'id':'text','tool':'text.compose','arguments':{'instruction':'测试'}}]})
+  self.assertEqual(task['status'],'failed');self.assertEqual(task['steps'][0]['status'],'failed')
+ async def test_lost_send_result_after_smtp_acceptance_is_unknown_and_never_retried(self):
+  invoke=self.manager.email_invoker
+  async def lose_result(name,args):
+   result=await invoke(name,args)
+   if name=='email_send':raise ValueError('invalid_json')
+   return result
+  self.manager.email_invoker=lose_result
+  task,_=await self.start();self.manager.approve(task['id'],'session-one')
+  [e async for e in self.manager.run(task['id'],self.pipeline)]
+  self.assertEqual(self.manager.get(task['id'])['status'],'unknown');self.assertEqual(len(self.sent),1)
+  with self.assertRaises(ValueError):self.manager.resume(task['id'],'session-one')

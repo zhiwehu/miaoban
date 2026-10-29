@@ -29,6 +29,7 @@
           <button data-view="connections"><span>⌁</span>客户端接入</button>
           <button data-view="models"><span>≋</span>模型与语音</button>
           <button data-view="mcp"><span>◇</span>MCP 工具</button>
+          <button data-view="skills"><span>✧</span>Skills 技能</button>
           <button data-view="logs"><span>⌘</span>事件日志</button>
           <button data-view="lab"><span>↗</span>网页聊天</button>
         </nav>
@@ -278,7 +279,7 @@
                 <label>默认条数<input id="tool-news-limit" type="number" min="1" max="5" required /></label>
               </div>
               <label class="check"><input id="tool-system-info" type="checkbox" />本机系统信息（CPU、内存、磁盘）</label>
-              <label>查询超时（秒）<input id="tool-timeout" type="number" min="5" max="30" required /></label>
+              <label>查询超时（秒）<input id="tool-timeout" type="number" min="5" max="600" required /></label>
               <p class="hint">新闻读取选定来源的 RSS 最新条目，支持关键词筛选。服务不可达时会语音说明；可在事件日志查看查询进度。保存后重新连接客户端生效。</p>
             </article>
             <article class="panel prompt-panel">
@@ -362,6 +363,18 @@
             <p class="hint">现有 Rex 仍只识别原三类查询。新增外部工具通过动态目录交给对话模型规划，不会因上传而自动训练 Rex。</p>
           </article>
           </details>
+        </section>
+        <section data-panel="skills" hidden>
+          <div class="section-intro"><div><p>把常用操作封装成技能，交给本地模型选择和填写参数。</p><p class="hint">收到请求先回应，再后台执行。插话只打断播报，任务继续；完成后自动播报结果。</p></div><button class="secondary" id="skills-refresh">刷新技能</button></div>
+          <p id="skills-status" role="status"></p><div id="skills-list" class="mcp-tool-grid"></div>
+          <details class="panel mcp-extension"><summary>添加自定义技能</summary><form id="skill-create-form">
+            <label>技能 ID<input id="skill-new-id" required pattern="[a-z][a-z0-9_]{0,39}" maxlength="40" placeholder="例如 daily_note" /></label>
+            <label>名称<input id="skill-new-name" required maxlength="60" /></label><label>用途说明<input id="skill-new-description" maxlength="300" /></label><label>触发语<input id="skill-new-trigger" required maxlength="60" /></label>
+            <label>输入参数 JSON Schema<textarea id="skill-new-parameters" rows="4" required>{"type":"object","properties":{},"required":[],"additionalProperties":false}</textarea></label>
+            <label>工具步骤 JSON<textarea id="skill-new-steps" rows="5" required>[{"id":"file","tool":"document.create","arguments":{"title":"笔记","format":"md","content":"笔记正文"}}]</textarea></label>
+            <button class="primary" type="submit">创建技能</button>
+          </form></details>
+          <article class="panel mcp-extension"><h2>后台任务与结果</h2><p class="hint">插话和断线不会取消工具执行。明确取消或执行超时才停止；外部操作结果不明时不会自动重试。</p><div id="skills-operations"></div></article>
         </section>
         <section data-panel="logs" hidden>
           <div class="section-intro">

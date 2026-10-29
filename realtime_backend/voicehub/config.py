@@ -98,7 +98,7 @@ def validate(config):
         raise ValueError('无效新闻源')
     if t['planner'] not in ('llm','rex'):
         raise ValueError('无效工具规划器')
-    for key, low, high in [('news_limit', 1, 5), ('timeout_seconds', 5, 30)]:
+    for key, low, high in [('news_limit', 1, 5), ('timeout_seconds', 5, 600)]:
         if type(t[key]) is not int or not low <= t[key] <= high:
             raise ValueError(f'tools.{key} 需要为 {low}–{high} 的整数')
     return config

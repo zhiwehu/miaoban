@@ -1,4 +1,5 @@
 import {createMcpUi} from './mcp-ui.js';
+import {setupSkills} from './skills-ui.js';
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -91,8 +92,9 @@ const mcp = createMcpUi({api,node,notice,onConfig:cfg => {
   $('tool-news').checked = cfg.tools.news;
   $('tool-system-info').checked = cfg.tools.system_info;
 }});
+const skillsUi=setupSkills({api,node});
 function view(name) {
-  if (!["overview", "conversations", "connections", "models", "mcp", "logs", "lab"].includes(name))
+  if (!["overview", "conversations", "connections", "models", "mcp", "skills", "logs", "lab"].includes(name))
     name = "overview";
   state.view = name;
   document
@@ -106,6 +108,7 @@ function view(name) {
     conversations: "对话记录",
     models: "模型与语音",
     mcp: "MCP 工具",
+    skills: "Skills 技能",
     connections: "客户端接入",
     logs: "事件日志",
     lab: "网页聊天",
@@ -413,7 +416,7 @@ function observe() {
   };
   monitor.onmessage = (event) => {
     const e = JSON.parse(event.data);
-    mcp.track(e);
+    mcp.track(e);skillsUi.track(e);
     if (e.type.startsWith('tool.')) {
       if (state.selected === e.session_id) renderMessages($('messages'),state.messages,state.selected);
       if (identity?.session_id === e.session_id) renderLab();
@@ -960,7 +963,7 @@ function openClient() {
     void (async () => {
       if (socket !== ws) return;
       const e = JSON.parse(event.data);
-      mcp.track(e);
+      mcp.track(e);skillsUi.track(e);
       if (e.type.startsWith('tool.')) renderLab();
       if (e.type === "hello") {
         $("notice").hidden = true;

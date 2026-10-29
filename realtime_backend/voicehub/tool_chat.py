@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import json
+import re
 import time
 from .mcp_client import CommonToolsClient, MCPError
 from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMENTS
@@ -29,7 +30,9 @@ async def rex_plan(pipeline,history,cfg):
 
 async def chat(pipeline, history):
     from .workflows.chat import route
-    workflow=route(pipeline,history)
+    from .skill_chat import route as skill_route
+    workflow=skill_route(pipeline,history)
+    if workflow is None:workflow=route(pipeline,history)
     if workflow is not None:
         pipeline._previous_tool_plan=None
         async with contextlib.aclosing(workflow) as source:
@@ -70,6 +73,8 @@ async def chat(pipeline, history):
             async for text in source:
                 yield text
         return
+    if getattr(local,'operations',None) and (files is not None or music_candidate(latest) or re.search(r'天气|气温|降雨|下雨|新闻|资讯|CPU|内存|磁盘|系统信息',latest,re.IGNORECASE) or (extra and re.search(r'调用|使用工具|执行工具',latest))):
+        yield ToolNotice('tool_planning','收到，我来处理。')
     mode=cfg.get('planner','llm')
     music=music_plan(latest) if cfg.get('music') else None
     candidates=extra+[t for t in available if (t['name']=='music' and music_candidate(latest)) or (t['name']=='file_organizer' and file_candidate(latest))]
