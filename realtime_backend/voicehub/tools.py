@@ -28,11 +28,11 @@ def validate_arguments(name, arguments):
         if schema['type'] == 'string':
             if not isinstance(value, str) or len(value) > schema.get('maxLength', 80):
                 raise ValueError('invalid_argument')
-            if 'enum' in schema and value not in schema['enum']:
+            if len(value)<schema.get('minLength',0) or ('enum' in schema and value not in schema['enum']):
                 raise ValueError('invalid_argument')
         elif schema['type']=='array':
             if (not isinstance(value,list) or not schema['minItems']<=len(value)<=schema['maxItems']
-                or any(not isinstance(item,str) or item not in schema['items']['enum'] for item in value)
+                or any(not isinstance(item,str) or not schema['items'].get('minLength',0)<=len(item)<=schema['items'].get('maxLength',80) or ('enum' in schema['items'] and item not in schema['items']['enum']) for item in value)
                 or len(set(value))!=len(value)):
                 raise ValueError('invalid_argument')
         elif type(value) is not int or not schema['minimum'] <= value <= schema['maximum']:

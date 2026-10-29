@@ -20,7 +20,7 @@ DEFAULT = {
     'audio': {'barge_in': True, 'vad_model': '', 'speech_threshold': .65,
               'onset_ms': 160, 'silence_ms': 640, 'max_utterance_seconds': 15},
     'retention_days': 30,
-    'tools': {'calendar': True,'weather': True, 'news': True, 'system_info': True, 'music':False, 'music_directory':'','file_organizer':False,'file_directory':'',
+    'tools': {'shopping_list':False,'timer':False,'item_memory':False,'calendar': True,'weather': True, 'news': True, 'system_info': True, 'music':False, 'music_directory':'','file_organizer':False,'file_directory':'',
               'default_city': '', 'news_source': 'bbc', 'news_limit': 3,
               'timeout_seconds': 20, 'planner': 'llm'},
 }
@@ -32,7 +32,7 @@ def validate(config):
     elif isinstance(config,dict) and isinstance(config.get('tools'),dict) and 'planner' not in config['tools']:
         config={**config,'tools':{**config['tools'],'planner':'llm'}}
     if isinstance(config,dict) and isinstance(config.get('tools'),dict):
-        config={**config,'tools':{'calendar':True,'music':False,'music_directory':'','file_organizer':False,'file_directory':'',**config['tools']}}
+        config={**config,'tools':{'shopping_list':False,'timer':False,'item_memory':False,'calendar':True,'music':False,'music_directory':'','file_organizer':False,'file_directory':'',**config['tools']}}
     if not isinstance(config, dict) or set(config) != set(DEFAULT):
         raise ValueError('配置字段不完整或包含未知字段')
     if not isinstance(config['system_prompt'], str) or len(config['system_prompt']) > 8000:
@@ -82,7 +82,7 @@ def validate(config):
     t = config['tools']
     if not isinstance(t, dict) or set(t) != set(DEFAULT['tools']):
         raise ValueError('工具配置字段不完整或包含未知字段')
-    if any(type(t[name]) is not bool for name in ('weather', 'news', 'system_info','music','file_organizer','calendar')):
+    if any(type(t[name]) is not bool for name in ('weather', 'news', 'system_info','music','file_organizer','calendar','shopping_list','timer','item_memory')):
         raise ValueError('工具开关需要为布尔值')
     if not isinstance(t['music_directory'],str) or len(t['music_directory'])>2048 or '\0' in t['music_directory']:
         raise ValueError('音乐目录无效')

@@ -1,9 +1,9 @@
 import {normalizeToolEvent, toolCallsForTurn} from './mcp-calls.mjs';
 import {setupMcpExtensions} from './mcp-extensions-ui.js';
 
-const names = {calendar:'日程与提醒',weather:'天气查询', news:'新闻摘要', system_info:'系统信息',music:'本地音乐',file_organizer:'文件整理'};
-const descriptions={calendar:'查询本地日程，设置一次性提醒，到点自动播报。',weather:'查询指定城市的天气和未来三天预报。',news:'读取新闻标题，可按来源和关键词筛选。',system_info:'查看本机 CPU、内存、磁盘和运行时长。',music:'播放指定目录中的本地音乐，支持暂停和继续。',file_organizer:'按类型整理指定目录，核对方案后执行，支持撤销。'};
-const examples = {calendar:'明天有什么日程 / 明天下午三点提醒我开会',weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存',music:'播放音乐 / 暂停音乐 / 播放《歌名》',file_organizer:'整理一下指定目录里的文件'};
+const names = {shopping_list:'购物清单',timer:'多计时器',item_memory:'物品位置记录',calendar:'日程与提醒',weather:'天气查询', news:'新闻摘要', system_info:'系统信息',music:'本地音乐',file_organizer:'文件整理'};
+const descriptions={shopping_list:'随口添加待购物品、查看清单、标记已买。',timer:'同时管理多个倒计时，到点自动提醒。',item_memory:'记住物品放在哪里，需要时按记录找回。',calendar:'查询本地日程，设置一次性提醒，到点自动播报。',weather:'查询指定城市的天气和未来三天预报。',news:'读取新闻标题，可按来源和关键词筛选。',system_info:'查看本机 CPU、内存、磁盘和运行时长。',music:'播放指定目录中的本地音乐，支持暂停和继续。',file_organizer:'按类型整理指定目录，核对方案后执行，支持撤销。'};
+const examples = {shopping_list:'把两盒牛奶加入购物清单',timer:'设置一个五分钟的泡面倒计时',item_memory:'记住护照在书房第二个抽屉',calendar:'明天有什么日程 / 明天下午三点提醒我开会',weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存',music:'播放音乐 / 暂停音乐 / 播放《歌名》',file_organizer:'整理一下指定目录里的文件'};
 const phases = {running:'正在调用', completed:'调用成功', failed:'调用失败', cancelled:'已取消', unknown:'状态未确认'};
 const fields = {city:'城市',day_offset:'日期偏移',source:'新闻来源',limit:'条数',keyword:'关键词',sections:'查询项',action:'操作',query:'歌名关键词',track_id:'歌曲标识'};
 const errors = {upstream_timeout:'上游服务响应超时，请稍后重试。',tool_timeout:'工具调用超时，请稍后重试。',
@@ -72,7 +72,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       summary.append(node('span','tool-call-mark','MCP'),node('strong','',names[call.name] || call.name),
         node('span','tool-call-state',phases[call.phase]),elapsed);
       const body = node('div','tool-call-body');
-      body.append(node('p','hint',call.name+' · '+(call.planner === 'rex' ? '本地 Rex 决策' :
+      body.append(node('p','hint',call.name+' · '+(call.planner === 'rex_slots_llm' ? '本地 Rex 决策 · 4B 参数提取' : call.planner === 'rex' ? '本地 Rex 决策' :
         call.planner === 'llm' ? '对话模型决策' : call.planner === 'dynamic_llm' ? '动态工具目录 · 对话模型决策' :
         call.planner === 'file_rules' ? '明确文件整理指令解析' : call.planner === 'music_rules' ? '明确音乐指令解析' : '决策方式未记录')));
       body.append(node('p','tool-call-caption','调用参数'),
@@ -132,7 +132,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       else heading.append(title,node('span','tag',tool.enabled?'外部服务 · 已启用':'外部服务 · 已停用'));
       card.append(heading,node('p','',descriptions[tool.name] || tool.description),node('p','hint',tool.server_id!=='common-tools' ?
         '用户 MCP · 通过下方服务开关控制' : tool.name==='calendar' ? '本地日程 · 按配置时区提醒' : tool.name==='file_organizer' ? '本机文件元数据 · 预览后页面确认' : tool.name==='music' ? '播放控制 · 后端电脑音频输出' :
-        tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
+        ['shopping_list','timer','item_memory'].includes(tool.name) ? '本地保存 · 无需联网' : tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
       const schema = node('details','mcp-schema');
       schema.append(node('summary','','查看调用参数'));
       const list = node('dl','mcp-parameters');
@@ -147,7 +147,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       }
       schema.append(list);
       const details=node('details','mcp-tool-details');details.open=opened.has(tool.name);details.append(node('summary','','配置与测试'));
-      const settings=extensions.toolSettings(tool.name);if(settings)details.append(settings);
+      const settings=extensions.toolSettings(tool.name);if(settings){details.append(settings);if(['shopping_list','timer','item_memory'].includes(tool.name))settings.querySelector('button[type=submit]').disabled=!tool.enabled;}
       details.append(node('p','mcp-example','试着说：“'+(examples[tool.name] || tool.name)+'”'),schema,extensions.toolTest(tool));
       card.append(details);
       target.append(card);

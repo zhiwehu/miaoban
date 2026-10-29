@@ -11,7 +11,7 @@ LABELS={'无需工具':'null','天气查询':'weather','新闻查询':'news','�
 TO_LABEL={value:key for key,value in LABELS.items()}
 
 
-def load(runtime, model_path, threads=4):
+def load(runtime, model_path, threads=4, max_len=192):
     model_path=Path(model_path).resolve()
     expected='5be51d21f54d10f2d7741b403058c8e310c42f7b994454cab5ca024aea0382d2'
     if hashlib.sha256((model_path/'pytorch_model.bin').read_bytes()).hexdigest()!=expected:
@@ -41,7 +41,7 @@ def load(runtime, model_path, threads=4):
             raise ValueError('Invalid constant position buffer')
         state.pop(key)
     model.load_state_dict(state,strict=True)
-    data_args=DataArguments(max_len=192)
+    data_args=DataArguments(max_len=max_len)
     loader=UIEDataLoader(data_args,tokenizer,'',-1,1,True)
     trainer=RexModelTrainer(model,training,loader.get_collate_fn(),tokenizer=tokenizer)
     trainer.rex_dl,trainer.data_args=loader,data_args
@@ -55,7 +55,8 @@ def load(runtime, model_path, threads=4):
     return model,tokenizer,loader,trainer
 
 
-def feature(row,tokenizer,loader):
+def feature(row,tokenizer,loader,labels=None,max_length=192):
+    labels=LABELS if labels is None else labels
     extraction=row.get('task')=='slots'
     if extraction:
         from voicehub.slot_normalizer import FIELDS
@@ -65,11 +66,11 @@ def feature(row,tokenizer,loader):
     else:
         text='[CLASSIFY]'+row.get('classification_text',row['text'])
         mapping={():{name:([{'span':'[CLASSIFY]','offset':[0,10]}]
-                            if code==row['label'] else []) for name,code in LABELS.items()}}
+                            if code==row['label'] else []) for name,code in labels.items()}}
     char_maps,hints=loader.split_hint_by_level(mapping)
     if len(hints)!=1:raise ValueError('Expected one flat schema')
     encoded=tokenizer(hints[0],text,truncation=False,return_token_type_ids=True,return_offsets_mapping=True)
-    if len(encoded['input_ids'])>192:raise ValueError('Training example too long')
+    if len(encoded['input_ids'])>max_length:raise ValueError('Training example too long')
     rows,cols,_=loader._get_labels(text,encoded['input_ids'],encoded['token_type_ids'],
                                    encoded['offset_mapping'],mapping,char_maps[0])
     if not extraction and len(set(zip(rows,cols)))!=3:raise ValueError('Expected three native gold links')
@@ -78,13 +79,14 @@ def feature(row,tokenizer,loader):
             'rows':rows,'cols':cols}
 
 
-def predict(model,trainer,text):
+def predict(model,trainer,text,labels=None):
+    labels=LABELS if labels is None else labels
     import torch
     with torch.inference_mode():
-        output=trainer.prediction_step(model,{'text':'[CLASSIFY]'+text,'schema':dict.fromkeys(LABELS)},
+        output=trainer.prediction_step(model,{'text':'[CLASSIFY]'+text,'schema':dict.fromkeys(labels)},
                                        prediction_loss_only=False,do_pred=True)
-    labels=[item['type'] for group in output for item in group]
-    return LABELS.get(labels[0],'invalid') if len(labels)==1 else 'invalid'
+    schema=labels;found=[item['type'] for group in output for item in group]
+    return schema.get(found[0],'invalid') if len(found)==1 else 'invalid'
 
 
 def extract(model,trainer,tool,text):

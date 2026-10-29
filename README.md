@@ -38,6 +38,7 @@
 MCP 页面可配置音乐目录、搜索和控制播放（Mac 后端默认音频设备）。支持远程 Streamable HTTP 地址接入，以及上传单个 stdio/HTTP JSON 配置或 Python ZIP；上传不执行，需明确信任后启用验证。扩展以当前用户权限运行，不提供 OS 沙箱，也不自动安装依赖。
 
 - [工具、Rex 准备与验证说明](docs/MCP.md)
+- [购物清单、计时器、位置记录与 Rex 候选训练](docs/EVERYDAY_MCP.md)
 - [指定目录文件整理：预览、确认与撤销](realtime_backend/docs/SPEC-file-organizer.md)
 - [管理界面及扩展设计](realtime_backend/docs/SPEC-mcp-management.md)
 

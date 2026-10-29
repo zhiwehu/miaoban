@@ -9,19 +9,22 @@ class Engine:
     def __init__(self,adapter):
         root=Path(__file__).resolve().parents[1]
         from training.rex_runtime import load,LABELS
+        from training.everyday_schema import TOOL_LABELS,ACTION_LABELS
         from training.lora import inject,load_adapter,merge
         adapter=Path(adapter)
         config=json.loads((adapter/'adapter_config.json').read_text())
-        if not config.get('joint_slots') or config.get('labels')!=LABELS:
+        if not config.get('joint_slots') or config.get('labels') not in (LABELS,TOOL_LABELS):
             raise ValueError('A joint decision/slot adapter is required')
-        self.model,self.tokenizer,_,self.trainer=load(root/'data/rex-runtime',root/'data/models/rex-uninlu-chinese-base')
+        self.labels=config['labels'];self.actions=ACTION_LABELS if self.labels==TOOL_LABELS else {}
+        if self.actions and config.get('action_labels')!=ACTION_LABELS:raise ValueError('Action schema mismatch')
+        self.model,self.tokenizer,_,self.trainer=load(root/'data/rex-runtime',root/'data/models/rex-uninlu-chinese-base',max_len=config.get('max_len',192))
         from safetensors.torch import load_file
         targets=inject(self.model,config['rank'],config['alpha'],config['dropout'])
         if targets!=config['targets']:raise ValueError('Target mismatch')
         load_adapter(self.model,load_file(str(adapter/'adapter_model.safetensors')))
         merge(self.model);self.model.eval()
         from training.rex_runtime import predict
-        predict(self.model,self.trainer,'你好')
+        predict(self.model,self.trainer,'你好',self.labels)
 
     def plan(self,request):
         from training.rex_runtime import predict,extract
@@ -37,10 +40,14 @@ class Engine:
         classifier=('历史用户：'+previous_user+'\n当前用户：'+text) if previous_user else text
         if len(self.tokenizer(classifier,add_special_tokens=False)['input_ids'])>140:
             return {'status':'clarify','tool':None,'arguments':{},'message':'这次内容较长，请一次说一个简短的查询。'}
-        tool=predict(self.model,self.trainer,classifier)
+        tool=predict(self.model,self.trainer,classifier,self.labels)
         if tool=='null':return {'status':'chat','tool':None,'arguments':{}}
         if tool=='invalid':
             return {'status':'clarify','tool':None,'arguments':{},'message':'我没确定你想查询什么，请再说具体一点。'}
+        if tool in self.actions:
+            action=predict(self.model,self.trainer,classifier,self.actions[tool])
+            if action=='invalid':return {'status':'clarify','tool':tool,'arguments':{},'message':'操作还不明确，请再说具体一些。'}
+            return {'status':'extract','tool':tool,'arguments':{'action':action}}
         spans=extract(self.model,self.trainer,tool,text)
         if len(spans)>12:
             return {'status':'clarify','tool':tool,'arguments':{},'message':'这次参数较多，请一次查询一个具体问题。'}
@@ -55,7 +62,14 @@ class Engine:
 def main():
     parser=argparse.ArgumentParser()
     root=Path(__file__).resolve().parents[1]
-    parser.add_argument('--adapter',default=str(root/'data/adapters/rex-mcp-router-r16-slots-v2'))
+    active=root/'data/rex-planner-active.json'
+    adapter='data/adapters/rex-mcp-router-r16-slots-v2'
+    if active.exists():
+        selected=json.loads(active.read_text()).get('adapter','')
+        resolved=(root/selected).resolve()
+        if not resolved.is_relative_to((root/'data/adapters').resolve()):raise ValueError('Invalid active adapter')
+        adapter=str(resolved)
+    parser.add_argument('--adapter',default=str(root/adapter))
     args=parser.parse_args()
     engine=Engine(args.adapter)
     print(json.dumps({'type':'ready','joint_slots':True}),flush=True)

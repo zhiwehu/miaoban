@@ -1,0 +1,63 @@
+{"text": "下次采购别漏了洗洁精，替我写进购物清单", "label": "shopping_list", "action": "add", "source": "manual_pretraining_challenge_20261030"}
+{"text": "购物单添上一袋小米", "label": "shopping_list", "action": "add", "source": "manual_pretraining_challenge_20261030"}
+{"text": "我要买三卷厨房纸，帮我加入清单", "label": "shopping_list", "action": "add", "source": "manual_pretraining_challenge_20261030"}
+{"text": "采购清单里补个牙刷", "label": "shopping_list", "action": "add", "source": "manual_pretraining_challenge_20261030"}
+{"text": "看看还有什么没采购", "label": "shopping_list", "action": "list", "source": "manual_pretraining_challenge_20261030"}
+{"text": "我待买的东西都有啥", "label": "shopping_list", "action": "list", "source": "manual_pretraining_challenge_20261030"}
+{"text": "给我念一下购物单上的东西", "label": "shopping_list", "action": "list", "source": "manual_pretraining_challenge_20261030"}
+{"text": "购物单上的厨房纸买好了，标一下", "label": "shopping_list", "action": "complete", "source": "manual_pretraining_challenge_20261030"}
+{"text": "清单里的牙刷我已经买到了", "label": "shopping_list", "action": "complete", "source": "manual_pretraining_challenge_20261030"}
+{"text": "将采购清单的小米标成已购买", "label": "shopping_list", "action": "complete", "source": "manual_pretraining_challenge_20261030"}
+{"text": "购物单不买牙刷了，删了吧", "label": "shopping_list", "action": "remove", "source": "manual_pretraining_challenge_20261030"}
+{"text": "从待购列表拿掉洗洁精", "label": "shopping_list", "action": "remove", "source": "manual_pretraining_challenge_20261030"}
+{"text": "把采购清单中的厨房纸移除", "label": "shopping_list", "action": "remove", "source": "manual_pretraining_challenge_20261030"}
+{"text": "来个八分钟倒计时，叫煮饺子", "label": "timer", "action": "start", "source": "manual_pretraining_challenge_20261030"}
+{"text": "煮粥倒数二十五分钟", "label": "timer", "action": "start", "source": "manual_pretraining_challenge_20261030"}
+{"text": "替我计时一分半钟", "label": "timer", "action": "start", "source": "manual_pretraining_challenge_20261030"}
+{"text": "设个计时器，时长六分钟", "label": "timer", "action": "start", "source": "manual_pretraining_challenge_20261030"}
+{"text": "煮饺子那个倒计时剩几秒", "label": "timer", "action": "status", "source": "manual_pretraining_challenge_20261030"}
+{"text": "还有几个倒计时在跑", "label": "timer", "action": "status", "source": "manual_pretraining_challenge_20261030"}
+{"text": "看看现在计时器到哪了", "label": "timer", "action": "status", "source": "manual_pretraining_challenge_20261030"}
+{"text": "把煮粥那个计时器先停在这里，暂停一下", "label": "timer", "action": "pause", "source": "manual_pretraining_challenge_20261030"}
+{"text": "暂停正在进行的倒数", "label": "timer", "action": "pause", "source": "manual_pretraining_challenge_20261030"}
+{"text": "我的煮饺子计时器先暂停", "label": "timer", "action": "pause", "source": "manual_pretraining_challenge_20261030"}
+{"text": "刚才暂停的计时器接着走", "label": "timer", "action": "resume", "source": "manual_pretraining_challenge_20261030"}
+{"text": "煮饺子倒计时恢复计时", "label": "timer", "action": "resume", "source": "manual_pretraining_challenge_20261030"}
+{"text": "继续那个煮粥计时器", "label": "timer", "action": "resume", "source": "manual_pretraining_challenge_20261030"}
+{"text": "煮饺子的倒数作废，取消它", "label": "timer", "action": "cancel", "source": "manual_pretraining_challenge_20261030"}
+{"text": "关掉煮粥计时器", "label": "timer", "action": "cancel", "source": "manual_pretraining_challenge_20261030"}
+{"text": "不用倒计时了，取消", "label": "timer", "action": "cancel", "source": "manual_pretraining_challenge_20261030"}
+{"text": "替我记住，备用手机收在卧室床底的盒子里", "label": "item_memory", "action": "remember", "source": "manual_pretraining_challenge_20261030"}
+{"text": "把这个位置存起来：房产证在保险柜", "label": "item_memory", "action": "remember", "source": "manual_pretraining_challenge_20261030"}
+{"text": "我将螺丝刀放在阳台柜顶，帮我记着", "label": "item_memory", "action": "remember", "source": "manual_pretraining_challenge_20261030"}
+{"text": "之前记的房产证在什么地方", "label": "item_memory", "action": "recall", "source": "manual_pretraining_challenge_20261030"}
+{"text": "我那把螺丝刀收哪儿了", "label": "item_memory", "action": "recall", "source": "manual_pretraining_challenge_20261030"}
+{"text": "还记得备用手机存放在哪儿吗", "label": "item_memory", "action": "recall", "source": "manual_pretraining_challenge_20261030"}
+{"text": "不必记我的房产证放哪儿，删掉记录", "label": "item_memory", "action": "forget", "source": "manual_pretraining_challenge_20261030"}
+{"text": "忘记螺丝刀的存放位置", "label": "item_memory", "action": "forget", "source": "manual_pretraining_challenge_20261030"}
+{"text": "移除备用手机那条位置备忘", "label": "item_memory", "action": "forget", "source": "manual_pretraining_challenge_20261030"}
+{"text": "把我登记的物品位置念一遍", "label": "item_memory", "action": "list", "source": "manual_pretraining_challenge_20261030"}
+{"text": "我都让你记住过哪些东西放哪里", "label": "item_memory", "action": "list", "source": "manual_pretraining_challenge_20261030"}
+{"text": "查看物品存放位置的所有记录", "label": "item_memory", "action": "list", "source": "manual_pretraining_challenge_20261030"}
+{"text": "今天礼拜几", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "现在是几月几号", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "明天是星期几呀", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "谢谢，不用了", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "再见，下次聊", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "请解释“给我开个倒计时”这句话", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "不要往购物单添任何东西", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "写个关于计时器的故事", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "物品位置功能是怎么实现的", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "别记录我的隐私位置", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "假如我说把茶叶加到购物单，你会怎么回答", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "只是聊天，不要查询任何工具", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "帮我算八乘以九", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "提醒我明晚八点吃药", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "查询明天的日程", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "不要暂停音乐，我只是说计时器的例子", "label": "null", "source": "manual_pretraining_challenge_20261030"}
+{"text": "成都明天会下雨吗", "label": "weather", "source": "manual_pretraining_challenge_20261030"}
+{"text": "北京后天气温怎样", "label": "weather", "source": "manual_pretraining_challenge_20261030"}
+{"text": "看两条科技新闻", "label": "news", "source": "manual_pretraining_challenge_20261030"}
+{"text": "查查最新国内新闻", "label": "news", "source": "manual_pretraining_challenge_20261030"}
+{"text": "这台机器内存还剩多少", "label": "system_info", "source": "manual_pretraining_challenge_20261030"}
+{"text": "查一下电脑硬盘空间", "label": "system_info", "source": "manual_pretraining_challenge_20261030"}

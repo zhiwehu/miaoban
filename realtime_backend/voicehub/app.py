@@ -30,6 +30,7 @@ from .workflows.manager import WorkflowManager
 from .background import Operations
 from .skills import Skills
 from .calendar_reminders import CalendarReminders
+from .timer_reminders import TimerReminders
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -101,6 +102,7 @@ class Hub:
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
 
         self.skills=Skills(self.root,self.workflows) if skills_enabled else None
+        self.timers=TimerReminders(self.root,self.operations,self.sessions,lambda:self.config.get()['tools']['timer'])
         self.calendar=CalendarReminders(self.root,self.operations,self.sessions,self.publish,lambda:self.config.get()['tools']['calendar'])
 
     def operation_changed(self,event):
@@ -132,6 +134,7 @@ class Hub:
         self.local.skills = self.skills
         self.local.calendar = self.calendar.store
         self.local.calendar_reminders = self.calendar
+        self.local.timer_reminders = self.timers
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -142,7 +145,9 @@ class Hub:
             for session in list(self.sessions.values()):
                 with contextlib.suppress(Exception):
                     await session.idle()
-            try:await self.calendar.tick()
+            try:
+                await self.calendar.tick()
+                await self.timers.tick()
             except Exception as exc:
                 if tick%60==0:
                     logging.getLogger(__name__).warning('Calendar reminder dispatch failed: %s',type(exc).__name__)
@@ -441,7 +446,7 @@ async def api(request):
             from .config import validate
             current=hub.config.get()
             if isinstance(value,dict) and isinstance(value.get('tools'),dict):
-                for key in ('music','music_directory','file_organizer','file_directory','calendar'):
+                for key in ('music','music_directory','file_organizer','file_directory','calendar','shopping_list','timer','item_memory'):
                     value['tools'].setdefault(key,current['tools'][key])
             value = validate(value)
             for kind in ('asr', 'llm', 'tts'):

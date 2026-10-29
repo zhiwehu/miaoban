@@ -85,7 +85,7 @@ class Session:
         if turn and not turn.cancelled:
             if self.operations and turn.notification_id and reason!='disconnect':
                 record=self.operations.get(turn.notification_id)
-                if record.get('calendar_question') and record['delivery']=='pending':
+                if (record.get('calendar_question') or record.get('everyday_question')) and record['delivery']=='pending':
                     record['delivery']='superseded';self.operations.save(record)
             turn.cancelled = True  # Invalidate BEFORE cancelling provider or awaiting network I/O.
             if turn.task:
@@ -335,9 +335,12 @@ class Session:
                     elif event['status']=='cancelled':calendar.cancel_notification(record['event_id'])
                     elif time.time()-event['remind_at']>calendar.store.settings()['late_minutes']*60:
                         calendar.store.mark(event['event_id'],'missed');calendar.cancel_notification(event['event_id'])
+                timers=getattr(getattr(self.pipeline,'local',None),'timer_reminders',None)
+                if record.get('kind')=='timer' and (not timers or not timers.valid(record)):
+                    fresh=self.operations.get(record['id']);fresh['delivery']='cancelled';self.operations.save(fresh)
                 if self.operations.get(record['id'])['delivery']!='pending':
                     self.notification_ids.discard(record['id']);continue
-                text=('' if record.get('kind')=='calendar' else '后台任务结果：')+record['text'][:120]+('。完整结果可在 MCP 页查看。' if len(record['text'])>120 else '')
+                text=('' if record.get('kind') in ('calendar','timer') else '后台任务结果：')+record['text'][:120]+('。完整结果可在 MCP 页查看。' if len(record['text'])>120 else '')
                 turn=self.turn=Turn(notification_id=record['id'])
                 turn.task=asyncio.create_task(self._run(turn,None,None,announcement=text))
                 self.tasks.add(turn.task);turn.task.add_done_callback(self.tasks.discard)
@@ -350,6 +353,8 @@ class Session:
         except asyncio.CancelledError:pass
 
     async def idle(self):
+        timers=getattr(getattr(self.pipeline,'local',None),'timer_reminders',None)
+        if timers and timers.enabled() and timers.store.running(self.device_id):return
         if self.operations and (self.notification_ids or any(self.operations.get(identity)['session_id']==self.id for identity in self.operations.tasks)):
             return  # Keep the voice channel available for long-running completion announcements.
         if not self.turn and self.state == 'listening' and time.monotonic()-self.last_activity > self.idle_seconds:

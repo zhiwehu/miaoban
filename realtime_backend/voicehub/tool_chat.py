@@ -15,10 +15,13 @@ from .extension_routing import music_plan,music_refusal,dynamic_plan,is_conversa
 async def rex_plan(pipeline,history,cfg):
     result=await pipeline.local.planner.plan(history,cfg,getattr(pipeline,'_previous_tool_plan',None))
     status=result.get('status')
-    if status not in ('chat','ready','clarify'):raise PlannerError('planner_invalid_result')
+    if status not in ('chat','ready','clarify','extract'):raise PlannerError('planner_invalid_result')
     tool=result.get('tool')
     if tool is not None and (tool not in ACKNOWLEDGEMENTS or not cfg.get(tool)):
         return {'status':'clarify','tool':None,'arguments':{},'message':'这个查询工具当前未启用。'}
+    if status=='extract':
+        from training.everyday_schema import ACTION_LABELS
+        if tool not in ACTION_LABELS or result.get('arguments',{}).get('action') not in ACTION_LABELS[tool].values():raise PlannerError('planner_invalid_action')
     if status=='ready':validate_arguments(tool,result.get('arguments'))
     if status=='chat' and (tool is not None or result.get('arguments')!={}):
         raise PlannerError('planner_invalid_chat')
@@ -38,6 +41,18 @@ async def chat(pipeline, history):
     from .calendar_chat import route as calendar_route
     workflow=skill_route(pipeline,history)
     if workflow is None:workflow=calendar_route(pipeline,history)
+    cached_rex=None
+    cfg=pipeline.config['tools']
+    if workflow is None and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
+        yield ToolNotice('tool_planning','收到，我来处理。')
+        try:cached_rex=await rex_plan(pipeline,history,cfg)
+        except (PlannerError,ValueError,TimeoutError):
+            yield '本地工具规划器暂时不可用，请稍后重试。';return
+        if cached_rex['status']=='extract':
+            from .everyday_chat import execute
+            async with contextlib.aclosing(execute(pipeline,history,cached_rex)) as source:
+                async for value in source:yield value
+            return
     if workflow is None:workflow=route(pipeline,history)
     if workflow is not None:
         pipeline._previous_tool_plan=None
@@ -104,7 +119,7 @@ async def chat(pipeline, history):
         mode='dynamic_llm';pipeline._previous_tool_plan=None
     elif cfg.get('planner','llm')=='rex':
         try:
-            result=await rex_plan(pipeline,history,cfg)
+            result=cached_rex or await rex_plan(pipeline,history,cfg)
         except (PlannerError,ValueError,TimeoutError):
             yield '本地工具规划器暂时不可用，请稍后再试。'
             return
@@ -140,6 +155,11 @@ async def chat(pipeline, history):
         async with contextlib.aclosing(pipeline.raw_chat(history, system_prompt=instructions)) as source:
             async for text in source:
                 yield text
+        return
+    if name in ('shopping_list','timer','item_memory'):
+        from .everyday_chat import execute
+        async with contextlib.aclosing(execute(pipeline,history,{'tool':name,'arguments':{'action':arguments['action']}})) as source:
+            async for value in source:yield value
         return
     if name == 'news':
         arguments = {'source':cfg['news_source'], 'limit':cfg['news_limit'], **arguments}

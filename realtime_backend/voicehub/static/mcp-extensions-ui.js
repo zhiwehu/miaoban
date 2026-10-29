@@ -1,4 +1,5 @@
 // Explicitly opt-in user code, library settings, and tool tests. No HTML from server data.
+import {setupEveryday} from './everyday-ui.js';
 import {setupOperations} from './operations-ui.js';
 import {setupCalendar} from './calendar-ui.js';
 import {setupWorkflows} from './workflows-ui.js';
@@ -10,7 +11,7 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
   const calendarUi=setupCalendar({api,node,notice});
   const workflows=setupWorkflows({api,node});
   const settingsStorage=$('mcp-tool-settings-storage');
-  const settingsPanels={calendar:calendarUi.panel,music:$('music-settings-form').closest('article'),file_organizer:$('file-settings-form').closest('article')};
+  const settingsPanels={...setupEveryday({api,node,notice}),calendar:calendarUi.panel,music:$('music-settings-form').closest('article'),file_organizer:$('file-settings-form').closest('article')};
   const filesUi=setupFileOrganizer({api,node,onConfig,refreshCatalogue:refresh});
   let musicDirty=false;
   $('music-directory').oninput=()=>musicDirty=true;
