@@ -1,6 +1,6 @@
 # 动态任务链与独立邮件 MCP
 
-在 MCP 页面展开「SMTP 设置与联系人」，配置服务器、端口、加密方式（SSL/TLS 或 STARTTLS）、账号、发件地址和 SMTP 授权码。465 通常使用 SSL，587 通常使用 STARTTLS；以邮箱服务商提供的设置为准。默认不启用 SMTP，不会发送邮件。
+在 MCP 页面展开「发送邮件 → 配置邮件」，配置服务器、端口、加密方式（SSL/TLS 或 STARTTLS）、账号、发件地址和 SMTP 授权码。465 通常使用 SSL，587 通常使用 STARTTLS；以邮箱服务商提供的设置为准。默认不启用 SMTP，不会发送邮件。
 
 授权码保存在后端 `data/workflows/settings.json`，文件权限为 0600；也可在后端环境设置 `VOICEHUB_SMTP_PASSWORD`，页面授权码留空。不回填密钥，不向模型提供 SMTP 凭据。代码仓库忽略整个 data 目录。联系人格式：
 
@@ -16,7 +16,7 @@ python scripts/run_email_mcp.py
 
 也可以在平台下载启动配置。服务提供 `email_prepare`、`email_status`、`email_send`，通过标准 stdio MCP 运行。准备草稿不联网；发送使用主机在用户确认后签发的一次性令牌，普通模型不能自行生成令牌。该配置可用于发现和准备草稿，但外部 MCP 客户端尚无自行授权发送的界面；确认发送由本平台管理。
 
-在 MCP 页输入自然语言目标，或在语音对话中说：
+在 MCP 页展开「任务链与执行记录」后输入自然语言目标，或在语音对话中说：
 
 - “生成一份 Word 文档，标题为会议纪要，内容为今天讨论了语音功能，然后发给 demo@example.com。”
 - “查询本机 CPU 和内存，把结果写成 Markdown 报告。”

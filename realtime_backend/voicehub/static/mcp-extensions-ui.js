@@ -5,6 +5,8 @@ import {setupFileOrganizer} from './file-organizer-ui.js';
 export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
   const $=id=>document.getElementById(id);
   const workflows=setupWorkflows({api,node});
+  const settingsStorage=$('mcp-tool-settings-storage');
+  const settingsPanels={music:$('music-settings-form').closest('article'),file_organizer:$('file-settings-form').closest('article')};
   const filesUi=setupFileOrganizer({api,node,onConfig,refreshCatalogue:refresh});
   let musicDirty=false;
   $('music-directory').oninput=()=>musicDirty=true;
@@ -139,5 +141,6 @@ export function setupMcpExtensions({api,node,notice,onConfig,refresh}) {
     };
     form.append(label,button,status,output);details.append(form);return details;
   }
-  return {render,toolTest,refreshWorkflows:workflows.schedule};
+  function parkSettings(){for(const panel of Object.values(settingsPanels))settingsStorage.append(panel);}
+  return {render,toolTest,parkSettings,toolSettings:name=>settingsPanels[name],emailCard:workflows.emailCard,refreshWorkflows:workflows.schedule};
 }

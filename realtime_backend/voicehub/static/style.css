@@ -1094,3 +1094,14 @@ footer {
 .file-plan-list{max-height:320px;overflow:auto;margin:16px 0;border-top:1px solid var(--line)}
 .file-plan-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
 @media(max-width:600px){.file-plan-row{grid-template-columns:1fr;gap:4px}}
+
+/* The MCP catalogue stays compact; each tool owns its configuration. */
+.mcp-tool-details > summary, .mcp-workflows > summary, .mcp-add-services > summary { cursor:pointer; color:var(--teal); font-size:13px; padding:10px 0; font-weight:600; }
+.mcp-tool:has(> .mcp-tool-details[open]) { grid-column:1 / -1; }
+.mcp-tool-details[open] > summary { margin-bottom:12px; border-bottom:1px solid var(--line); }
+.mcp-tool-details > .panel { margin:0; padding:0; border:0; background:transparent; box-shadow:none; }
+.mcp-tool-details > .panel > h2 { display:none; }
+.mcp-tool-details .mcp-schema { margin-top:12px; }
+.mcp-workflows > summary, .mcp-add-services > summary { font-size:15px; }
+@media(min-width:761px) and (max-width:1150px) { .mcp-tool-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.mcp-email-settings > summary { display:none; }

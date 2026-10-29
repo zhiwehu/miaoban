@@ -303,14 +303,12 @@
         <section data-panel="mcp" hidden>
           <div class="section-intro">
             <div><p>让对话连接实时信息与本机能力。</p><p class="hint" id="mcp-summary">正在读取工具列表…</p></div>
-            <div class="button-row"><button class="secondary" id="mcp-refresh">刷新列表</button><button class="secondary" id="mcp-settings">默认参数与决策设置</button></div>
+            <div class="button-row"><button class="secondary" id="mcp-refresh">刷新列表</button><button class="secondary" id="mcp-settings">决策设置</button></div>
           </div>
-          <article class="panel mcp-service">
-            <div><h2>常用 MCP 服务</h2><p class="hint">内置服务 · 按需启动 · stdio</p></div>
-            <p id="mcp-planner" class="tag">正在读取决策方式…</p>
-          </article>
+          <p id="mcp-planner" class="hint mcp-catalogue-note">正在读取决策方式…</p>
           <p id="mcp-load-status" role="status"></p>
           <div id="mcp-tool-list" class="mcp-tool-grid"></div>
+          <div id="mcp-tool-settings-storage" hidden>
           <article class="panel mcp-extension">
             <h2>本地音乐目录</h2>
             <p class="hint">声音从后端电脑的默认音频设备播放。支持 MP3、WAV、M4A、AAC、AIFF、FLAC；首次使用请设置目录并启用。</p>
@@ -332,6 +330,9 @@
             <p class="hint">试着说：“整理一下指定目录里的文件”。语音只生成方案，请在这里核对完整清单并确认执行。最多扫描 2000 项、整理 1000 个文件；操作过程中请勿更改目录或文件。</p>
             <p id="file-status" class="hint" role="status"></p><div id="file-plans"></div>
           </article>
+          </div>
+          <details class="panel mcp-extension mcp-add-services">
+            <summary>添加与管理 MCP</summary>
           <article class="panel mcp-extension">
             <h2>连接远程 MCP</h2>
             <p class="hint">填写 Streamable HTTP 服务的完整端点，例如 https://example.com/mcp。保存时不会连接；启用后才验证工具。暂不支持旧版 HTTP+SSE 和 OAuth 登录。</p>
@@ -360,6 +361,7 @@
             <h3>外部 MCP 服务</h3><div id="mcp-external-servers"></div>
             <p class="hint">现有 Rex 仍只识别原三类查询。新增外部工具通过动态目录交给对话模型规划，不会因上传而自动训练 Rex。</p>
           </article>
+          </details>
         </section>
         <section data-panel="logs" hidden>
           <div class="section-intro">

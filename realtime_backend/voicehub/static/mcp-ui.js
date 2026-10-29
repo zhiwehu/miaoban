@@ -2,6 +2,7 @@ import {normalizeToolEvent, toolCallsForTurn} from './mcp-calls.mjs';
 import {setupMcpExtensions} from './mcp-extensions-ui.js';
 
 const names = {weather:'天气查询', news:'新闻摘要', system_info:'系统信息',music:'本地音乐',file_organizer:'文件整理'};
+const descriptions={weather:'查询指定城市的天气和未来三天预报。',news:'读取新闻标题，可按来源和关键词筛选。',system_info:'查看本机 CPU、内存、磁盘和运行时长。',music:'播放指定目录中的本地音乐，支持暂停和继续。',file_organizer:'按类型整理指定目录，核对方案后执行，支持撤销。'};
 const examples = {weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存',music:'播放音乐 / 暂停音乐 / 播放《歌名》',file_organizer:'整理一下指定目录里的文件'};
 const phases = {running:'正在调用', completed:'调用成功', failed:'调用失败', cancelled:'已取消', unknown:'状态未确认'};
 const fields = {city:'城市',day_offset:'日期偏移',source:'新闻来源',limit:'条数',keyword:'关键词',sections:'查询项',action:'操作',query:'歌名关键词',track_id:'歌曲标识'};
@@ -86,14 +87,16 @@ export function createMcpUi({api, node, notice, onConfig}) {
   }
   function renderCatalogue() {
     const target = $('mcp-tool-list');
+    const opened=new Set([...target.querySelectorAll('.mcp-tool-details[open]')].map(detail=>detail.parentElement.dataset.tool));
+    extensions.parkSettings();
     target.replaceChildren();
-    $('mcp-summary').textContent = catalogue.tools.length+' 个工具 · '+catalogue.tools.filter(t => t.enabled).length+' 个已启用';
+    $('mcp-summary').textContent = (catalogue.tools.length+1)+' 项能力 · 点击具体工具配置';
     $('mcp-planner').textContent = catalogue.planner === 'rex' ? '本地 Rex · 决策与参数抽取' : '对话模型 · JSON 规划';
     if(catalogue.tools.some(t=>t.server_id!=='common-tools' && t.enabled))$('mcp-planner').textContent+=' · 扩展由对话模型规划';
     extensions.render(catalogue);
     if (!catalogue.tools.length) target.append(node('p','hint','还没有已注册的工具。'));
     for (const tool of catalogue.tools) {
-      const card = node('article','panel mcp-tool');
+      const card = node('article','panel mcp-tool');card.dataset.tool=tool.name;
       const heading = node('div','section-heading'), title = node('div');
       title.append(node('h2','',names[tool.name] || tool.name),node('small','mono',tool.name));
       const label = node('label','check');
@@ -105,7 +108,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       toggle.onchange = async () => {
         if (saving) return;
         saving = true;
-        $('mcp-tool-list').querySelectorAll('input').forEach(input => input.disabled = true);
+        $('mcp-tool-list').querySelectorAll('.section-heading input').forEach(input => input.disabled = true);
         try {
           if(tool.server_id!=='common-tools') {
             await api('mcp/servers/'+tool.server_id+'/'+(toggle.checked?'enable':'disable'),{
@@ -120,12 +123,12 @@ export function createMcpUi({api, node, notice, onConfig}) {
         } catch (e) { toggle.checked = tool.enabled; notice(e.message,true); }
         finally {
           saving = false;
-          $('mcp-tool-list').querySelectorAll('input').forEach(input => input.disabled = false);
+          $('mcp-tool-list').querySelectorAll('.section-heading input').forEach(input => input.disabled = false);
         }
       };
       if(tool.server_id==='common-tools')heading.append(title,label);
       else heading.append(title,node('span','tag',tool.enabled?'外部服务 · 已启用':'外部服务 · 已停用'));
-      card.append(heading,node('p','',tool.description),node('p','hint',tool.server_id!=='common-tools' ?
+      card.append(heading,node('p','',descriptions[tool.name] || tool.description),node('p','hint',tool.server_id!=='common-tools' ?
         '用户 MCP · 通过下方服务开关控制' : tool.name==='file_organizer' ? '本机文件元数据 · 预览后页面确认' : tool.name==='music' ? '播放控制 · 后端电脑音频输出' :
         tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
       const schema = node('details','mcp-schema');
@@ -141,10 +144,13 @@ export function createMcpUi({api, node, notice, onConfig}) {
         list.append(term,node('dd','',bits.join(' · ')));
       }
       schema.append(list);
-      card.append(node('p','mcp-example','试着说：“'+(examples[tool.name] || tool.name)+'”'),schema);
-      card.append(extensions.toolTest(tool));
+      const details=node('details','mcp-tool-details');details.open=opened.has(tool.name);details.append(node('summary','','配置与测试'));
+      const settings=extensions.toolSettings(tool.name);if(settings)details.append(settings);
+      details.append(node('p','mcp-example','试着说：“'+(examples[tool.name] || tool.name)+'”'),schema,extensions.toolTest(tool));
+      card.append(details);
       target.append(card);
     }
+    target.append(extensions.emailCard);
   }
   async function refreshCatalogue() {
     $('mcp-refresh').disabled = true;
