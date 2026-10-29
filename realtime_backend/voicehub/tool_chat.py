@@ -7,6 +7,7 @@ from .mcp_client import CommonToolsClient, MCPError
 from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMENTS
 from .tools import validate_arguments
 from .rex_planner import PlannerError
+from .local_calendar import calendar_answer
 
 
 async def rex_plan(pipeline,history,cfg):
@@ -26,6 +27,12 @@ async def rex_plan(pipeline,history,cfg):
 
 
 async def chat(pipeline, history):
+    latest=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'')
+    answer=calendar_answer(latest)
+    if answer is not None:
+        pipeline._previous_tool_plan=None
+        yield answer
+        return
     cfg = pipeline.config['tools']
     available = [t for t in catalogue() if cfg[t['name']]]
     if not available:

@@ -29,6 +29,9 @@ class Engine:
         text=request.get('text')
         if not isinstance(text,str) or not 1<=len(text)<=300:
             return {'status':'clarify','tool':None,'arguments':{},'message':'请把请求拆成简短的一句话。'}
+        from .local_calendar import calendar_answer
+        if calendar_answer(text) is not None:
+            return {'status':'chat','tool':None,'arguments':{}}
         previous_user=request.get('previous_user','')
         if not isinstance(previous_user,str) or len(previous_user)>80:previous_user=''
         classifier=('历史用户：'+previous_user+'\n当前用户：'+text) if previous_user else text

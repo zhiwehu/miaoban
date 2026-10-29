@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--learning-rate',type=float,default=2e-4)
     parser.add_argument('--smoke',action='store_true')
     parser.add_argument('--joint',action='store_true',help='Train classification and native entity extraction together')
+    parser.add_argument('--init-adapter',help='Continue a compatible LoRA without merging or modifying its source')
     args=parser.parse_args()
     from training.rex_runtime import load,feature,evaluate,LABELS
     model,tokenizer,loader,trainer=load(args.runtime,args.model)
@@ -33,6 +34,14 @@ def main():
     random.seed(20261028);torch.manual_seed(20261028)
     if args.device=='mps' and not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable')
     targets=inject(model,rank=16,alpha=32,dropout=.05)
+    if args.init_adapter:
+        from training.lora import load_adapter
+        from safetensors.torch import load_file
+        source=Path(args.init_adapter)
+        initial=json.loads((source/'adapter_config.json').read_text())
+        if initial['targets']!=targets or initial['rank']!=16 or initial['labels']!=LABELS:
+            raise ValueError('Incompatible initial adapter')
+        load_adapter(model,load_file(str(source/'adapter_model.safetensors')))
     model.to(args.device)
     train=[json.loads(line) for line in (Path(args.data)/'train.jsonl').read_text().splitlines()]
     valid=[json.loads(line) for line in (Path(args.data)/'validation.jsonl').read_text().splitlines()]
