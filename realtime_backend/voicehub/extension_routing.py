@@ -42,3 +42,18 @@ async def dynamic_plan(pipeline,history,definitions,cfg):
             text+=delta
             if len(text)>4096:raise ValueError('plan_limit')
     return parse_plan(text,{**cfg,**{t['name']:True for t in definitions}},available=definitions)
+
+
+def is_conversational_turn(text):
+    """Only complete social/stop turns; quoted words and mixed requests stay routable."""
+    compact=re.sub(r'[\s，。！？,.!?~～、]+','',text.lower())
+    return re.fullmatch(
+        r'(?:(?:谢谢你?|好的?|那|嗯|先这样|就这样){0,3}'
+        r'(?:再见|拜拜|回头见|下次聊|bye|byebye|goodbye)(?:啦|了|吧|啊|喽|咯)?(?:谢谢你?)?'
+        r'|你好|您好|嗨|hello|hi|谢谢(?:你|您)?(?:了)?|多谢|晚安'
+        r'|(?:那|好的?|嗯)?(?:先)?(?:别说了|不要说了|不用了|不说了|停一下))',compact) is not None
+
+
+def music_candidate(text):
+    """The optional music planner must not become a dependency of unrelated chat."""
+    return re.search(r'音乐|歌曲|歌单|专辑|唱片|播放|暂停|想听|听听|放首|来一首|放一首|听一首|\b(?:music|song|play|pause|resume|album|playlist)\b',text,re.IGNORECASE) is not None

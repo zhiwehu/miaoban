@@ -8,7 +8,7 @@ from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMEN
 from .tools import validate_arguments
 from .rex_planner import PlannerError
 from .local_calendar import calendar_answer
-from .extension_routing import music_plan,music_refusal,dynamic_plan
+from .extension_routing import music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate
 
 
 async def rex_plan(pipeline,history,cfg):
@@ -33,6 +33,12 @@ async def chat(pipeline, history):
     if answer is not None:
         pipeline._previous_tool_plan=None
         yield answer
+        return
+    if is_conversational_turn(latest):
+        pipeline._previous_tool_plan=None
+        instructions=pipeline.config['system_prompt']+'\n用户本轮是日常招呼、感谢、告别或表示先不说了。只自然、简短地回应本轮，不延续之前的查询，不提工具或参数。'
+        async with contextlib.aclosing(pipeline.raw_chat(history,system_prompt=instructions)) as source:
+            async for text in source:yield text
         return
     cfg = pipeline.config['tools']
     if not cfg.get('music') and music_plan(latest) is not None:
@@ -79,7 +85,7 @@ async def chat(pipeline, history):
             yield result.get('message','查询参数还不明确，请再说具体一点。')
             return
         name,arguments=result['tool'],result['arguments']
-        if name is None and cfg.get('music'):
+        if name is None and cfg.get('music') and music_candidate(latest):
             dynamic=[t for t in available if t['name']=='music']
             try:name,arguments=await dynamic_plan(pipeline,history,dynamic,cfg)
             except (ValueError,TimeoutError):
@@ -109,7 +115,7 @@ async def chat(pipeline, history):
             yield '这次没能正确确定查询内容，请换个说法再试一下。'
             return
     if name is None:
-        instructions = pipeline.config['system_prompt'] + '\n未执行外部查询，不要声称已查到实时天气、新闻或电脑状态。缺少城市时先询问城市。'
+        instructions = pipeline.config['system_prompt'] + '\n本轮未执行任何工具。普通聊天自然回答，不主动索要工具参数或延续上一轮查询。只有本轮确实请求实时查询且必要信息缺失时才追问；不要声称已查询或执行操作。'
         async with contextlib.aclosing(pipeline.raw_chat(history, system_prompt=instructions)) as source:
             async for text in source:
                 yield text

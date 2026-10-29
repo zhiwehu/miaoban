@@ -54,3 +54,49 @@ class ExtensionRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(started.arguments,{'text':'这是实际参数'});self.assertEqual(started.planner,'dynamic_llm')
             self.assertTrue(any(isinstance(r,ToolStatus) and r.phase=='completed' for r in result))
             await manager.close()
+
+    async def test_social_turn_after_interrupted_news_skips_all_tool_planners(self):
+        history=[{'role':'user','content':'查新闻'},
+                 {'role':'assistant','content':'我看一下最新新闻，请稍等。（回复被打断）'},
+                 {'role':'user','content':'那不要说了。'},
+                 {'role':'assistant','content':'好的，不说了。'}]
+        for mode in ('rex','llm'):
+            for final in ('再见。','谢谢，再见！','拜拜','晚安','你好','谢谢你','那不要说了。'):
+                with self.subTest(mode=mode,final=final):
+                    cfg=copy.deepcopy(DEFAULT);cfg['tools'].update(planner=mode,music=True)
+                    manager=SimpleNamespace(catalogue=lambda:[{'name':'ext_demo__echo'}])
+                    class P:
+                        config=cfg;local=SimpleNamespace(extensions=manager)
+                        _previous_tool_plan={'tool':'news','arguments':{'keyword':'AI'}}
+                        prompts=[]
+                        async def raw_chat(self,history,**kwargs):
+                            self.prompts.append(kwargs.get('system_prompt',''))
+                            yield '再见，有需要随时叫我。'
+                    p=P()
+                    with patch('voicehub.tool_chat.dynamic_plan',side_effect=AssertionError('No planning for a social turn')), \
+                         patch('voicehub.tool_chat.rex_plan',side_effect=AssertionError('No stale Rex intent')), \
+                         patch('voicehub.tool_chat.CommonToolsClient',side_effect=AssertionError('No MCP')):
+                        result=[x async for x in chat(p,[*history,{'role':'user','content':final}])]
+                    self.assertEqual(result,['再见，有需要随时叫我。'])
+                    self.assertIsNone(p._previous_tool_plan)
+                    self.assertNotIn('未执行外部查询',p.prompts[-1])
+
+    async def test_unrelated_chat_does_not_depend_on_music_json_planning(self):
+        from unittest.mock import AsyncMock
+        cfg=copy.deepcopy(DEFAULT);cfg['tools'].update(planner='rex',music=True)
+        class P:
+            config=cfg;local=SimpleNamespace(extensions=None)
+            async def raw_chat(self,history,**kwargs):yield '可以，我们来聊聊。'
+        with patch('voicehub.tool_chat.rex_plan',AsyncMock(return_value={'status':'chat','tool':None,'arguments':{}})), \
+             patch('voicehub.tool_chat.dynamic_plan',side_effect=ValueError('invalid_plan')):
+            result=[x async for x in chat(P(),[{'role':'user','content':'和我聊聊今天的心情'}])]
+        self.assertEqual(result,['可以，我们来聊聊。'])
+
+    def test_social_detection_does_not_swallow_tool_requests_or_quoted_words(self):
+        from voicehub.extension_routing import is_conversational_turn,music_candidate
+        for text in ('播放《再见》','查一下新闻，谢谢','把再见原样返回给回显工具','解释再见这个词','不要查天气，查新闻','谢谢你帮我查上海天气','晚安前查一下天气'):
+            self.assertFalse(is_conversational_turn(text),text)
+        self.assertTrue(music_candidate('我想听稻香'))
+        self.assertTrue(music_candidate('Play a song'))
+        self.assertTrue(music_candidate('放一首周杰伦的歌'))
+        self.assertFalse(music_candidate('和我聊聊今天的心情'))
