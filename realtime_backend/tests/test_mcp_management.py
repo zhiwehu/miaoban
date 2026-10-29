@@ -23,12 +23,60 @@ class McpManagementTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get('/api/mcp')
         data = await response.json()
         tools = {t['name']:t for t in data['tools']}
-        self.assertEqual(set(tools), {'weather','news','system_info'})
+        self.assertEqual(set(tools), {'weather','news','system_info','music'})
+        self.assertFalse(tools['music']['enabled'])
         self.assertFalse(tools['news']['enabled'])
         self.assertEqual(tools['weather']['inputSchema']['required'], ['city'])
         self.assertEqual(data['servers'][0]['startup'], 'on_demand')
-        self.assertFalse(data['external_import_supported'])
+        self.assertTrue(data['external_import_supported'])
         self.assertNotIn(self.app[HUB].auth['admin_token'], str(data))
+
+    async def test_upload_example_then_enable_call_disable_delete_over_http(self):
+        response=await self.client.get('/api/mcp/example');raw=await response.read()
+        response=await self.client.post('/api/mcp/import',data=raw)
+        self.assertEqual(response.status,201)
+        response=await self.client.post('/api/mcp/servers/local-echo/enable',json={'trust':False})
+        self.assertEqual(response.status,400)
+        response=await self.client.post('/api/mcp/servers/local-echo/enable',json={'trust':True})
+        self.assertEqual(response.status,200)
+        response=await self.client.get('/api/mcp');data=await response.json()
+        tool=next(t for t in data['tools'] if t['server_id']=='local-echo')
+        response=await self.client.post('/api/mcp/tools/'+tool['name']+'/test',json={'text':'HTTP上传验证'})
+        self.assertEqual(response.status,200)
+        self.assertIn('HTTP上传验证',str(await response.json()))
+        response=await self.client.post('/api/mcp/tools/'+tool['name']+'/test',json={'text':123})
+        self.assertEqual(response.status,400)
+        await self.client.post('/api/mcp/servers/local-echo/disable')
+        self.assertFalse(self.app[HUB].extensions.catalogue())
+        await self.client.post('/api/mcp/servers/local-echo/delete')
+        self.assertFalse(self.app[HUB].extensions.records)
+
+    async def test_music_search_uses_configured_directory_through_real_stdio(self):
+        from pathlib import Path
+        directory=Path(self.tmp.name)/'songs';directory.mkdir()
+        (directory/'测试音乐.wav').write_bytes(b'not used for playback')
+        cfg=self.app[HUB].config.get();cfg['tools'].update(music=True,music_directory=str(directory))
+        self.app[HUB].config.save(cfg)
+        response=await self.client.post('/api/mcp/tools/music/test',json={'action':'search','query':'测试'})
+        self.assertEqual(response.status,200)
+        self.assertIn('测试音乐',str(await response.json()))
+
+    async def test_upload_route_accepts_bounded_packages_larger_than_normal_api_limit(self):
+        from tests.test_mcp_extensions import example_zip
+        raw=example_zip(('notes.txt','x'*80000))
+        self.assertGreater(len(raw),65536)
+        response=await self.client.post('/api/mcp/import',data=raw)
+        self.assertEqual(response.status,201)
+        self.assertFalse(self.app[HUB].extensions.public_servers()[0]['enabled'])
+
+    async def test_older_settings_form_does_not_reset_music_configuration(self):
+        cfg=self.app[HUB].config.get();cfg['tools'].update(music=True,music_directory=self.tmp.name)
+        self.app[HUB].config.save(cfg)
+        del cfg['tools']['music'];del cfg['tools']['music_directory']
+        response=await self.client.put('/api/config',json=cfg)
+        self.assertEqual(response.status,200)
+        tools=(await response.json())['config']['tools']
+        self.assertTrue(tools['music']);self.assertEqual(tools['music_directory'],self.tmp.name)
 
     async def test_history_survives_noisy_events_and_scopes_to_session_and_turn(self):
         store = self.app[HUB].store

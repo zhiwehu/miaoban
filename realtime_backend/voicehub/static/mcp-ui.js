@@ -1,9 +1,10 @@
 import {normalizeToolEvent, toolCallsForTurn} from './mcp-calls.mjs';
+import {setupMcpExtensions} from './mcp-extensions-ui.js';
 
-const names = {weather:'天气查询', news:'新闻摘要', system_info:'系统信息'};
-const examples = {weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存'};
+const names = {weather:'天气查询', news:'新闻摘要', system_info:'系统信息',music:'本地音乐'};
+const examples = {weather:'查一下上海明天的天气', news:'从中新网读两条新闻', system_info:'查询本机CPU和内存',music:'播放音乐 / 暂停音乐 / 播放《歌名》'};
 const phases = {running:'正在调用', completed:'调用成功', failed:'调用失败', cancelled:'已取消', unknown:'状态未确认'};
-const fields = {city:'城市',day_offset:'日期偏移',source:'新闻来源',limit:'条数',keyword:'关键词',sections:'查询项'};
+const fields = {city:'城市',day_offset:'日期偏移',source:'新闻来源',limit:'条数',keyword:'关键词',sections:'查询项',action:'操作',query:'歌名关键词',track_id:'歌曲标识'};
 const errors = {upstream_timeout:'上游服务响应超时，请稍后重试。',tool_timeout:'工具调用超时，请稍后重试。',
   upstream_connection_failed:'无法连接上游服务，请检查网络。',tool_unavailable:'工具暂时不可用。',
   tool_invalid_data:'工具返回的数据或参数无效。'};
@@ -14,6 +15,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
   const expanded = new Set();
   let catalogue, saving = false;
   const $ = id => document.getElementById(id);
+  const extensions=setupMcpExtensions({api,node,notice,onConfig,refresh:()=>refreshCatalogue()});
   function track(event, live = true) {
     const e = normalizeToolEvent(event);
     if (!e.session_id) return;
@@ -57,7 +59,8 @@ export function createMcpUi({api, node, notice, onConfig}) {
         node('span','tool-call-state',phases[call.phase]),elapsed);
       const body = node('div','tool-call-body');
       body.append(node('p','hint',call.name+' · '+(call.planner === 'rex' ? '本地 Rex 决策' :
-        call.planner === 'llm' ? '对话模型决策' : '决策方式未记录')));
+        call.planner === 'llm' ? '对话模型决策' : call.planner === 'dynamic_llm' ? '动态工具目录 · 对话模型决策' :
+        call.planner === 'music_rules' ? '明确音乐指令解析' : '决策方式未记录')));
       body.append(node('p','tool-call-caption','调用参数'),
         node('pre','',call.arguments === undefined ? '历史记录未保存参数' : JSON.stringify(call.arguments,null,2)));
       if (call.phase === 'failed') body.append(node('p','tool-call-error',
@@ -75,6 +78,8 @@ export function createMcpUi({api, node, notice, onConfig}) {
     target.replaceChildren();
     $('mcp-summary').textContent = catalogue.tools.length+' 个工具 · '+catalogue.tools.filter(t => t.enabled).length+' 个已启用';
     $('mcp-planner').textContent = catalogue.planner === 'rex' ? '本地 Rex · 决策与参数抽取' : '对话模型 · JSON 规划';
+    if(catalogue.tools.some(t=>t.server_id!=='common-tools' && t.enabled))$('mcp-planner').textContent+=' · 扩展由对话模型规划';
+    extensions.render(catalogue);
     if (!catalogue.tools.length) target.append(node('p','hint','还没有已注册的工具。'));
     for (const tool of catalogue.tools) {
       const card = node('article','panel mcp-tool');
@@ -91,10 +96,14 @@ export function createMcpUi({api, node, notice, onConfig}) {
         saving = true;
         $('mcp-tool-list').querySelectorAll('input').forEach(input => input.disabled = true);
         try {
-          const {config} = await api('config');
-          config.tools[tool.name] = toggle.checked;
-          const saved = await api('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
-          onConfig(saved.config);
+          if(tool.server_id!=='common-tools') {
+            await api('mcp/servers/'+tool.server_id+'/'+(toggle.checked?'enable':'disable'),{
+              method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trust:false})});
+          } else {
+            const {config} = await api('config');config.tools[tool.name] = toggle.checked;
+            const saved = await api('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
+            onConfig(saved.config);
+          }
           await refreshCatalogue();
           notice('工具设置已保存，重新连接客户端后生效。');
         } catch (e) { toggle.checked = tool.enabled; notice(e.message,true); }
@@ -103,13 +112,16 @@ export function createMcpUi({api, node, notice, onConfig}) {
           $('mcp-tool-list').querySelectorAll('input').forEach(input => input.disabled = false);
         }
       };
-      heading.append(title,label);
-      card.append(heading,node('p','',tool.description),node('p','hint',tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
+      if(tool.server_id==='common-tools')heading.append(title,label);
+      else heading.append(title,node('span','tag',tool.enabled?'外部服务 · 已启用':'外部服务 · 已停用'));
+      card.append(heading,node('p','',tool.description),node('p','hint',tool.server_id!=='common-tools' ?
+        '用户 MCP · 通过下方服务开关控制' : tool.name==='music' ? '播放控制 · 后端电脑音频输出' :
+        tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
       const schema = node('details','mcp-schema');
       schema.append(node('summary','','查看调用参数'));
       const list = node('dl','mcp-parameters');
       for (const [key,value] of Object.entries(tool.inputSchema.properties)) {
-        const term = node('dt','',fields[key]+' · '+key);
+        const term = node('dt','',(fields[key] || key)+' · '+key);
         const bits = [tool.inputSchema.required?.includes(key) ? '必填' : '可选',value.type];
         if (value.enum) bits.push(value.enum.join(' / '));
         if (value.items?.enum) bits.push(value.items.enum.join(' / '));
@@ -119,6 +131,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       }
       schema.append(list);
       card.append(node('p','mcp-example','试着说：“'+(examples[tool.name] || tool.name)+'”'),schema);
+      card.append(extensions.toolTest(tool));
       target.append(card);
     }
   }

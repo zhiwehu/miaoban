@@ -1,7 +1,7 @@
-"""Explicit registry for the bundled read-only MCP tools.
+"""Explicit registry for the bundled MCP tools.
 
 Each module owns its schema, acknowledgement and async execute(http, **arguments).
 """
-from . import weather, news, system_info
+from . import weather, news, system_info, music
 
-TOOLS = {'weather':weather, 'news':news, 'system_info':system_info}
+TOOLS = {'weather':weather, 'news':news, 'system_info':system_info,'music':music}

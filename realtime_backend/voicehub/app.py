@@ -24,6 +24,7 @@ from .store import Store
 from .services import ServiceManager, ServiceError
 from .connections import Connections, ConnectionError
 from .rex_planner import RexPlanner
+from .mcp_extensions import ExtensionManager
 
 HUB = web.AppKey('hub', object)
 DEVICE_ONLY = web.AppKey('device_only', bool)
@@ -90,6 +91,7 @@ class Hub:
         self.maintenance = None
         self.mqtt = None
         self.planner = RexPlanner()
+        self.extensions = ExtensionManager(self.root)
 
     def publish(self, event):
         for watcher in list(self.watchers):
@@ -106,6 +108,8 @@ class Hub:
         self.local = LocalModels()
         self.local.services = self.services
         self.local.planner = self.planner
+        self.local.extensions = self.extensions
+        self.local.data_root = self.root
         self.store.prune(self.config.get()['retention_days'])
         self.maintenance = asyncio.create_task(self.maintain())
 
@@ -137,6 +141,10 @@ class Hub:
         if self.local:
             self.local.close()
         await self.planner.close()
+        await self.extensions.close()
+        from .music_player import MusicPlayer
+        with contextlib.suppress(OSError,ValueError):
+            await asyncio.to_thread(MusicPlayer(self.root,self.config.get()['tools']['music_directory']).execute,'stop')
         await self.services.shutdown()
         self.store.close()
 
@@ -382,10 +390,10 @@ async def api(request):
         cfg = hub.config.get()['tools']
         return web.json_response(dict(
             servers=[dict(id='common-tools', name='常用 MCP 工具', transport='stdio',
-                          kind='builtin', startup='on_demand')],
+                          kind='builtin', startup='on_demand'),*hub.extensions.public_servers()],
             tools=[{**tool, 'server_id':'common-tools', 'enabled':cfg[tool['name']]}
-                   for tool in catalogue()], planner=cfg['planner'],
-            external_import_supported=False))
+                   for tool in catalogue()]+hub.extensions.catalogue(enabled_only=False), planner=cfg['planner'],
+            external_import_supported=True,music_directory=cfg['music_directory'],music_enabled=cfg['music']))
     if name == 'services':
         return web.json_response(await hub.services.all_status())
     if name == 'status':
@@ -402,12 +410,20 @@ async def api(request):
         if request.method == 'PUT':
             value = await request.json()
             from .config import validate
+            current=hub.config.get()
+            if isinstance(value,dict) and isinstance(value.get('tools'),dict):
+                for key in ('music','music_directory'):
+                    value['tools'].setdefault(key,current['tools'][key])
             value = validate(value)
             for kind in ('asr', 'llm', 'tts'):
                 status = await hub.services.status(kind)
                 if status.get('pid') and value[kind]['provider'] != 'builtin':
                     return web.json_response({'error': {'code':'service_still_running',
                         'message':'请先停止内置服务，再切换提供商'}}, status=409)
+            if (current['tools']['music'] and not value['tools']['music'] or
+                current['tools']['music_directory']!=value['tools']['music_directory']):
+                from .music_player import MusicPlayer
+                await asyncio.to_thread(MusicPlayer(hub.root,current['tools']['music_directory']).execute,'stop')
             hub.config.save(value)
             hub.store.event(dict(type='config.saved', session_id=None, turn_id=None))
             hub.publish(dict(type='config.saved', timestamp=time.time()))
@@ -617,6 +633,11 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     app.router.add_get('/api/events', events)
+    from .mcp_management import extension_api
+    app.router.add_get('/api/mcp/example',extension_api)
+    app.router.add_post('/api/mcp/import',extension_api)
+    app.router.add_post('/api/mcp/servers/{server}/{action:enable|disable|delete}',extension_api)
+    app.router.add_post('/api/mcp/tools/{tool}/test',extension_api)
     app.router.add_get('/api/sessions/{sid}/messages', messages)
     app.router.add_get('/api/sessions/{sid}/tool-calls', tool_calls)
     app.router.add_post('/api/sessions/{sid}/interrupt', interrupt)

@@ -1,4 +1,4 @@
-"""Read-only tool catalogue and the boundary between model plans and MCP calls."""
+"""Tool catalogue and the validated boundary between model plans and MCP calls."""
 import json
 from dataclasses import dataclass
 
@@ -13,7 +13,7 @@ def catalogue():
     return [dict(name=name, description=description, inputSchema={
         'type':'object', 'properties':properties, 'additionalProperties':False,
         **({'required':TOOLS[name].REQUIRED} if TOOLS[name].REQUIRED else {})},
-        annotations={'readOnlyHint':True, 'destructiveHint':False})
+        annotations={'readOnlyHint':getattr(TOOLS[name],'READ_ONLY',True), 'destructiveHint':False})
         for name, (description, properties) in SCHEMAS.items()]
 
 
@@ -39,10 +39,12 @@ def validate_arguments(name, arguments):
             raise ValueError('invalid_argument')
     if name == 'weather' and not arguments.get('city', '').strip():
         raise ValueError('city_required')
+    if any(key not in arguments for key in TOOLS[name].REQUIRED):
+        raise ValueError('required_argument')
     return arguments
 
 
-def parse_plan(text, config):
+def parse_plan(text, config, available=None):
     if len(text) > 4096:
         raise ValueError('plan_too_large')
     # Accept a single fenced JSON object, never eval or repair model-generated code.
@@ -55,9 +57,13 @@ def parse_plan(text, config):
     name = plan['tool']
     if name is None and plan['arguments'] == {}:
         return None, {}
-    if not isinstance(name, str) or name not in SCHEMAS or not config[name]:
+    definitions={tool['name']:tool for tool in (available if available is not None else catalogue())}
+    if not isinstance(name, str) or name not in definitions or not config.get(name):
         raise ValueError('tool_disabled_or_unknown')
-    return name, validate_arguments(name, plan['arguments'])
+    if name in SCHEMAS:return name, validate_arguments(name, plan['arguments'])
+    from .mcp_extensions import validate_schema_arguments
+    validate_schema_arguments(definitions[name]['inputSchema'],plan['arguments'])
+    return name,plan['arguments']
 
 
 @dataclass

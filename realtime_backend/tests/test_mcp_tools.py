@@ -32,7 +32,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         from voicehub.mcp_client import CommonToolsClient
         async with CommonToolsClient() as client:
             tools = await client.list_tools()
-            self.assertEqual({t['name'] for t in tools}, {'weather', 'news', 'system_info'})
+            self.assertEqual({t['name'] for t in tools}, {'weather', 'news', 'system_info','music'})
             result = await client.call('system_info', {})
             self.assertFalse(result.get('isError', False))
             value = json.loads(result['content'][0]['text'])

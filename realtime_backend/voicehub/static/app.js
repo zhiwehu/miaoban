@@ -680,6 +680,7 @@ $("settings-form").onsubmit = async (event) => {
     cfg.system_prompt = $("system-prompt").value;
     cfg.retention_days = Number($("retention-days").value);
     cfg.tools = {
+      ...state.config.tools,
       ...("planner" in state.config.tools ? {planner: $("tool-planner").value} : {}),
       weather: $("tool-weather").checked,
       news: $("tool-news").checked,

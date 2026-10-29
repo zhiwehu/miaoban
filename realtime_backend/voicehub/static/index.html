@@ -312,9 +312,24 @@
           <p id="mcp-load-status" role="status"></p>
           <div id="mcp-tool-list" class="mcp-tool-grid"></div>
           <article class="panel mcp-extension">
-            <h2>以后如何增加 MCP？</h2>
-            <p>可以扩展为导入 MCP 服务配置，再发现工具、校验参数并由用户启用。</p>
-            <p class="hint">当前支持上方三个内置工具，尚未开放用户上传或外部服务导入。新增工具还需要让决策层识别它；导入配置本身不会自动训练 Rex。</p>
+            <h2>本地音乐目录</h2>
+            <p class="hint">声音从后端电脑的默认音频设备播放。支持 MP3、WAV、M4A、AAC、AIFF、FLAC；首次使用请设置目录并启用。</p>
+            <form id="music-settings-form">
+              <label>音乐目录（后端电脑上的绝对路径）<input id="music-directory" maxlength="2048" placeholder="例如：/Users/你的用户名/Music" /></label>
+              <label class="check"><input type="checkbox" id="music-enabled" />启用本地音乐</label>
+              <div class="button-row"><button class="primary" type="submit">保存音乐设置</button><button class="secondary" type="button" id="music-scan">扫描音乐目录</button></div>
+            </form>
+            <p id="music-status" role="status" class="hint"></p><div id="music-library"></div>
+          </article>
+          <article class="panel mcp-extension">
+            <h2>上传自己的 MCP</h2>
+            <p>上传 JSON stdio 服务配置（command 为已安装程序的绝对路径），或根目录含 mcp.json 和 Python 服务的 ZIP 包。上传后处于停用状态，启用时才会运行并验证。</p>
+            <p class="hint">本地代码启用后以当前系统用户权限运行，并非安全沙箱。远程服务会收到调用参数。仅启用你信任的服务；不会自动安装依赖。ZIP 最大 2 MB、50 个文件，每个服务最多 20 个工具。</p>
+            <a class="connection-link" href="/api/mcp/example" download="local-echo-mcp.zip">下载可上传的回显示例</a>
+            <form id="mcp-upload-form"><label>MCP 配置或插件包<input type="file" id="mcp-upload-file" accept=".json,.zip" required /></label><div class="button-row"><button class="primary" type="submit">上传并检查文件</button></div></form>
+            <p id="mcp-upload-status" role="status" class="hint"></p>
+            <h3>外部 MCP 服务</h3><div id="mcp-external-servers"></div>
+            <p class="hint">现有 Rex 仍只识别原三类查询。新增外部工具通过动态目录交给对话模型规划，不会因上传而自动训练 Rex。</p>
           </article>
         </section>
         <section data-panel="logs" hidden>

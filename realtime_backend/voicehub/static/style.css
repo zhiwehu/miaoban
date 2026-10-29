@@ -1081,3 +1081,12 @@ footer {
 .tool-call-body pre { font-size:11px; line-height:1.65; overflow-wrap:anywhere; white-space:pre-wrap; background:var(--paper); padding:10px; margin:8px 0; }
 .tool-call-caption, .tool-call-error { font-size:11px; line-height:1.8; margin-bottom:0; }
 @media(max-width:1150px) { .mcp-tool-grid { grid-template-columns:1fr; } }
+.mcp-imported-server { padding:16px 0; border-top:1px solid var(--line); }
+.mcp-imported-server .hint, .mcp-imported-server .mono { overflow-wrap:anywhere; }
+.mcp-test-output { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; max-height:260px; overflow:auto; }
+.mcp-schema form button { margin-top:12px; }
+.mcp-service .tag { max-width:100%; white-space:normal; line-height:1.8; }
+.mcp-tool .section-heading>div { min-width:0; overflow-wrap:anywhere; }
+.mcp-imported-server h3 { overflow-wrap:anywhere; }
+#music-library { display:flex; flex-wrap:wrap; gap:10px; }
+#music-library .connection-device { flex-basis:100%; justify-content:space-between; }
