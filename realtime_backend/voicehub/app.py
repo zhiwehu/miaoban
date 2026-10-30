@@ -145,13 +145,12 @@ class Hub:
             for session in list(self.sessions.values()):
                 with contextlib.suppress(Exception):
                     await session.idle()
-            try:
-                await self.calendar.tick()
-                await self.timers.tick()
-            except Exception as exc:
-                if tick%60==0:
-                    logging.getLogger(__name__).warning('Calendar reminder dispatch failed: %s',type(exc).__name__)
-                    self.publish({'type':'calendar.error','message':'提醒调度暂时失败，请检查平台日志。'})
+            for name,scheduler in (('calendar',self.calendar),('timer',self.timers)):
+                try:await scheduler.tick()
+                except Exception as exc:
+                    if tick%60==0:
+                        logging.getLogger(__name__).warning('%s reminder dispatch failed: %s',name,type(exc).__name__)
+                        self.publish({'type':name+'.error','message':'提醒调度暂时失败，请检查平台日志。'})
             tick += 1
             if tick % 3600 == 0:
                 self.store.prune(self.config.get()['retention_days'])

@@ -2,7 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('voicehub/static/app.js', 'utf8').replace(/await boot\(\);\s*$/, '');
+// Audio tests isolate the MCP UI; its event handling has separate module tests.
+const source = fs.readFileSync('voicehub/static/app.js', 'utf8')
+  .replace("import {createMcpUi} from './mcp-ui.js';", '')
+  .replace(/await boot\(\);\s*$/, '');
 async function client({failSource=false}={}) {
   const order=[], nodes=new Map();
   const node=()=>({disabled:false,hidden:false,value:'',textContent:'',style:{},classList:{toggle(){},add(){},remove(){}},append(){},replaceChildren(){},setAttribute(){},querySelectorAll(){return []}});
@@ -17,7 +20,7 @@ async function client({failSource=false}={}) {
     async close(){this.state='closed'}
   }
   class Worklet {constructor(){this.port={};}connect(n){return n}disconnect(){}}
-  const sandbox={console,performance:{now(){return 1}},AudioContext,AudioWorkletNode:Worklet,
+  const sandbox={console,createMcpUi:()=>({}),performance:{now(){return 1}},AudioContext,AudioWorkletNode:Worklet,
     navigator:{mediaDevices:{async getUserMedia(){order.push(['microphone']);return stream},async enumerateDevices(){return []},addEventListener(){}}},
     document:{hidden:false,getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},querySelectorAll(){return []},createElement:node},
     location:{hash:'#lab'},history:{replaceState(){}},sessionStorage:{getItem(){return null}},

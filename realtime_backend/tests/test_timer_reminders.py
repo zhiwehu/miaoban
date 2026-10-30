@@ -42,3 +42,8 @@ class TimerReminderTests(unittest.IsolatedAsyncioTestCase):
      while not any(e['type']=='reply.final' and '煮蛋' in e.get('text','') for e in events):await asyncio.sleep(.01)
     self.assertGreaterEqual(len(attempts),2)
    finally:await session.close();await ops.close();store.close()
+ async def test_page_timer_is_delivered_without_waiting_for_nonexistent_voice_session(self):
+  with tempfile.TemporaryDirectory() as d:
+   ops=Operations(d);timers=TimerReminders(d,ops,{},lambda:True);now=time.time()
+   timers.store.timer('start','页面',1,now=now-2);await timers.tick(now)
+   record=ops.recent()[0];self.assertTrue(record['session_id'].startswith('ui-'));self.assertEqual(record['delivery'],'announced');await ops.close()

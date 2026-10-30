@@ -37,6 +37,7 @@ def main():
    loss.backward();torch.nn.utils.clip_grad_norm_(params,1);optimizer.step();scheduler.step();steps+=1;losses.append(loss.item())
    if steps%25==0 or args.smoke:print(json.dumps({'epoch':epoch+1,'step':steps,'loss':round(loss.item(),5),'elapsed':round(time.monotonic()-started,1)}),flush=True)
    if args.smoke:print('SMOKE_BACKWARD_OK',flush=True);return
+  save_file(adapter_state(model),str(output/('epoch-'+str(epoch+1)+'.safetensors')))
   validation=evaluate(model,trainer,valid);summary={key:value for key,value in validation.items() if key!='rows'};summary.update(epoch=epoch+1,loss=sum(losses)/len(losses),elapsed_seconds=round(time.monotonic()-started,1));history.append(summary)
   (output/'history.json').write_text(json.dumps(history,ensure_ascii=False,indent=2));print('VALIDATION',json.dumps(summary,ensure_ascii=False),flush=True)
   score=summary['accuracy']-.5*summary['null_false_positive_rate']

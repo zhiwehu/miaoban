@@ -44,3 +44,9 @@ class EverydayTests(unittest.TestCase):
   s=self.store
   for i in range(510):s.memory('remember','钥匙'+str(i),'抽屉');s.memory('forget','钥匙'+str(i))
   self.assertEqual(s.memory('list')['items'],[])
+ def test_list_output_is_bounded(self):
+  s=self.store
+  for i in range(60):s.shopping('add',['商品'+str(i)]);s.memory('remember','物品'+str(i),'抽屉')
+  self.assertLessEqual(len(s.shopping('list')['items']),50)
+  self.assertLessEqual(len(s.memory('list')['items']),20)
+  self.assertEqual(s.memory('list')['count'],60)

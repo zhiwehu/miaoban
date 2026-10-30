@@ -4,7 +4,8 @@ from .rex_runtime import predict,extract
 from .everyday_schema import TOOL_LABELS,ACTION_LABELS
 from voicehub.slot_normalizer import normalize_spans
 
-def evaluate(model,trainer,rows):
+def evaluate(model,trainer,rows,engine=None):
+ model.eval()
  results=[]
  for row in rows:
   start=time.monotonic();text=row.get('classification_text',row['text']);tool=predict(model,trainer,text,TOOL_LABELS);action=None
@@ -13,7 +14,7 @@ def evaluate(model,trainer,rows):
   if row.get('expected') and row['label'] in ('weather','news','system_info','null'):
    plan={'status':'chat','tool':None,'arguments':{}} if tool=='null' else {}
    if tool in ('weather','news','system_info'):
-    spans=extract(model,trainer,tool,row['text'])
+    spans=engine.extract_slots(tool,row['text']) if engine is not None else extract(model,trainer,tool,row['text'])
     try:plan=normalize_spans(tool,row['text'],spans,{'default_city':'','news_source':'bbc','news_limit':3},row.get('previous'))
     except ValueError:plan={}
    plan_correct=all(plan.get(key)==row['expected'].get(key) for key in ('status','tool','arguments'));correct=correct and plan_correct

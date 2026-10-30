@@ -84,7 +84,7 @@ async def _extension_api(request):
                 async with CommonToolsClient(timeout=timeout,data_root=hub.root) as client:
                     result=await client.call(name,arguments)
             else:result=await manager.call(name,arguments,timeout)
-            if len(json.dumps(result))>16000:raise ValueError('tool_output_limit')
+            if len(json.dumps(result,ensure_ascii=False))>16000:raise ValueError('tool_output_limit')
     except (MCPError,OSError,TimeoutError) as exc:
         hub.store.event(dict(type='tool.test.failed',tool=name))
         return web.json_response({'error':{'code':'tool_unavailable','message':'MCP 调用失败或超时，请检查服务。'}},status=502)

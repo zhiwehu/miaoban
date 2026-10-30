@@ -21,10 +21,30 @@ class Engine:
         from safetensors.torch import load_file
         targets=inject(self.model,config['rank'],config['alpha'],config['dropout'])
         if targets!=config['targets']:raise ValueError('Target mismatch')
-        load_adapter(self.model,load_file(str(adapter/'adapter_model.safetensors')))
-        merge(self.model);self.model.eval()
+        state=load_file(str(adapter/'adapter_model.safetensors'))
+        load_adapter(self.model,state)
+        self.states={};self.active_state='everyday'
+        if self.actions:
+            # Reuse one frozen base; switch only the small LoRA deltas for legacy slots.
+            core=root/'data/adapters/rex-mcp-router-r16-slots-v2'
+            core_config=json.loads((core/'adapter_config.json').read_text())
+            if any(core_config[key]!=config[key] for key in ('rank','alpha','targets')):raise ValueError('Core slot adapter mismatch')
+            self.states={'everyday':state,'core':load_file(str(core/'adapter_model.safetensors'))}
+        else:merge(self.model)
+        self.model.eval()
         from training.rex_runtime import predict
         predict(self.model,self.trainer,'你好',self.labels)
+
+    def select(self,name):
+        if self.states and self.active_state!=name:
+            from training.lora import load_adapter
+            load_adapter(self.model,self.states[name]);self.active_state=name
+
+    def extract_slots(self,tool,text):
+        from training.rex_runtime import extract
+        self.select('core')
+        try:return extract(self.model,self.trainer,tool,text)
+        finally:self.select('everyday')
 
     def plan(self,request):
         from training.rex_runtime import predict,extract
@@ -45,10 +65,10 @@ class Engine:
         if tool=='invalid':
             return {'status':'clarify','tool':None,'arguments':{},'message':'我没确定你想查询什么，请再说具体一点。'}
         if tool in self.actions:
-            action=predict(self.model,self.trainer,classifier,self.actions[tool])
-            if action=='invalid':return {'status':'clarify','tool':tool,'arguments':{},'message':'操作还不明确，请再说具体一些。'}
-            return {'status':'extract','tool':tool,'arguments':{'action':action}}
-        spans=extract(self.model,self.trainer,tool,text)
+            # Rex chooses the tool. Action is a bounded parameter extracted by the LLM;
+            # the auxiliary Rex action head is evaluated but never authorizes a mutation.
+            return {'status':'extract','tool':tool,'arguments':{}}
+        spans=self.extract_slots(tool,text)
         if len(spans)>12:
             return {'status':'clarify','tool':tool,'arguments':{},'message':'这次参数较多，请一次查询一个具体问题。'}
         try:

@@ -7,14 +7,15 @@ def main():
  from voicehub.rex_planner_worker import Engine
  from training.everyday_eval import evaluate
  engine=Engine(args.adapter)
- paths={'test':'data/training/router-everyday-v4/test.jsonl','challenge':'training/everyday_challenge.jsonl','core_v2_test':'data/training/router-slots-v2/test.jsonl','core_v3_test':'data/training/router-slots-v3/test.jsonl'}
+ paths={'validation':'data/training/router-everyday-v4/validation.jsonl','test':'data/training/router-everyday-v4/test.jsonl','challenge':'training/everyday_challenge.jsonl','core_v2_test':'data/training/router-slots-v2/test.jsonl','core_v3_test':'data/training/router-slots-v3/test.jsonl'}
  output=Path(args.adapter)/'evaluation';output.mkdir(exist_ok=True);summaries={}
  for name,path in paths.items():
   source=Path(path)
   if not source.exists():continue
-  rows=[json.loads(line) for line in source.read_text().splitlines()];result=evaluate(engine.model,engine.trainer,rows)
+  rows=[json.loads(line) for line in source.read_text().splitlines()];result=evaluate(engine.model,engine.trainer,rows,engine=engine)
   (output/(name+'.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2))
   summary={key:value for key,value in result.items() if key!='rows'};summary['sha256']=hashlib.sha256(source.read_bytes()).hexdigest();summaries[name]=summary
   print(name,json.dumps(summary,ensure_ascii=False),flush=True)
+ summaries['artifact']={'adapter_sha256':hashlib.sha256((Path(args.adapter)/'adapter_model.safetensors').read_bytes()).hexdigest(),'config_sha256':hashlib.sha256((Path(args.adapter)/'adapter_config.json').read_bytes()).hexdigest(),'device':'cpu','mode':'eval','core_slot_adapter_sha256':hashlib.sha256(Path('data/adapters/rex-mcp-router-r16-slots-v2/adapter_model.safetensors').read_bytes()).hexdigest()}
  (output/'summary.json').write_text(json.dumps(summaries,ensure_ascii=False,indent=2))
 if __name__=='__main__':main()

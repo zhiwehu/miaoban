@@ -21,7 +21,7 @@ async def rex_plan(pipeline,history,cfg):
         return {'status':'clarify','tool':None,'arguments':{},'message':'这个查询工具当前未启用。'}
     if status=='extract':
         from training.everyday_schema import ACTION_LABELS
-        if tool not in ACTION_LABELS or result.get('arguments',{}).get('action') not in ACTION_LABELS[tool].values():raise PlannerError('planner_invalid_action')
+        if tool not in ACTION_LABELS or result.get('arguments')!={}:raise PlannerError('planner_invalid_action')
     if status=='ready':validate_arguments(tool,result.get('arguments'))
     if status=='chat' and (tool is not None or result.get('arguments')!={}):
         raise PlannerError('planner_invalid_chat')
@@ -43,11 +43,20 @@ async def chat(pipeline, history):
     if workflow is None:workflow=calendar_route(pipeline,history)
     cached_rex=None
     cfg=pipeline.config['tools']
-    if workflow is None and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
-        yield ToolNotice('tool_planning','收到，我来处理。')
+    if workflow is None and music_plan(latest) is None and file_plan(latest) is None and not music_refusal(latest) and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
+        if re.search(r'购物|采购|清单|计时|倒数|倒计时|放哪|位置|记住|物品|存放',latest):yield ToolNotice('tool_planning','收到，我来处理。')
         try:cached_rex=await rex_plan(pipeline,history,cfg)
         except (PlannerError,ValueError,TimeoutError):
             yield '本地工具规划器暂时不可用，请稍后重试。';return
+        from .everyday_chat import candidate as everyday_candidate,fallback as everyday_fallback,context_text as everyday_context,inconsistent as everyday_inconsistent
+        if (cached_rex['status']!='extract' or everyday_inconsistent(cached_rex,latest)) and everyday_candidate(everyday_context(pipeline,history)):
+            try:
+                supplemental=await everyday_fallback(pipeline,history)
+                if (supplemental is not None and everyday_inconsistent(supplemental,latest)) or (supplemental is None and everyday_inconsistent(cached_rex,latest)):
+                    yield '计时操作还不明确，请说明计时器名称和要做的操作。';return
+                if supplemental is not None:cached_rex=supplemental
+            except (ValueError,TimeoutError):
+                yield '这次工具操作还不明确，请换个简短说法。';return
         if cached_rex['status']=='extract':
             from .everyday_chat import execute
             async with contextlib.aclosing(execute(pipeline,history,cached_rex)) as source:
@@ -158,7 +167,7 @@ async def chat(pipeline, history):
         return
     if name in ('shopping_list','timer','item_memory'):
         from .everyday_chat import execute
-        async with contextlib.aclosing(execute(pipeline,history,{'tool':name,'arguments':{'action':arguments['action']}})) as source:
+        async with contextlib.aclosing(execute(pipeline,history,{'tool':name,'arguments':{},'preextracted':arguments,'planner':'llm_slots'})) as source:
             async for value in source:yield value
         return
     if name == 'news':

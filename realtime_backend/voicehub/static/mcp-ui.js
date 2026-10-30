@@ -72,7 +72,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       summary.append(node('span','tool-call-mark','MCP'),node('strong','',names[call.name] || call.name),
         node('span','tool-call-state',phases[call.phase]),elapsed);
       const body = node('div','tool-call-body');
-      body.append(node('p','hint',call.name+' · '+(call.planner === 'rex_slots_llm' ? '本地 Rex 决策 · 4B 参数提取' : call.planner === 'rex' ? '本地 Rex 决策' :
+      body.append(node('p','hint',call.name+' · '+(call.planner === 'rex_llm_fallback' ? 'Rex 未确定 · 对话模型补充决策' : call.planner === 'rex_slots_llm' ? '本地 Rex 决策 · 对话模型参数提取' : call.planner === 'llm_slots' ? '对话模型决策与参数提取' : call.planner === 'rex' ? '本地 Rex 决策' :
         call.planner === 'llm' ? '对话模型决策' : call.planner === 'dynamic_llm' ? '动态工具目录 · 对话模型决策' :
         call.planner === 'file_rules' ? '明确文件整理指令解析' : call.planner === 'music_rules' ? '明确音乐指令解析' : '决策方式未记录')));
       body.append(node('p','tool-call-caption','调用参数'),

@@ -14,7 +14,8 @@ class TimerReminders:
    session=next((s for s in self.sessions.values() if not s.closed and ((timer['device'] and s.device_id==timer['device']) or (not timer['device'] and s.id==timer['session']))),None)
    if session is None:
     if not timer['device'] and not timer['session']:
-     self.operations.notify(identity,'','计时结束：'+timer['name'],timer['name']+'，时间到了。',kind='timer',timer_id=timer['id'],generation=timer['generation'],deadline=timer['deadline'])
+     self.operations.notify(identity,'ui-timer','计时结束：'+timer['name'],timer['name']+'，时间到了。',kind='timer',timer_id=timer['id'],generation=timer['generation'],deadline=timer['deadline'])
+     self.operations.announced(identity)
     continue
    if len(session.notification_ids)>=25:continue
    self.operations.notify(identity,session.id,'计时结束：'+timer['name'],timer['name']+'，时间到了。',kind='timer',timer_id=timer['id'],generation=timer['generation'],deadline=timer['deadline'])

@@ -27,15 +27,17 @@ class EverydayStore:
   names=[clean(x,60) for x in (items or [])]
   def apply(rows):
    current=[r for r in rows if r['list_name']==list_name and r['state']!='removed']
-   if action=='list':return {'status':'ok','items':current}
+   if action=='list':return {'status':'ok','items':current[:50],'count':len(current),'truncated':len(current)>50}
    if action=='add':
     rows[:]=[r for r in rows if r['state']!='removed']
-    if len(rows)+len(names)>500:raise ValueError('everyday_limit')
+    if len(rows)+sum(not any(r['name']==name and r['state']=='pending' for r in current) for name in set(names))>500:raise ValueError('everyday_limit')
+    selected=[]
     for name in dict.fromkeys(names):
      if not any(r['name']==name and r['state']=='pending' for r in current):
       row={'id':uuid.uuid4().hex,'list_name':list_name,'name':name,'state':'pending'}
       rows.append(row);current.append(row)
-    return {'status':'ok','items':current}
+     selected.append(next(r for r in current if r['name']==name and r['state']=='pending'))
+    return {'status':'ok','items':selected}
    selected=[]
    for name in names:
     candidates=[r for r in current if r['state']=='pending'] if action=='complete' and any(r['state']=='pending' and name in r['name'] for r in current) else current
@@ -50,7 +52,9 @@ class EverydayStore:
   if action!='list':item=clean(item,60)
   if action=='remember':location=clean(location,300)
   def apply(rows):
-   if action=='list':return {'status':'ok','items':[r for r in rows if not r.get('deleted')]}
+   if action=='list':
+    current=[r for r in rows if not r.get('deleted')]
+    return {'status':'ok','items':current[:20],'count':len(current),'truncated':len(current)>20}
    matches=[r for r in rows if r['item']==item]
    if action=='remember':
     rows[:]=[r for r in rows if not r.get('deleted') or r['item']==item]
@@ -86,7 +90,13 @@ class EverydayStore:
     row={'id':uuid.uuid4().hex,'name':name,'device':device,'session':session,'request':request,'state':'running','deadline':now+duration_seconds,'remaining_seconds':duration_seconds,'generation':1}
     rows.append(row);return output([row])
    selected=[r for r in active if r['name']==name] if name else active
-   if action=='status':return output(selected)
+   if action=='status':
+    if name:selected=sorted(selected,key=lambda r:r['deadline'],reverse=True)[:1]
+    else:selected=sorted(selected,key=lambda r:(r['state']=='paused' or r['deadline']>now,r['deadline']),reverse=True)[:20]
+    return output(selected)
+   live=[r for r in selected if r['state']=='paused' or r['deadline']>now]
+   if live:selected=live
+   elif name and selected:selected=sorted(selected,key=lambda r:r['deadline'],reverse=True)[:1]
    # Completed timers remain queryable but must not make an unnamed active timer ambiguous.
    if not name:selected=[r for r in selected if r['state']=='paused' or r['deadline']>now]
    if len(selected)!=1:return {'status':'needs_selection' if selected else 'not_found','items':selected}
