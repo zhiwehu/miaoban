@@ -20,6 +20,9 @@
 本地ASR → LLM → TTS对话、Opus小智协议适配、通用WebSocket客户端、独立会话/取消、
 网页记录和模型配置、设备播放准备握手、有界缓冲和日志。Qwen TTS可单独常驻MLX进程。
 
+实验性 [MQTT＋UDP 接入](docs/MQTT_UDP.md)可选启用，复用同一会话与模型管线。
+已完成真实 Broker、软件客户端和喵伴实机对照；两种协议均能正常对话，本轮听感无明显速度差异。
+
 待机听声转头已有实机反馈；底座包含角度反馈、限幅、堵转和超时保护。
 唤醒后转头一致性、真实外放自然插话、长时间与多设备运行尚未完整验收。
 后台支持取消机制并不等于当前ESP32已完成全双工AEC。
@@ -27,7 +30,7 @@
 ## 目录
 
 ```text
-realtime_backend/           独立后端、网页、49项测试、启动脚本
+realtime_backend/           独立后端、网页、67项测试、启动脚本
 firmware/base_controller/  底座ESP32-C3控制器源码
 firmware/shared/           串口协议解析
 firmware/head/             EchoEar 猫头源码工程、依赖锁和构建配置
@@ -46,7 +49,7 @@ firmware/README.md         上游、布局、构建与硬件边界
 cd realtime_backend
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-local.txt
-brew install ffmpeg
+brew install ffmpeg mosquitto
 ```
 
 仅用HTTP模型服务时安装requirements.txt即可。本包不含模型、VAD权重或用户运行数据。

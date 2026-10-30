@@ -111,3 +111,10 @@ playback_not_ready并停止本轮，不发送音频。
 取消与断线会取消等待；其他轮次的确认不能释放当前轮次。未声明能力的旧设备仍走兼容路径。
 tts.stop也带turn_id；支持的设备回复tts.stopped及相同计数，用于诊断收包/状态丢包，
 此回复不表示实际扬声器播放完毕，不得据此把历史标记为played。
+
+## 可选 MQTT＋UDP 与计时
+
+可选入口的配网、认证、Topic、UDP 格式与实测边界见 [MQTT_UDP.md](MQTT_UDP.md)。
+WebSocket 仍为默认接入，启用 MQTT 不创建另一套会话或模型核心。
+对小智兼容入口（WebSocket / MQTT＋UDP），管理日志中的 `transport.first_audio` 表示
+本轮第一个 Opus 包已由服务端发送，包含 transport 和 packet_bytes；不是实际声学出声确认。

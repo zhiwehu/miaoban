@@ -84,6 +84,7 @@ class Hub:
         self.http = self.local = None
         self.factory = pipeline_factory
         self.maintenance = None
+        self.mqtt = None
 
     def publish(self, event):
         for watcher in list(self.watchers):
@@ -154,6 +155,12 @@ async def gateway(request):
         raise web.HTTPServiceUnavailable(text='Connection capacity reached')
     ws = web.WebSocketResponse(heartbeat=20, max_msg_size=32768, receive_timeout=90)
     await ws.prepare(request)
+    return await device_gateway(request, ws)
+
+
+async def device_gateway(request, ws):
+    """Shared device session; transport implements the bounded socket methods below."""
+    hub = request.app[HUB]
     hub.sockets.add(ws)
     session = ingress = None
     legacy = request.path == '/xiaozhi/v1/'
@@ -190,12 +197,21 @@ async def gateway(request):
         if len(hub.sessions) >= 8:
             raise ValueError('capacity_reached')
         encoder, encoding_turn = None, None
+        first_packet_turn = None
         features = hello.get('features', {})
         if not isinstance(features, dict):
             raise ValueError('invalid_capabilities')
         ready_supported = legacy and features.get('playback_ready') is True
         prepared = asyncio.Event()
         ready_state = None
+        async def send_audio_packet(packet):
+            nonlocal first_packet_turn
+            await ws.send_bytes(packet)
+            if first_packet_turn != encoding_turn:
+                first_packet_turn = encoding_turn
+                await session.emit('transport.first_audio', session.turn,
+                    transport=getattr(request, 'protocol_name', 'xiaozhi'), packet_bytes=len(packet))
+
         async def send(event):
             nonlocal encoder, encoding_turn
             if ws.closed:
@@ -228,11 +244,11 @@ async def gateway(request):
                     await asyncio.sleep(.1)
             elif kind == 'audio.chunk' and encoder and encoding_turn == event['turn_id']:
                 for packet in encoder.encode(base64.b64decode(event['data'])):
-                    await ws.send_bytes(packet)
+                    await send_audio_packet(packet)
             elif kind == 'audio.end':
                 if encoder:
                     for packet in encoder.encode(b'', final=True):
-                        await ws.send_bytes(packet)
+                        await send_audio_packet(packet)
                 encoder = None
                 await asyncio.sleep(event.get('drain_ms', 0)/1000)
                 await ws.send_json({'type':'tts','state':'stop','session_id':sid,
@@ -261,7 +277,7 @@ async def gateway(request):
                 wake_mode=mode, audio=dict(format='pcm_s16le', sample_rate=16000, channels=1),
                 capabilities=dict(barge_in=cfg['audio']['barge_in'] and aec,
                                   aec_verification='client_declared', playback_ack=True)))
-        await session.emit('session.connected', device_id=device, protocol='xiaozhi' if legacy else 'v1',
+        await session.emit('session.connected', device_id=device, protocol=getattr(request, 'protocol_name', 'xiaozhi' if legacy else 'v1'),
                            wake_mode=mode, barge_in=cfg['audio']['barge_in'] and aec)
         ingress = AudioInput(session, format, aec, cfg['audio'])
         controls, window = 0, time.monotonic()
@@ -355,6 +371,7 @@ async def api(request):
         except ValueError:
             vad = False
         return web.json_response(dict(version='0.1.0', online=len(hub.sessions), vad_available=vad,
+            mqtt_ready=bool(hub.mqtt and hub.mqtt.ready.is_set()),
             model_validation='not_probed', sessions=[dict(id=s.id, device_id=s.device_id, state=s.state,
             wake_mode=s.wake_mode) for s in hub.sessions.values()]))
     if name == 'config':
@@ -428,6 +445,17 @@ async def ota(request):
                token=hub.auth['device_token'], version=1)))
 
 
+async def mqtt_ota(request):
+    """Separate per-device provisioning: shared WS tokens never grant MQTT credentials."""
+    service = request.app[HUB].mqtt
+    if service is None:
+        raise web.HTTPNotFound()
+    value = service.device_config(request.headers.get('Device-Id', ''),request.match_info['token'])
+    if value is None:
+        raise web.HTTPNotFound()
+    return web.json_response({'mqtt': value})
+
+
 def create_device_app(hub):
     """Device ingress only: no dashboard, management API or admin authentication bypass."""
     app = web.Application(middlewares=[guard], client_max_size=65536)
@@ -436,10 +464,11 @@ def create_device_app(hub):
     app.router.add_get('/ws', gateway)
     app.router.add_get('/xiaozhi/v1/', gateway)
     app.router.add_route('*', '/xiaozhi/ota/{token}/', ota)
+    app.router.add_post('/xiaozhi/mqtt-ota/{token}/', mqtt_ota)
     return app
 
 
-def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port=8766):
+def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port=8766, mqtt_config=None):
     if device_host:
         address = ipaddress.ip_address(device_host)
         if not address.is_private or address.is_unspecified or address.is_multicast:
@@ -450,12 +479,18 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
         await hub.start()
         device_runner = None
         try:
+            if mqtt_config:
+                from .mqtt_service import MqttService, load_config
+                hub.mqtt = MqttService(hub, load_config(mqtt_config))
+                await hub.mqtt.start()
             if device_host:
                 device_runner = web.AppRunner(create_device_app(hub), access_log=None, shutdown_timeout=3)
                 await device_runner.setup()
                 await web.TCPSite(device_runner, device_host, device_port).start()
             yield
         finally:
+            if hub.mqtt:
+                await hub.mqtt.close()
             await hub.close()
             if device_runner:
                 await device_runner.cleanup()

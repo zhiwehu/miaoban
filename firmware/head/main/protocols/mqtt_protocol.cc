@@ -62,6 +62,7 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
     auto password = settings.GetString("password");
     int keepalive_interval = settings.GetInt("keepalive", 240);
     publish_topic_ = settings.GetString("publish_topic");
+    auto subscribe_topic = settings.GetString("subscribe_topic");
 
     if (endpoint.empty()) {
         ESP_LOGW(TAG, "MQTT endpoint is not specified");
@@ -136,6 +137,11 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
         return false;
     }
 
+    // A standard broker does not auto-subscribe clients like the factory service.
+    if (!subscribe_topic.empty() && !mqtt_->Subscribe(subscribe_topic)) {
+        ESP_LOGE(TAG, "Failed to subscribe to device control topic");
+        return false;
+    }
     ESP_LOGI(TAG, "Connected to endpoint");
     return true;
 }
@@ -237,9 +243,16 @@ bool MqttProtocol::OpenAudioChannel() {
             ESP_LOGE(TAG, "Invalid audio packet type: %x", data[0]);
             return;
         }
+        uint16_t declared_size = ntohs(*(uint16_t*)&data[2]);
+        if (declared_size == 0 || declared_size > 2048 ||
+            data.size() != aes_nonce_.size() + declared_size ||
+            memcmp(data.data() + 4, aes_nonce_.data() + 4, 4) != 0) {
+            ESP_LOGW(TAG, "Invalid UDP audio length or session");
+            return;
+        }
         uint32_t timestamp = ntohl(*(uint32_t*)&data[8]);
         uint32_t sequence = ntohl(*(uint32_t*)&data[12]);
-        if (sequence < remote_sequence_) {
+        if (sequence <= remote_sequence_) {
             ESP_LOGW(TAG, "Received audio packet with old sequence: %lu, expected: %lu", sequence, remote_sequence_);
             return;
         }
@@ -288,6 +301,7 @@ std::string MqttProtocol::GetHelloMessage() {
     cJSON_AddBoolToObject(features, "aec", true);
 #endif
     cJSON_AddBoolToObject(features, "mcp", true);
+    cJSON_AddBoolToObject(features, "playback_ready", true);
     cJSON_AddItemToObject(root, "features", features);
     cJSON* audio_params = cJSON_CreateObject();
     cJSON_AddStringToObject(audio_params, "format", "opus");
