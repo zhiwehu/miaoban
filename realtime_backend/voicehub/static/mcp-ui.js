@@ -1,3 +1,4 @@
+import {createMcpSettings} from './mcp-settings.js';
 import {normalizeToolEvent, toolCallsForTurn} from './mcp-calls.mjs';
 import {setupMcpExtensions} from './mcp-extensions-ui.js';
 
@@ -22,6 +23,7 @@ const errors = {upstream_timeout:'上游服务响应超时，请稍后重试。'
 const duration = ms => ms < 1000 ? Math.round(ms)+' ms' : (ms/1000).toFixed(1)+' 秒';
 
 export function createMcpUi({api, node, notice, onConfig}) {
+  const configuration=createMcpSettings({api,node,notice});
   const events = new Map(), active = new Map(), revisions = new Map();
   const expanded = new Set();
   let catalogue, saving = false;
@@ -94,6 +96,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
     target.replaceChildren();
     $('mcp-summary').textContent = (catalogue.tools.length+1)+' 项能力 · 点击具体工具配置';
     $('mcp-planner').textContent = catalogue.planner === 'rex' ? '本地 Rex · 决策与参数抽取' : '对话模型 · JSON 规划';
+    if(catalogue.planner==='rex' && catalogue.tools.some(t=>['shopping_list','timer','item_memory'].includes(t.name)&&t.enabled))$('mcp-planner').textContent='本地 Rex 决策 · 新工具由对话模型提取动作与参数 · 受限回退';
     if(catalogue.tools.some(t=>t.server_id!=='common-tools' && t.enabled))$('mcp-planner').textContent+=' · 扩展由对话模型规划';
     extensions.render(catalogue);
     if (!catalogue.tools.length) target.append(node('p','hint','还没有已注册的工具。'));
@@ -116,8 +119,8 @@ export function createMcpUi({api, node, notice, onConfig}) {
             await api('mcp/servers/'+tool.server_id+'/'+(toggle.checked?'enable':'disable'),{
               method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trust:false})});
           } else {
-            const {config} = await api('config');config.tools[tool.name] = toggle.checked;
-            const saved = await api('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
+            const {config} = await api('config/tools');config.tools[tool.name] = toggle.checked;
+            const saved = await api('config/tools',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
             onConfig(saved.config);
           }
           await refreshCatalogue();
@@ -133,6 +136,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
       card.append(heading,node('p','',descriptions[tool.name] || tool.description),node('p','hint',tool.server_id!=='common-tools' ?
         '用户 MCP · 通过下方服务开关控制' : tool.name==='calendar' ? '本地日程 · 按配置时区提醒' : tool.name==='file_organizer' ? '本机文件元数据 · 预览后页面确认' : tool.name==='music' ? '播放控制 · 后端电脑音频输出' :
         ['shopping_list','timer','item_memory'].includes(tool.name) ? '本地保存 · 无需联网' : tool.name === 'system_info' ? '本机读取 · 只读' : '需要联网 · 只读'));
+      const toolSettings=configuration.tool(tool.name);
       const schema = node('details','mcp-schema');
       schema.append(node('summary','','查看调用参数'));
       const list = node('dl','mcp-parameters');
@@ -146,7 +150,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
         list.append(term,node('dd','',bits.join(' · ')));
       }
       schema.append(list);
-      const details=node('details','mcp-tool-details');details.open=opened.has(tool.name);details.append(node('summary','','配置与测试'));
+      const details=node('details','mcp-tool-details');details.open=opened.has(tool.name);details.append(node('summary','','配置与测试'));if(toolSettings)details.append(toolSettings);
       const settings=extensions.toolSettings(tool.name);if(settings){details.append(settings);if(['shopping_list','timer','item_memory'].includes(tool.name))settings.querySelector('button[type=submit]').disabled=!tool.enabled;}
       details.append(node('p','mcp-example','试着说：“'+(examples[tool.name] || tool.name)+'”'),schema,extensions.toolTest(tool));
       card.append(details);
@@ -158,6 +162,7 @@ export function createMcpUi({api, node, notice, onConfig}) {
     $('mcp-refresh').disabled = true;
     $('mcp-load-status').textContent = '正在读取工具列表…';
     try {
+      await configuration.load();
       catalogue = await api('mcp');
       renderCatalogue();
       $('mcp-load-status').textContent = '';

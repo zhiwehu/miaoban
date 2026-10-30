@@ -84,13 +84,7 @@ async function api(path, options = {}) {
   }
   return response.json();
 }
-const mcp = createMcpUi({api,node,notice,onConfig:cfg => {
-  state.config = cfg;
-  // Synchronize only these switches; preserve unsaved model/voice form fields.
-  $('tool-weather').checked = cfg.tools.weather;
-  $('tool-news').checked = cfg.tools.news;
-  $('tool-system-info').checked = cfg.tools.system_info;
-}});
+const mcp = createMcpUi({api,node,notice,onConfig:()=>{}});
 function view(name) {
   if(name === 'skills') name = 'mcp';
   if (!["overview", "conversations", "connections", "models", "mcp", "logs", "lab"].includes(name))
@@ -120,8 +114,7 @@ document
 $("go-lab").onclick = () => view("lab");
 $("go-logs").onclick = () => view("logs");
 $("mcp-settings").onclick = () => {
-  view('models');
-  $('tool-planner').focus();
+  $('mcp-common-settings').scrollIntoView({behavior:'smooth',block:'start'});
 };
 window.onhashchange = () => view(location.hash.slice(1));
 view(location.hash.slice(1));
@@ -642,15 +635,6 @@ function populateConfig(cfg) {
   };
   for (const [id, value] of Object.entries(mapping)) $(id).value = value;
   $("barge-in").checked = cfg.audio.barge_in;
-  $("tool-weather").checked = cfg.tools.weather;
-  $("tool-planner").value = cfg.tools.planner || "llm";
-  $("tool-planner").disabled = !("planner" in cfg.tools);
-  $("tool-news").checked = cfg.tools.news;
-  $("tool-system-info").checked = cfg.tools.system_info;
-  $("tool-city").value = cfg.tools.default_city;
-  $("tool-news-source").value = cfg.tools.news_source;
-  $("tool-news-limit").value = cfg.tools.news_limit;
-  $("tool-timeout").value = cfg.tools.timeout_seconds;
   renderOverview();
 }
 $("settings-form").onsubmit = async (event) => {
@@ -680,18 +664,8 @@ $("settings-form").onsubmit = async (event) => {
     });
     cfg.system_prompt = $("system-prompt").value;
     cfg.retention_days = Number($("retention-days").value);
-    cfg.tools = {
-      ...state.config.tools,
-      ...("planner" in state.config.tools ? {planner: $("tool-planner").value} : {}),
-      weather: $("tool-weather").checked,
-      news: $("tool-news").checked,
-      system_info: $("tool-system-info").checked,
-      default_city: $("tool-city").value.trim(),
-      news_source: $("tool-news-source").value,
-      news_limit: Number($("tool-news-limit").value),
-      timeout_seconds: Number($("tool-timeout").value),
-    };
-    const result = await api("config", {
+    delete cfg.tools;
+    const result = await api("config/models", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cfg),
@@ -1133,7 +1107,7 @@ window.addEventListener("pagehide", () => {
 });
 async function boot() {
   try {
-    populateConfig((await api("config")).config);
+    populateConfig((await api("config/models")).config);
     await refresh();
     await refreshServices();
     if (state.view === 'mcp') await mcp.refreshCatalogue();

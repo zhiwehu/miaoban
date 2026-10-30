@@ -75,6 +75,7 @@ async def guard(request, handler):
 
 class Hub:
     def __init__(self, root, pipeline_factory, *, skills_enabled=False):
+        self.provision_lock = asyncio.Lock()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         os.chmod(self.root, 0o700)
@@ -417,7 +418,7 @@ async def device_gateway(request, ws):
 
 
 async def api(request):
-    hub, name = request.app[HUB], request.match_info.get('name', request.path.rsplit('/', 1)[-1])
+    hub, name = request.app[HUB], request.match_info.get('name', 'config' if request.match_info.get('scope') else request.path.rsplit('/', 1)[-1])
     if name == 'mcp':
         from .tools import catalogue
         cfg = hub.config.get()['tools']
@@ -444,6 +445,11 @@ async def api(request):
             value = await request.json()
             from .config import validate
             current=hub.config.get()
+            scope=request.match_info.get('scope')
+            allowed={'tools'} if scope=='tools' else set(current)-{'tools'}
+            if scope:
+                if not isinstance(value,dict) or set(value)!=allowed:raise ValueError('invalid_config_scope')
+                value={**current,**value}
             if isinstance(value,dict) and isinstance(value.get('tools'),dict):
                 for key in ('music','music_directory','file_organizer','file_directory','calendar','shopping_list','timer','item_memory'):
                     value['tools'].setdefault(key,current['tools'][key])
@@ -457,10 +463,15 @@ async def api(request):
                 current['tools']['music_directory']!=value['tools']['music_directory']):
                 from .music_player import MusicPlayer
                 await asyncio.to_thread(MusicPlayer(hub.root,current['tools']['music_directory']).execute,'stop')
+            if scope=='models':value['tools']=hub.config.get()['tools']
+            elif scope=='tools':value={**hub.config.get(),'tools':value['tools']}
             hub.config.save(value)
             hub.store.event(dict(type='config.saved', session_id=None, turn_id=None))
             hub.publish(dict(type='config.saved', timestamp=time.time()))
-        return web.json_response({'config':hub.config.get(), 'applies_to':'new_connections'})
+        config=hub.config.get()
+        scope=request.match_info.get('scope')
+        if scope:config={k:v for k,v in config.items() if (k=='tools')==(scope=='tools')}
+        return web.json_response({'config':config, 'applies_to':'new_connections'})
     if name == 'sessions':
         return web.json_response(hub.store.sessions(float(request.query['before']) if 'before' in request.query else None))
     if name == 'logs':
@@ -665,6 +676,8 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/firmware', client_firmware)
     app.router.add_get('/api/clients/{client}/verify', client_verification)
     app.router.add_get('/api/clients/{client}/connection', client_connection)
+    from .provisioning import prepare
+    app.router.add_post('/api/clients/{client}/prepare', prepare)
     app.router.add_get('/api/events', events)
     from .calendar_api import calendar_api
     app.router.add_get('/api/calendar/settings',calendar_api)
@@ -707,6 +720,8 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/sessions/{sid}/tool-calls', tool_calls)
     app.router.add_post('/api/sessions/{sid}/interrupt', interrupt)
     app.router.add_post('/api/services/{kind}/{action}', service_action)
+    app.router.add_get('/api/config/{scope:models|tools}', api)
+    app.router.add_put('/api/config/{scope:models|tools}', api)
     app.router.add_get('/api/{name}', api)
     app.router.add_put('/api/config', api)
     app.router.add_post('/api/login', api)

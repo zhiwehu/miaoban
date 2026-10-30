@@ -1,6 +1,8 @@
-import {PROFILE,sha256,inspectDevice,readFlashBounded,encodeBackup,decodeBackup,validateBackup,upgrade,restore} from './echoear-upgrade-core.mjs';
+import {connectionNvs} from './echoear-nvs.mjs';
+import {encodeDeviceBackup,decodeDeviceBackup,validateDeviceBackup,applyNetwork,restoreDeviceBackup} from './echoear-device-backup.mjs';
+import {PROFILE,sha256,inspectDevice,inspectRecoveryDevice,readFlashBounded,encodeBackup,decodeBackup,validateBackup,upgrade,restore} from './echoear-upgrade-core.mjs';
 const $=id=>document.getElementById(id);
-const messages={invalid_image:'读取的应用镜像格式不完整，请重新检查设备。',wrong_image:'当前应用镜像的芯片或配置不符合这个升级包。',invalid_image_checksum:'读取的应用校验和未通过，请重新检查设备。',invalid_image_hash:'读取的应用指纹校验未通过，请重新检查设备。',wrong_device:'芯片型号或实际 Flash 容量不在支持范围内，已停止检查。',protected_device:'设备启用了安全保护，本向导不支持升级，请联系管理员。',
+const messages={invalid_wifi:'请填写 1–32 字节的 Wi-Fi 名称；密码为 8–64 字节，开放网络可留空。',invalid_connection:'设备连接信息不完整，请重新准备连接。',invalid_nvs:'现有设备设置的格式或校验不受支持，已停止，未清空设置。',nvs_space_required:'设备设置空间不足，已停止配网。请保留备份并联系管理员处理。',invalid_device_backup:'原机备份格式无效，请选择本向导保存的 .vhdevice 文件。',invalid_image:'读取的应用镜像格式不完整，请重新检查设备。',wrong_image:'当前应用镜像的芯片或配置不符合这个升级包。',invalid_image_checksum:'读取的应用校验和未通过，请重新检查设备。',invalid_image_hash:'读取的应用指纹校验未通过，请重新检查设备。',wrong_device:'芯片型号或实际 Flash 容量不在支持范围内，已停止检查。',protected_device:'设备启用了安全保护，本向导不支持升级，请联系管理员。',
  unsupported_partition_table:'设备分区与当前升级包不匹配。本向导不能直接安装到这台新设备，需要先确认对应固件方案。',unrecognized_existing_firmware:'已读到设备，但当前固件不在已验证的升级来源中。请记录设备型号和固件版本，不能直接安装此升级包。',
  flash_read_incomplete:'设备返回的数据不完整，检查已停止，没有开始安装。请重新连接后重试。',
  invalid_ota_data:'无法确认设备的启动分区，已停止操作。',pending_ota_validation:'设备上次升级尚未确认，请先让设备正常启动。',
@@ -8,17 +10,23 @@ const messages={invalid_image:'读取的应用镜像格式不完整，请重新�
  invalid_backup_range:'备份的写入范围不受支持，已停止操作。',flash_verification_failed:'写入后的检查未通过。请保持 USB 连接，使用已保存的备份恢复。',
  device_state_changed:'设备状态已改变，请重新连接检查，再保存一份新的备份。',release_not_hardware_validated:'这一版本还在等待实机验收，暂不能安装。'};
 let releaseKey='',release,loader,transport,device,backup,recovery,busy=false,writing=false,expectedMac='',heard=false;
-let lastStage='';
+let lastStage='',fullBackup=null,connectingAt=0;const thisComputer=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
 function status(text,progress){lastStage=text;$('echoear-install-status').textContent=text;if(progress!==undefined)$('echoear-install-progress').value=Math.round(Math.max(0,Math.min(1,progress))*100);}
 function controls(){
  const supported=!!navigator.serial&&!!window.isSecureContext&&!!window.showSaveFilePicker;
  $('echoear-serial-note').textContent=supported?'使用数据线连接猫头的 USB 接口，选择猫头对应设备。检查会暂时进入下载模式，期间停止联网对话；检查或备份结束后点“断开 USB”让设备重启。新机器也需核对分区和原厂固件，能联网对话不代表适配此升级包。':'请用电脑上的 Chrome 或 Edge，通过 HTTPS 或本机 localhost 打开本页面。';
  $('echoear-connect').disabled=busy||!supported||!release?.install;
- $('echoear-backup').disabled=busy||!device||!window.showSaveFilePicker;
- $('echoear-upgrade').disabled=busy||!backup||release?.install?.validated!==true;
+ $('echoear-backup').disabled=busy||!device?.current||!window.showSaveFilePicker;
+ $('echoear-upgrade').disabled=busy||!device?.current||!backup||release?.install?.validated!==true;
  $('echoear-restore-file').disabled=busy||!device;
  $('echoear-restore').disabled=busy||!device||!recovery;
  $('echoear-disconnect').disabled=busy||!transport;
+ $('echoear-setup').disabled=busy||!device?.current||!supported||!thisComputer;
+ $('echoear-update-with-setup').disabled=busy||release?.install?.validated!==true;
+ if(release?.install?.validated!==true)$('echoear-update-with-setup').checked=false;
+ $('echoear-update-note').textContent=release?.install?.validated===true?'兼容设备可勾选升级；将先保存原机备份。':'已有兼容固件可以直接连接。候选新固件尚未完成实机验收，更新选项暂不可选。';
+ for(const id of ['echoear-wifi-ssid','echoear-wifi-password','echoear-network-host'])$(id).disabled=busy;
+ if(!thisComputer)$('echoear-setup-status').textContent='USB 一体接入请在运行 VoiceHub 的这台电脑上，通过 localhost 打开页面。';
  $('echoear-heard').disabled=!$('echoear-heard').dataset.ready;
 }
 async function action(fn){if(busy)return;busy=true;controls();try{await fn();}catch(e){
@@ -35,7 +43,7 @@ async function action(fn){if(busy)return;busy=true;controls();try{await fn();}ca
 async function disconnect(){
  if(loader){try{await loader.after('hard_reset');}catch{}}
  if(transport){try{await transport.disconnect();}catch{}}
- loader=transport=device=backup=recovery=null;
+ loader=transport=device=backup=recovery=fullBackup=null;
 }
 window.addEventListener('voicehub:firmware',event=>{
  const next=event.detail;
@@ -48,7 +56,7 @@ window.addEventListener('voicehub:firmware',event=>{
  controls();
 });
 $('echoear-connect').onclick=()=>action(async()=>{
- await disconnect();heard=false;expectedMac='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
+ await disconnect();heard=false;connectingAt=0;expectedMac='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
  const port=await navigator.serial.requestPort();
  const {ESPLoader,Transport}=await import('./vendor/esptool-js-0.7.0/bundle.js');
  transport=new Transport(port,false);
@@ -56,7 +64,14 @@ $('echoear-connect').onclick=()=>action(async()=>{
   terminal:{clean(){},writeLine(text){if(text?.trim())status('USB：'+text.trim());},write(){}}});
  loader.FLASH_READ_TIMEOUT=10000;
  status('正在连接设备，请稍等…',0);await loader.main();
- device=await inspectDevice(loader,release,status);expectedMac=device.mac;
+ try{device=await inspectDevice(loader,release,status);}
+ catch(e){
+  if(!['invalid_image','wrong_image','invalid_image_checksum','invalid_image_hash','unrecognized_existing_firmware','invalid_ota_data','pending_ota_validation'].includes(e.message))throw e;
+  device=await inspectRecoveryDevice(loader,release,status);
+  $('echoear-device-info').textContent='芯片、安全状态和分区检查通过；当前应用或启动记录未通过普通接入校验，仅可从这台设备的已有备份恢复。';
+  status((messages[e.message]||'当前固件检查未通过。')+' 可展开“固件升级与备份恢复”选择原机备份。',0);return;
+ }
+ expectedMac=device.mac;
  $('echoear-device-info').textContent='已识别兼容的 EchoEar（ESP32-S3，实际 Flash '+device.flashSize+'），当前应用版本 '+device.current.version+'。设备型号、容量、分区和现有固件检查通过。';
  status('设备检查通过。下一步保存备份。',1);
 });
@@ -86,20 +101,76 @@ $('echoear-upgrade').onclick=()=>action(async()=>{
 });
 $('echoear-restore-file').onchange=event=>action(async()=>{
  const file=event.target.files[0];if(!file)return;
- if(file.size>16*1024*1024)throw new Error('invalid_backup');
+ if(file.size>33*1024*1024)throw new Error('invalid_backup');
  recovery=null;
- const parsed=await decodeBackup(new Uint8Array(await file.arrayBuffer()));validateBackup(parsed,device);recovery=parsed;
+ const bytes=new Uint8Array(await file.arrayBuffer());
+ const complete=file.name.endsWith('.vhdevice');
+ const parsed=complete?await decodeDeviceBackup(bytes):await decodeBackup(bytes);
+ if(complete)await validateDeviceBackup(parsed,device);else validateBackup(parsed,device);recovery=parsed;
  status('备份校验通过，属于这台设备。点击“确认恢复”后，会还原升级前的应用与设备设置。');
 });
 $('echoear-restore').onclick=()=>action(async()=>{
  status('正在恢复升级前的应用与设备设置，请保持 USB 连接。',0);
  writing=true;
- await restore(loader,device,recovery,status);await disconnect();status('已恢复升级前的备份。请等待设备重新启动。',1);
+ if(recovery.data)await restoreDeviceBackup(loader,device,recovery,status);else await restore(loader,device,recovery,status);await disconnect();status('已恢复升级前的备份。请等待设备重新启动。',1);
 });
 $('echoear-disconnect').onclick=()=>action(async()=>{await disconnect();status('USB 已断开，设备已尝试重启。');});
+async function prepareConnection(){
+ const host=$('echoear-network-host').value;
+ const response=await fetch('/api/clients/echoear-s3/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(host?{host}:{})});
+ if(response.status===401)throw new Error('请先使用管理员账号登录。');
+ const value=await response.json();
+ if(!response.ok){
+  if(value.interfaces?.length){
+   const select=$('echoear-network-host');select.replaceChildren();
+   for(const item of value.interfaces){const option=document.createElement('option');option.value=item.address;option.textContent=item.interface+'（'+item.address+'）';select.append(option);}
+   $('echoear-network-choice').hidden=false;
+  }
+  throw new Error(value.error?.message||'设备连接服务准备失败。');
+ }
+ return value;
+}
+$('echoear-network-form').onsubmit=event=>{
+ event.preventDefault();
+ return action(async()=>{
+  if(!device||!thisComputer)throw new Error('请在 VoiceHub 本机连接并检查 USB 设备。');
+  const ssid=$('echoear-wifi-ssid').value,password=$('echoear-wifi-password').value,bytes=new TextEncoder();
+  if(!ssid||bytes.encode(ssid).length>32||ssid.includes('\0')||bytes.encode(password).length>64||password.includes('\0')||password.length>0&&bytes.encode(password).length<8)throw new Error('invalid_wifi');
+  // The picker must run before the first network await to retain user activation.
+  const handle=await window.showSaveFilePicker({suggestedName:'EchoEar-'+device.mac.replaceAll(':','')+'-original.vhdevice',types:[{description:'喵伴原机备份',accept:{'application/octet-stream':['.vhdevice']}}]});
+  status('正在自动准备 VoiceHub 设备连接服务…',0);
+  const connection=await prepareConnection();
+  const size=device.flashSize==='32MB'?32*1024*1024:16*1024*1024;
+  const flash=await readFlashBounded(loader,0,size,(_chunk,read,total)=>status('正在备份原机固件与设置（'+(read/1024/1024).toFixed(1)+' / '+(total/1024/1024)+' MB）…',read/total));
+  const encoded=await encodeDeviceBackup(device,flash),writable=await handle.createWritable();
+  try{await writable.write(encoded);await writable.close();}catch(e){try{await writable.abort();}catch{}throw e;}
+  const saved=new Uint8Array(await(await handle.getFile()).arrayBuffer());
+  if(await sha256(saved)!==await sha256(encoded))throw new Error('backup_checksum_failed');
+  fullBackup=await decodeDeviceBackup(saved);await validateDeviceBackup(fullBackup,device);recovery=fullBackup;
+  // Validate capacity and all settings before the first device write.
+  const nvs=connectionNvs(fullBackup.data.subarray(PROFILE.nvs,PROFILE.nvs+PROFILE.nvsSize),{ssid,password,...connection});
+  if($('echoear-update-with-setup').checked){
+   status('原机备份已保存并校验，正在核对更新包…',0);
+   const response=await fetch(release.download);if(!response.ok)throw new Error('firmware_download_failed');
+   const image=new Uint8Array(await response.arrayBuffer());
+   const regions=[{name:'nvs',address:PROFILE.nvs,data:fullBackup.data.slice(PROFILE.nvs,PROFILE.nvs+PROFILE.nvsSize)},{name:'otadata',address:PROFILE.ota,data:device.ota},{name:'target',address:PROFILE.apps[device.targetSlot],data:fullBackup.data.slice(PROFILE.apps[device.targetSlot],PROFILE.apps[device.targetSlot]+PROFILE.appSize)}];
+   backup=await decodeBackup(await encodeBackup({mac:device.mac,layout:device.layout,targetSlot:device.targetSlot},regions));
+   writing=true;const result=await upgrade(loader,device,release,image,backup,status);
+   const ota=await readFlashBounded(loader,PROFILE.ota,PROFILE.otaSize);
+   device.ota=ota;
+   if(result.slot===undefined)throw new Error('flash_verification_failed');
+  }
+  writing=true;await applyNetwork(loader,device,fullBackup,nvs,status);
+  $('echoear-wifi-password').value='';connectingAt=Date.now();heard=false;$('echoear-heard').dataset.ready='';
+  await disconnect();
+  status('原机备份已保存并校验，连接设置已写入并读回核对。喵伴正在重启，请稍后唤醒并说“你好”。',1);
+  $('echoear-verify-status').textContent='正在等待喵伴上线，首次连接可能需要一些时间。';
+  window.dispatchEvent(new CustomEvent('voicehub:connection-prepared'));
+ });
+};
 $('echoear-copy-setup').onclick=async()=>{
  try{
-  const response=await fetch('/api/clients/echoear-s3/connection?protocol=xiaozhi_websocket');
+  const response=await fetch('/api/clients/echoear-s3/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   if(response.status===401)throw new Error('请先使用管理员账号登录。');
   const value=await response.json();if(!response.ok)throw new Error(value.error?.message||'请先让管理员开启设备连接服务。');
   await navigator.clipboard.writeText(value.ota_url);$('echoear-setup-status').textContent='连接入口已复制。连接设备热点后，在设备配网页的“高级设置 → 自定义 OTA 地址”粘贴它并保存，再设置 Wi-Fi。';
@@ -112,7 +183,7 @@ setInterval(async()=>{
   const response=await fetch('/api/clients/echoear-s3/verify?device='+encodeURIComponent(expectedMac));
   if(!response.ok)return;const value=await response.json();
   $('echoear-heard').dataset.ready=value.recognized&&value.replied?'yes':'';
-  $('echoear-verify-status').textContent=!value.online?'正在等待设备联网。':!value.recognized?'设备已上线。请唤醒它并说一句“你好”。':
+  $('echoear-verify-status').textContent=!value.online?(connectingAt&&Date.now()-connectingAt>120000?'尚未看到设备上线。请确认 Wi-Fi 名称和密码、电脑与喵伴网络可互通；同名 Wi-Fi 也可能存在客户端隔离。原机备份可用于恢复设置。':'正在等待设备联网。'):!value.recognized?'设备已上线。请唤醒它并说一句“你好”。':
    !value.replied?'已收到语音识别，正在等待回复。':value.playback_reported?'设备已上报播放。请确认你是否听到了声音。':'已生成回复。请确认设备是否播放出声音。';controls();
  }catch{}
 },3000);

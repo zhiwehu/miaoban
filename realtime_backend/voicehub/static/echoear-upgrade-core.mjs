@@ -99,7 +99,7 @@ export function validateBackup(backup,device){
  if(backup.regions.length!==3||new Set(backup.regions.map(r=>r.name)).size!==3)fail('invalid_backup');
  for(const r of backup.regions){const a=allowed[r.name];if(!a||r.address!==a[0]||r.data.length!==a[1])fail('invalid_backup_range');}
 }
-export async function inspectDevice(loader,manifest,progress=()=>{}){
+export async function inspectRecoveryDevice(loader,manifest,progress=()=>{}){
  progress('正在读取芯片安全状态和 Flash 容量…',0);
  const security=await loader.getSecurityInfo(),flashSize=await loader.detectFlashSize();
  progress('检测到芯片 ID '+security.chipId+'，实际 Flash '+(flashSize||'未知')+'，正在核对分区。',0);
@@ -107,6 +107,11 @@ export async function inspectDevice(loader,manifest,progress=()=>{}){
  const mac=await loader.chip.readMac(loader);
  const table=await readFlashBounded(loader,PROFILE.table,4096);const layout=await validateLayout(table,manifest.install);
  progress('分区检查通过，正在读取启动分区…',0);
+ return{mac,layout,flashSize,table};
+}
+export async function inspectDevice(loader,manifest,progress=()=>{}){
+ const identity=await inspectRecoveryDevice(loader,manifest,progress);
+ const {mac,layout,flashSize,table}=identity;
  const ota=await loader.readFlash(PROFILE.ota,PROFILE.otaSize),boot=selectBoot(ota);
  const bytes=await readFlashBounded(loader,PROFILE.apps[boot.slot],PROFILE.appSize,(_p,w,t)=>progress('正在读取现有应用以核对固件（'+Math.round(w/1024)+' / '+Math.round(t/1024)+' KB），此时不写入设备。',w/t));
  progress('应用读取完成，正在校验固件指纹…',1);
@@ -115,7 +120,7 @@ export async function inspectDevice(loader,manifest,progress=()=>{}){
  if(boot.sequence>=0xfffffffd)fail('invalid_ota_sequence');
  return{mac,layout,flashSize,boot,ota,table,current:image,targetSlot:1-boot.slot};
 }
-async function writeAndVerify(loader,address,data,progress){
+export async function writeAndVerify(loader,address,data,progress){
  await loader.writeFlash({fileArray:[{address,data}],flashSize:'keep',flashMode:'keep',flashFreq:'keep',eraseAll:false,compress:true,
   reportProgress:(_i,w,t)=>progress?.(w/t)});
  const actual=await readFlashBounded(loader,address,data.length);

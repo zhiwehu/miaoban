@@ -15,8 +15,8 @@ CATALOG = [
          installation='只给对应型号的设备安装固件。升级前备份，并保留原有设置、唤醒词和资源。',
          source_url='https://github.com/zhiwehu/miaoban/tree/feature/voicehub-control-center/firmware/head',
          build_url='https://github.com/zhiwehu/miaoban/blob/feature/voicehub-control-center/firmware/README.md',
-         steps=['先核对设备型号，并安装与这台设备匹配的固件；已有适配固件可以跳过安装。',
-                '让设备和 VoiceHub 连上可互相访问的网络，按设备说明填入连接设置。',
+         steps=['用数据线连接猫头，点击下方按钮检查设备。',
+                '填写 Wi-Fi，保存原机备份并连接；需要更新时可在同一流程中选择。',
                 '唤醒设备并说“你好”。下方出现设备名称、能看到识别文字并听见回复，就接入成功了。'])
 ]
 

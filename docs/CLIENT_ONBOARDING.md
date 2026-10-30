@@ -74,3 +74,7 @@
 浏览器刷写依赖为本地固定打包的 [Espressif esptool-js 0.7.0](https://github.com/espressif/esptool-js/tree/v0.7.0)，接口依据其官方文档和固定版本源码；OTA 记录及 CRC 算法依据本地 ESP-IDF 5.4.0 bootloader_common_loader.c，校验向量与官方 seeded CRC32 一致。
 
 当前候选的构建与软件验收状态见 [EchoEar 升级验证记录](ECHOEAR_UPGRADE_VALIDATION.md)。构建脚本收集依赖许可，打包时通过 `--licenses <构建目录>/licenses` 一同纳入 ZIP。
+
+## USB 一体化接入（2026-10-30）
+
+新增 [USB 接入向导](USB_ONBOARDING.md)：在 VoiceHub 本机通过 USB 完成检测、完整原机备份、可选的已验证升级、Wi-Fi/后端连接配置和上线检查。原手动热点配网移入其他连接方式。Wi-Fi 凭据不发送给后端，监听准备接口仅返回当前机器的设备连接信息。完整流程仍待本轮用户实机验收。

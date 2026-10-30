@@ -62,7 +62,7 @@ function drawGuide() {
       }
       actions.append(el('p','下载的连接配置包含设备访问凭据，请仅交给对应设备使用。按固件说明填入地址与令牌，下载不会自动改写设备。','hint'));
     } else {
-      actions.append(el('p','设备连接服务还没有准备好。请联系管理员，或展开高级设置完成配置。','hint'));
+      actions.append(el('p','下方 USB 向导会自动准备设备连接服务，无需手动填写地址。','hint'));
       const setup=el('button','打开高级连接设置','secondary');setup.type='button';setup.onclick=()=>{$('connection-advanced').open=true;$('connection-advanced').scrollIntoView({behavior:'smooth',block:'start'});};actions.append(setup);
     }
   }
@@ -150,6 +150,7 @@ $('mqtt-connection-form').onsubmit=e=>{
 for(const [id,transport] of [['ws-connection-actions','websocket'],['mqtt-connection-actions','mqtt']])for(const b of $(id).querySelectorAll('button'))b.onclick=()=>mutate('/'+transport+'/'+b.dataset.action);
 $('connections-refresh').onclick=refresh;
 window.addEventListener('voicehub:view',event=>{if(event.detail==='connections')refresh();});
+window.addEventListener('voicehub:connection-prepared',refresh);
 window.addEventListener('hashchange',()=>{if(location.hash==='#connections')refresh();});
 setInterval(()=>{if(location.hash==='#connections'&&!document.hidden)refresh();},3000);
 if(location.hash==='#connections')refresh();

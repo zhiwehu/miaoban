@@ -160,14 +160,24 @@
           <h2 class="onboarding-section-title">1. 选择你要使用的客户端</h2><div id="client-catalog" class="connection-grid"></div>
           <article class="panel onboarding-guide"><div class="section-heading"><h2 id="client-guide-title">接入向导</h2><span id="client-guide-status" class="tag"></span></div><p id="client-guide-hardware" class="hint"></p><ol id="client-guide-steps"></ol><p id="client-install-note" class="hint"></p><div id="client-install-actions" class="button-row"></div></article>
           <article id="echoear-installer" class="panel onboarding-guide" hidden>
-            <h2>猫头升级与联网助手</h2><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
-            <h3>连接数据线，检查并备份设备</h3><p id="echoear-serial-note" class="hint"></p><p id="echoear-device-info" class="hint"></p>
-            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">1. 连接并检查设备</button><button type="button" class="secondary" id="echoear-backup" disabled>2. 保存升级前备份</button><button type="button" class="primary" id="echoear-upgrade" disabled>3. 安装升级</button><button type="button" class="text-button" id="echoear-disconnect" disabled>断开 USB</button></div>
-            <progress id="echoear-install-progress" max="100" value="0" aria-label="升级进度"></progress><p id="echoear-install-status" role="status">先连接设备并检查，确认兼容后再备份和安装。</p>
-            <details><summary>升级没有完成？从备份恢复</summary><p class="hint">仅恢复同一台设备的备份，会还原升级前的应用与设备设置。请先连接并检查设备，再选择此前保存的 .vhbackup 文件。</p><label for="echoear-restore-file">选择备份文件并恢复</label><input id="echoear-restore-file" type="file" accept=".vhbackup" disabled/><button type="button" class="secondary" id="echoear-restore" disabled>确认恢复这台设备的备份</button></details>
-            <h3>设置设备网络</h3><p class="hint">设备已经能连接这台 VoiceHub 时，可以跳过配网，直接测试对话。需要重新配网时，在设备启动、尚未连上 Wi-Fi 的阶段按一下 BOOT 键，按设备屏幕或语音提示操作。</p><ol><li>让 VoiceHub 和设备连接到能互相访问的网络。</li><li>按设备说明进入配网模式，用电脑或手机连接设备显示的热点。</li><li>复制下方连接入口，在设备配网页的“高级设置 → 自定义 OTA 地址”粘贴并保存，然后设置 Wi-Fi。</li></ol>
-            <button type="button" class="secondary" id="echoear-copy-setup">复制我的 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">连接入口含设备访问凭据，请仅用于自己的设备。</p>
-            <h3>说一句“你好”，确认可以对话</h3><p id="echoear-verify-status" role="status">识别 USB 设备后，会自动检查这台设备是否上线及是否产生语音回复。</p><button type="button" class="primary" id="echoear-heard" disabled>我听到了回复，完成接入</button>
+            <h2>用 USB 连接喵伴</h2><p class="hint">这台电脑运行 VoiceHub，也负责给喵伴配网。准备一根数据线，电脑保持连接目标 Wi-Fi，无需另一台配网设备。</p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
+            <h3>1. 插入 USB，识别设备</h3><p id="echoear-serial-note" class="hint"></p><p id="echoear-device-info" class="hint"></p>
+            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">连接并检查设备</button><button type="button" class="text-button" id="echoear-disconnect" disabled>断开 USB</button></div>
+            <h3>2. 选择网络，备份并连接</h3><p class="hint">填写与电脑可互通的 2.4 GHz Wi-Fi。先保存完整原机备份，再写入网络和 VoiceHub 连接信息，完成后自动重启。密码仅通过本机浏览器与 USB 处理。</p>
+            <form id="echoear-network-form">
+              <label>Wi-Fi 名称<input id="echoear-wifi-ssid" autocomplete="off" maxlength="32" required placeholder="例如：CFC-SW" /></label>
+              <label>Wi-Fi 密码<input id="echoear-wifi-password" type="password" autocomplete="new-password" maxlength="64" placeholder="开放网络可留空" /></label>
+              <label id="echoear-network-choice" hidden>电脑使用的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
+              <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />同时更新到已验证的适配固件（可选）</label><p id="echoear-update-note" class="hint"></p>
+              <button id="echoear-setup" class="primary" type="submit" disabled>保存原机备份并连接</button>
+            </form>
+            <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度"></progress><p id="echoear-install-status" role="status">先连接 USB 并检查设备，再填写网络。</p>
+            <details><summary>固件升级与备份恢复</summary><p class="hint">已有兼容固件可直接配网，无需升级。原机备份包含原固件和设备设置，仅保存到本机。恢复只写应用与设置，不改写引导程序、分区表或资源。</p>
+              <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>保存升级前备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>安装已验证升级</button></div>
+              <label for="echoear-restore-file">选择本机备份</label><input id="echoear-restore-file" type="file" accept=".vhbackup,.vhdevice" disabled/><button type="button" class="secondary" id="echoear-restore" disabled>确认恢复这台设备的备份</button>
+            </details>
+            <details><summary>手动热点配网（其他连接方式）</summary><p class="hint">设备已支持配网页时，也可连接设备热点填写设置。</p><button type="button" class="secondary" id="echoear-copy-setup">复制我的 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">连接入口含设备访问凭据，请仅用于自己的设备。</p></details>
+            <h3>说一句“你好”，确认可以对话</h3><p id="echoear-verify-status" role="status">写入连接设置并重启后，这里会检查上线状态。唤醒后说“你好”，看到识别文字、听到回复再完成接入。</p><button type="button" class="primary" id="echoear-heard" disabled>我听到了回复，完成接入</button>
           </article><details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>
           <div class="connection-grid">
             <article class="panel"><div class="section-heading"><h2>WebSocket 设备监听</h2><span class="tag" id="ws-device-state">读取中</span></div><p id="ws-console-address" class="hint"></p><p id="ws-device-address" class="hint"></p>
@@ -266,22 +276,6 @@
               </article>
             </div>
             <article class="panel prompt-panel">
-              <h2>常用 MCP 工具</h2>
-              <label>工具决策与参数提取<select id="tool-planner"><option value="llm">对话模型规划</option><option value="rex">本地 Rex 小模型（分类＋参数抽取）</option></select></label>
-              <p class="hint">Rex 在独立本地进程中运行，需要已训练的联合 adapter；必要参数缺失时会先追问。</p>
-              <p class="hint">查询前先语音回应，完成后播报结果。天气和新闻需要联网；系统信息在本机读取。</p>
-              <label class="check"><input id="tool-weather" type="checkbox" />天气查询</label>
-              <label>默认城市（可选）<input id="tool-city" maxlength="80" placeholder="例如：上海；留空时由对话确定城市" /></label>
-              <label class="check"><input id="tool-news" type="checkbox" />新闻摘要</label>
-              <div class="field-pair">
-                <label>新闻源<select id="tool-news-source"><option value="chinanews">中新网（中文）</option><option value="bbc">BBC World（英文，可中文播报）</option></select></label>
-                <label>默认条数<input id="tool-news-limit" type="number" min="1" max="5" required /></label>
-              </div>
-              <label class="check"><input id="tool-system-info" type="checkbox" />本机系统信息（CPU、内存、磁盘）</label>
-              <label>查询超时（秒）<input id="tool-timeout" type="number" min="5" max="600" required /></label>
-              <p class="hint">新闻读取选定来源的 RSS 最新条目，支持关键词筛选。服务不可达时会语音说明；可在事件日志查看查询进度。保存后重新连接客户端生效。</p>
-            </article>
-            <article class="panel prompt-panel">
               <h2>对话提示词</h2>
               <label
                 >定义语气、角色和回复方式<textarea
@@ -305,6 +299,7 @@
             <div><p>让对话连接实时信息与本机能力。</p><p class="hint" id="mcp-summary">正在读取工具列表…</p></div>
             <div class="button-row"><button class="secondary" id="mcp-refresh">刷新列表</button><button class="secondary" id="mcp-settings">决策设置</button></div>
           </div>
+          <article id="mcp-common-settings" class="panel"></article>
           <p id="mcp-planner" class="hint mcp-catalogue-note">正在读取决策方式…</p>
           <p id="mcp-load-status" role="status"></p>
           <div id="mcp-tool-list" class="mcp-tool-grid"></div>
