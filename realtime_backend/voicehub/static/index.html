@@ -174,10 +174,10 @@
               <label id="echoear-network-choice" hidden>电脑连接的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
               <button id="echoear-setup" class="primary" type="submit" disabled>开始配置</button>
             </form></div>
-            <p class="hint">原机备份会自动保存在本机，再配置并重启。Wi-Fi 密码只通过本机 USB 写入。</p>
+            <p class="hint">接下来交给 VoiceHub。请保持数据线连接，等待完成。</p>
             <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度" hidden></progress><p id="echoear-install-status" role="status">先点击“连接 USB”。</p>
             <div data-usb-panel="3" hidden><h3>等待喵伴联网</h3><p>联网成功后，使用设备当前的唤醒词开始对话。</p><p id="echoear-verify-status" role="status"></p><button type="button" class="primary" id="echoear-heard" disabled hidden>听到回复，完成连接</button></div><button type="button" class="text-button" id="echoear-disconnect" disabled hidden>断开 USB</button>
-            <details class="echoear-advanced"><summary>高级选项</summary>
+            <details class="echoear-advanced"><summary>高级选项</summary><details><summary>查看详细信息</summary><pre id="echoear-technical-details"></pre></details>
               <p id="echoear-serial-note" class="hint"></p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
               <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />连接时同时更新固件</label><p id="echoear-update-note" class="hint"></p>
               <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>立即备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>单独安装升级</button></div>

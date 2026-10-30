@@ -8,7 +8,7 @@ function installer({locks}={}){
  const steps=[1,2,3].map(n=>({...node(),dataset:{usbStep:String(n)}})),panels=[1,2,3].map(n=>({...node(),dataset:{usbPanel:String(n)}}));
  const document={getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},createElement:node,querySelectorAll(selector){return selector==='[data-usb-step]'?steps:panels}};
  const source=fs.readFileSync('voicehub/static/echoear-installer.js','utf8').replace(/^import .*;\n/gm,'');
- return vm.runInNewContext(source+'\n;({action,prepareConnection,controls,acquireUsbLock,disconnect,nodes,steps,panels,ready(){connectingAt=1;controls()},setDevice(value,link){device=value;transport=link},connected(){return !!device}})',{
+ return vm.runInNewContext(source+'\n;({status,friendlyStatus,action,prepareConnection,controls,acquireUsbLock,disconnect,nodes,steps,panels,ready(){connectingAt=1;controls()},setDevice(value,link){device=value;transport=link},connected(){return !!device}})',{
   document,nodes,steps,panels,location:{hostname:'127.0.0.1'},navigator:{serial:{},locks},window:{isSecureContext:true,addEventListener(){}},
   console:{warn(){}},setInterval(){},setupResponse,
   fetch:async()=>new Response(JSON.stringify({error:{code:'choose_network',message:'请选择电脑连接的网络'},interfaces:[{interface:'en0',address:'10.159.134.213',label:'Wi-Fi'}]}),{status:409})
@@ -67,3 +67,12 @@ test('disconnect reports failed reboot rather than claiming success',async()=>{
  const app=installer();app.setDevice({current:{}},{async disconnect(){}});
  assert.equal(await app.disconnect(),false);
 });
+
+ test('ordinary progress and errors hide technical details in the advanced section',async()=>{
+  const app=installer();app.status('正在读取芯片安全状态和 Flash 容量…',.3);
+  assert.equal(app.nodes.get('echoear-install-status').textContent,'正在确认喵伴，请稍等…');
+  assert.match(app.nodes.get('echoear-technical-details').textContent,/Flash/);
+  await app.action(async()=>{throw new Error('flash_read_incomplete')});
+  assert.doesNotMatch(app.nodes.get('echoear-install-status').textContent,/flash_|停止阶段|错误：/);
+  assert.match(app.nodes.get('echoear-technical-details').textContent,/flash_read_incomplete/);
+ });

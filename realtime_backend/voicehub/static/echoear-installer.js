@@ -15,14 +15,26 @@ const messages={usb_in_use:'USB 正由另一个页面操作。请等该页面完
  device_state_changed:'设备状态已改变，请重新连接检查，再保存一份新的备份。',release_not_hardware_validated:'这一版本还在等待实机验收，暂不能安装。'};
 let releaseKey='',release,loader,transport,device,backup,recovery,busy=false,writing=false,expectedMac='',heard=false;
 let lastStage='',fullBackup=null,connectingAt=0,releaseUsbLock=null;const thisComputer=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
-function status(text,progress){lastStage=text;$('echoear-install-status').textContent=text;if(progress!==undefined)$('echoear-install-progress').value=Math.round(Math.max(0,Math.min(1,progress))*100);}
+function friendlyStatus(text){
+ if(/重新连接并从|USB 读取中断/.test(text))return '连接暂时中断，正在自动重试，请保持数据线连接…';
+ if(/USB：|读取|芯片|Flash|分区|固件指纹|当前固件检查|应用读取/.test(text))return '正在确认喵伴，请稍等…';
+ if(/备份原机|已有原机备份|自动保存并校验|设备设置空间/.test(text))return '正在准备，请保持数据线连接。首次准备可能需要几分钟…';
+ if(/自动准备 VoiceHub|校验升级包|核对更新包/.test(text))return '正在准备连接…';
+ if(/写入连接设置/.test(text))return '正在为喵伴设置网络，请保持数据线连接…';
+ if(/设置启动应用|正在安装应用/.test(text))return '正在更新喵伴，请保持数据线连接…';
+ if(/配置已保存并校验/.test(text))return '设置完成，即将尝试重启喵伴…';
+ if(/原机备份已自动保存并校验/.test(text))return '准备完成。';
+ if(/应用已写入并校验/.test(text))return '设置完成，请等待喵伴重新连接。';
+ return text;
+}
+function status(text,progress){lastStage=text;$('echoear-install-status').textContent=friendlyStatus(text);$('echoear-technical-details').textContent=text;if(progress!==undefined)$('echoear-install-progress').value=Math.round(Math.max(0,Math.min(1,progress))*100);}
 function wifiMode(){
  const keep=$('echoear-wifi-mode').value==='keep',open=$('echoear-wifi-open').checked;
  $('echoear-wifi-fields').hidden=keep;
  $('echoear-wifi-ssid').required=!keep;$('echoear-wifi-password').required=!keep&&!open;
  $('echoear-wifi-ssid').disabled=busy||keep;$('echoear-wifi-password').disabled=busy||keep||open;
  $('echoear-wifi-mode').disabled=busy;$('echoear-wifi-open').disabled=busy;
- $('echoear-wifi-hint').textContent=keep?'无需填写密码。电脑需与喵伴处于可互通网络；不会读取电脑保存的 Wi-Fi 密码。':'使用电脑相同的 2.4 GHz Wi-Fi，可修改名称。请填写密码；开放网络请明确勾选。';
+ $('echoear-wifi-hint').textContent=keep?'使用喵伴之前连接过的 Wi-Fi，无需再次填写密码。请让电脑也连接到这个网络。':'使用电脑相同的 2.4 GHz Wi-Fi，可修改名称。请填写密码；开放网络请明确勾选。';
 }
 function stepControls(){
  const step=connectingAt?3:device?.current?2:1;
@@ -69,7 +81,8 @@ async function action(fn){if(busy)return;busy=true;controls();try{await fn();}ca
  // A failed inspection must not retain a stale loader or keep the robot in
  // download mode. Never reset automatically after a failed flash write.
  if(!writing&&!e.keepConnection)await disconnect();
- status(message+(cancelled?'':'\n停止阶段：'+stage+'\n错误：'+String(e.message||e.name).slice(0,200)));
+ status(/芯片|Flash|分区|校验|NVS|固件|串口/.test(message)?'暂时无法完成，请重新连接喵伴后再试。':message);
+ $('echoear-technical-details').textContent=stage+'\n'+String(e.message||e.name).slice(0,200);
  }finally{busy=false;writing=false;controls();}}
 async function acquireUsbLock(){
  if(releaseUsbLock||!navigator.locks)return;
@@ -116,7 +129,7 @@ $('echoear-connect').onclick=()=>action(async()=>{
  catch(e){
   if(!['invalid_image','wrong_image','invalid_image_checksum','invalid_image_hash','unrecognized_existing_firmware','invalid_ota_data','pending_ota_validation'].includes(e.message))throw e;
   device=await inspectRecoveryDevice(loader,release,status);
-  $('echoear-device-info').textContent='芯片、安全状态和分区检查通过；当前应用或启动记录未通过普通接入校验，仅可从这台设备的已有备份恢复。';
+  $('echoear-device-info').textContent='喵伴暂时无法完成连接，请在高级选项中尝试恢复。';
   status((messages[e.message]||'当前固件检查未通过。')+' 可展开高级选项，恢复最近的可用备份。',0);return;
  }
  expectedMac=device.mac;
@@ -220,7 +233,7 @@ $('echoear-network-form').onsubmit=event=>{
   $('echoear-wifi-password').value='';connectingAt=Date.now();heard=false;$('echoear-heard').dataset.ready='';
   status('配置已保存并校验，正在请求喵伴重启…',1);
   const resetRequested=await disconnect();
-  status(resetRequested?'配置已完成，已请求设备重启，正在等待联网确认。':'配置已完成，但自动重启请求失败。请将喵伴完全断电 5 秒后重新开机。',1);
+  status(resetRequested?'设置完成，正在等待喵伴重新连接。':'配置已完成，但自动重启请求失败。请将喵伴完全断电 5 秒后重新开机。',1);
   $('echoear-verify-status').textContent='正在等待喵伴上线，首次连接可能需要一些时间。';
   window.dispatchEvent(new CustomEvent('voicehub:connection-prepared'));
  });
@@ -240,8 +253,8 @@ setInterval(async()=>{
   const response=await fetch('/api/clients/echoear-s3/verify?device='+encodeURIComponent(expectedMac));
   if(!response.ok)return;const value=await setupResponse(response);
   $('echoear-heard').dataset.ready=value.recognized&&value.replied?'yes':'';
-  $('echoear-verify-status').textContent=!value.online?(connectingAt&&Date.now()-connectingAt>120000?'尚未看到设备上线。请确认 Wi-Fi 名称和密码、电脑与喵伴网络可互通；同名 Wi-Fi 也可能存在客户端隔离。原机备份可用于恢复设置。':'正在等待设备联网。'):!value.recognized?'喵伴已联网！请用设备当前唤醒词唤醒（若为“小宝同学”，请说“小宝同学”），再说一句“你好”。':
-   !value.replied?'已收到语音识别，正在等待回复。':value.playback_reported?'设备已上报播放。请确认你是否听到了声音。':'已生成回复。请确认设备是否播放出声音。';controls();
+  $('echoear-verify-status').textContent=!value.online?(connectingAt&&Date.now()-connectingAt>120000?'尚未看到设备上线。请确认 Wi-Fi 名称和密码、电脑与喵伴网络可互通；同名 Wi-Fi 也可能存在客户端隔离。可以在高级选项中尝试恢复。':'正在等待设备联网。'):!value.recognized?'喵伴已联网！请用设备当前唤醒词唤醒（若为“小宝同学”，请说“小宝同学”），再说一句“你好”。':
+   !value.replied?'喵伴听到了，正在准备回复…':value.playback_reported?'喵伴正在回复，你听到声音了吗？':'回复已准备好，请听听喵伴有没有回应。';controls();
  }catch{}
 },3000);
 window.addEventListener('beforeunload',event=>{if(busy){event.preventDefault();event.returnValue='';}});
