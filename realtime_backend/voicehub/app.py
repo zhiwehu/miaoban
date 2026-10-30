@@ -54,12 +54,28 @@ def admin(request):
     return local_admin(request) or secrets.compare_digest(token, hub.auth['admin_token'])
 
 
+def same_origin(request, origin):
+    if origin == f'{request.scheme}://{request.host}':return True
+    # Some local browser/proxy environments omit the port from Origin. Only
+    # accept that exact case with browser-controlled same-origin Fetch Metadata
+    # and a loopback peer/Host. Other ports, hosts, schemes and null stay denied.
+    if not local_admin(request) or request.headers.get('Sec-Fetch-Site')!='same-origin':return False
+    try:
+        source=urlsplit(origin);target=urlsplit(f'{request.scheme}://{request.host}')
+        return (source.scheme==target.scheme and source.hostname==target.hostname and
+                source.port is None and target.port is not None and
+                not source.username and not source.password and
+                not source.path and not source.query and not source.fragment)
+    except ValueError:return False
+
+
 @web.middleware
 async def guard(request, handler):
     origin = request.headers.get('Origin')
     if origin and (request.method not in ('GET', 'HEAD') or request.path in ('/ws', '/api/events')):
-        if origin != f'{request.scheme}://{request.host}':
-            raise web.HTTPForbidden(text='Cross-origin request denied')
+        if not same_origin(request,origin):
+            logging.getLogger(__name__).warning('Request origin rejected: origin=%r expected=%r fetch_site=%r',origin[:200],f'{request.scheme}://{request.host}',request.headers.get('Sec-Fetch-Site'))
+            return web.json_response({'error':{'code':'cross_origin_denied','message':'页面地址校验失败，请刷新并使用同一 VoiceHub 地址重试。'}},status=403,headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
     if request.path.startswith('/api/') and request.path != '/api/login' and not admin(request):
         raise web.HTTPUnauthorized(text='Administrator authentication required')
     try:

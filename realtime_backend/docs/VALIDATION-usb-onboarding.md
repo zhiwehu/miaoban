@@ -16,3 +16,11 @@
 USB 连接准备：POST /api/clients/echoear-s3/prepare；仅管理员同源调用，字段限于可选的本机网卡 host，Wi-Fi 密码字段被拒绝。不自动停用其他网卡上已工作的设备监听。
 
 截图保存在工作区 diagnostics/2026-10-30/usb-onboarding.png 和 models-without-mcp.png。截图证明页面与配置功能，不证明真实设备写入。
+
+## 来源端口缺失修正
+
+同一用户 Chrome 的隔离诊断页也能复现 403，与文件保存弹窗无关。日志记录 Origin=http://127.0.0.1，预期=http://127.0.0.1:8765，Sec-Fetch-Site=same-origin；准确原因在浏览器或代理环境，未确定具体扩展或组件。
+
+新增安全边界回归覆盖同源缺省端口、缺失元数据、same-site、其他显式端口、其他协议、localhost/127 别名、外部主机、null、携带路径和非回环 Host。独立安全复核未发现阻塞问题。连接准备非 JSON 响应新增 2 项 Node 回归。完整回归为 Python 283 项、Node 29 项通过。
+
+部署后在同一个 Chrome 诊断页、同一个准备接口重新点击请求，返回由 403 变为 200。诊断结果只显示状态，不输出令牌，也不执行 USB 写入。截图：diagnostics/2026-10-30/usb-origin-fixed.png。临时诊断页面和脚本已移除。

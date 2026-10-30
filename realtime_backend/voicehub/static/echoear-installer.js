@@ -1,3 +1,4 @@
+import {setupResponse} from './echoear-response.mjs';
 import {connectionNvs} from './echoear-nvs.mjs';
 import {encodeDeviceBackup,decodeDeviceBackup,validateDeviceBackup,applyNetwork,restoreDeviceBackup} from './echoear-device-backup.mjs';
 import {PROFILE,sha256,inspectDevice,inspectRecoveryDevice,readFlashBounded,encodeBackup,decodeBackup,validateBackup,upgrade,restore} from './echoear-upgrade-core.mjs';
@@ -119,7 +120,7 @@ async function prepareConnection(){
  const host=$('echoear-network-host').value;
  const response=await fetch('/api/clients/echoear-s3/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(host?{host}:{})});
  if(response.status===401)throw new Error('请先使用管理员账号登录。');
- const value=await response.json();
+ const value=await setupResponse(response);
  if(!response.ok){
   if(value.interfaces?.length){
    const select=$('echoear-network-host');select.replaceChildren();
@@ -172,7 +173,7 @@ $('echoear-copy-setup').onclick=async()=>{
  try{
   const response=await fetch('/api/clients/echoear-s3/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   if(response.status===401)throw new Error('请先使用管理员账号登录。');
-  const value=await response.json();if(!response.ok)throw new Error(value.error?.message||'请先让管理员开启设备连接服务。');
+  const value=await setupResponse(response);if(!response.ok)throw new Error(value.error?.message||'请先让管理员开启设备连接服务。');
   await navigator.clipboard.writeText(value.ota_url);$('echoear-setup-status').textContent='连接入口已复制。连接设备热点后，在设备配网页的“高级设置 → 自定义 OTA 地址”粘贴它并保存，再设置 Wi-Fi。';
  }catch(e){$('echoear-setup-status').textContent=e.message||'复制失败，请使用下方的连接设置下载。';}
 };
@@ -181,7 +182,7 @@ setInterval(async()=>{
  if(!expectedMac||document.hidden||$('echoear-installer').hidden||heard)return;
  try{
   const response=await fetch('/api/clients/echoear-s3/verify?device='+encodeURIComponent(expectedMac));
-  if(!response.ok)return;const value=await response.json();
+  if(!response.ok)return;const value=await setupResponse(response);
   $('echoear-heard').dataset.ready=value.recognized&&value.replied?'yes':'';
   $('echoear-verify-status').textContent=!value.online?(connectingAt&&Date.now()-connectingAt>120000?'尚未看到设备上线。请确认 Wi-Fi 名称和密码、电脑与喵伴网络可互通；同名 Wi-Fi 也可能存在客户端隔离。原机备份可用于恢复设置。':'正在等待设备联网。'):!value.recognized?'设备已上线。请唤醒它并说一句“你好”。':
    !value.replied?'已收到语音识别，正在等待回复。':value.playback_reported?'设备已上报播放。请确认你是否听到了声音。':'已生成回复。请确认设备是否播放出声音。';controls();
