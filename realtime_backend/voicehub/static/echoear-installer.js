@@ -1,3 +1,4 @@
+import {readBackupSnapshot} from './echoear-incremental-backup.mjs';
 import {saveAutomaticBackup,latestAutomaticBackup} from './echoear-backup-storage.mjs';
 import {installFlashReader,installSlipReader} from './echoear-flash-reader.mjs';
 import {setupResponse} from './echoear-response.mjs';
@@ -111,7 +112,10 @@ $('echoear-connect').onclick=()=>action(async()=>{
 async function saveOriginalBackup(){
  if(!thisComputer)throw new Error('请在 VoiceHub 本机保存备份。');
   const size=device.flashSize==='32MB'?32*1024*1024:16*1024*1024;
-  const flash=await readFlashBounded(loader,0,size,(_chunk,read,total)=>status('正在备份原机固件与设置（'+(read/1024/1024).toFixed(1)+' / '+(total/1024/1024)+' MB）…',read/total),{recover:async({attempt,completed})=>{
+  let previous;
+  status('正在检查已有原机备份…',0);
+  try{previous=(await latestAutomaticBackup(device)).data;}catch(error){if(error.message!=='backup_not_found')throw error;}
+  const flash=await readBackupSnapshot(loader,size,previous,(_chunk,read,total)=>status('正在备份原机固件与设置（'+(read/1024/1024).toFixed(1)+' / '+(total/1024/1024)+' MB）…',read/total),{recover:async({attempt,completed})=>{
   status('USB 读取中断，正在重新连接并从 '+(completed.length/1024/1024).toFixed(1)+' MB 继续（第 '+attempt+' 次）…',completed.length/size);
   const port=transport.device;await transport.disconnect();
   for(let attempt=0;;attempt++){

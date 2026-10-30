@@ -82,7 +82,7 @@ test('inspection bounds serial reads and reports application read progress',asyn
  };
  const device=await inspectDevice(f.loader,f.manifest,(text,value)=>progress.push([text,value]));
  assert.equal(device.current.sha256,await sha256(f.old));
- assert.ok(sizes.length>60);assert.ok(progress.some(([text])=>text.includes('读取现有应用')));
+ assert.ok(sizes.length>2);assert.ok(progress.some(([text])=>text.includes('读取现有应用')));
  assert.deepEqual(f.writes,[]);
 });
 
@@ -93,4 +93,17 @@ test('bounded reads reject truncated serial data before accepting an image',asyn
  };
  await assert.rejects(()=>inspectDevice(f.loader,f.manifest),/flash_read_incomplete/);
  assert.deepEqual(f.writes,[]);
+});
+
+test('device inspection reads only the actual image rather than unused application space',async()=>{
+ const f=await fixture(),read=f.loader.readFlash.bind(f.loader);let bytes=0;
+ f.loader.readFlash=async(a,n)=>{bytes+=n;return read(a,n)};
+ const device=await inspectDevice(f.loader,f.manifest);
+ assert.equal(device.current.sha256,await sha256(f.old));
+ assert.ok(bytes<20000,'small firmware must not cause a 4MB partition transfer');
+});
+
+test('image length discovery rejects segment ranges outside the application partition',async()=>{
+ const f=await fixture();new DataView(f.flash.buffer).setUint32(PROFILE.apps[0]+28,0xffffffff,true);
+ await assert.rejects(()=>inspectDevice(f.loader,f.manifest),/invalid_image/);assert.deepEqual(f.writes,[]);
 });

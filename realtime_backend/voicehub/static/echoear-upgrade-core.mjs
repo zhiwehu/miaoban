@@ -116,11 +116,25 @@ export async function inspectRecoveryDevice(loader,manifest,progress=()=>{}){
  progress('分区检查通过，正在读取启动分区…',0);
  return{mac,layout,flashSize,table};
 }
+export async function readApplication(loader,address,progress=()=>{}){
+ const header=await readFlashBounded(loader,address,24);
+ if(header[0]!==0xe9||header[1]<1||header[1]>16||header[23]!==1)fail('invalid_image');
+ let pos=24;
+ for(let i=0;i<header[1];i++){
+  if(pos+8>PROFILE.appSize)fail('invalid_image');
+  const segment=await readFlashBounded(loader,address+pos,8);
+  const size=new DataView(segment.buffer,segment.byteOffset,segment.byteLength).getUint32(4,true);
+  pos+=8;if(size>PROFILE.appSize-pos)fail('invalid_image');pos+=size;
+ }
+ const length=Math.ceil((pos+1)/16)*16+32;
+ if(length>PROFILE.appSize||length<288)fail('invalid_image');
+ return readFlashBounded(loader,address,length,progress);
+}
 export async function inspectDevice(loader,manifest,progress=()=>{}){
  const identity=await inspectRecoveryDevice(loader,manifest,progress);
  const {mac,layout,flashSize,table}=identity;
  const ota=await loader.readFlash(PROFILE.ota,PROFILE.otaSize),boot=selectBoot(ota);
- const bytes=await readFlashBounded(loader,PROFILE.apps[boot.slot],PROFILE.appSize,(_p,w,t)=>progress('正在读取现有应用以核对固件（'+Math.round(w/1024)+' / '+Math.round(t/1024)+' KB），此时不写入设备。',w/t));
+ const bytes=await readApplication(loader,PROFILE.apps[boot.slot],(_p,w,t)=>progress('正在读取现有应用以核对固件（'+Math.round(w/1024)+' / '+Math.round(t/1024)+' KB），此时不写入设备。',w/t));
  progress('应用读取完成，正在校验固件指纹…',1);
  const image=await inspectImage(bytes);
  if(!(manifest.install.upgrade_from_sha256||[]).includes(image.sha256)&&image.sha256!==manifest.sha256)fail('unrecognized_existing_firmware');
