@@ -62,6 +62,11 @@ def music_candidate(text):
 def file_plan(text):
     prefix=r'(?:(?:请|帮我|麻烦你)[\s，,]*)*'
     text=text.strip().rstrip('。！？!?,， ')
+    # Explicit imperative only. The tool still uses the administrator's
+    # configured directory and can generate a preview, never move files.
+    scope=r'(?:我的|这个|指定|授权|当前|已配置)?(?:文件夹|目录)(?:里面|里|中|内|下)?(?:的)?(?:(?:这些|那些|所有|全部)?文件)?'
+    organize=r'(?:分类整理|整理分类|按(?:文件)?类型(?:分类|整理)|分类|整理|归类)(?:好|一下|一下吧|吧)?'
+    if re.fullmatch(prefix+r'把'+scope+organize,text):return {'action':'preview'}
     target=r'(?:我的|这个|指定|授权|当前|已配置)?(?:目录|文件夹)?(?:里|中|内|下|的)*(?:文件)?'
     if re.fullmatch(prefix+r'(?:整理|分类|归类)(?:一下)?'+target+r'(?:按类型)?',text):return {'action':'preview'}
     if re.fullmatch(prefix+r'把'+target+r'按(?:文件)?类型(?:整理|分类|归类)(?:一下)?',text):return {'action':'preview'}

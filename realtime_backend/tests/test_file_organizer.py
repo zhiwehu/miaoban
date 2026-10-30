@@ -84,7 +84,7 @@ class FileRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def raw_chat(self,history,**kwargs):
      raise AssertionError('Explicit file command needs no extra LLM generation')
      yield ''
-   result=[item async for item in chat(P(),[{'role':'user','content':'帮我整理一下指定目录里的文件'}])]
+   result=[item async for item in chat(P(),[{'role':'user','content':'帮我把我的文件夹里那些文件分类整理好。'}])]
    self.assertIsInstance(result[0],ToolNotice)
    self.assertNotIn('private-name',str(result))
    self.assertIn('文件尚未移动',result[-1])
