@@ -34,6 +34,10 @@ function drawCatalog() {
 function drawGuide() {
   const client=data.clients.find(c=>c.id===selected) || data.clients[0];
   $('echoear-installer').hidden=client.id!=='echoear-s3';
+  $('client-guide-title').closest('article').hidden=client.id==='echoear-s3';
+  const installer=$('echoear-installer'),advanced=$('connection-advanced'),usbAdvanced=installer.querySelector('.echoear-advanced');
+  if(client.id==='echoear-s3'){if(advanced.parentElement!==usbAdvanced)usbAdvanced.append(advanced);}
+  else if(advanced.previousElementSibling!==installer)installer.after(advanced);
   window.dispatchEvent(new CustomEvent('voicehub:firmware',{detail:client.firmware}));
   $('client-guide-title').textContent='2. '+(client.id==='web'?'打开网页，开始使用':'准备设备并连接');
   $('client-guide-status').textContent=client.id==='web'?'无需安装':'请先确认设备型号';
@@ -129,7 +133,7 @@ async function refresh() {
   try {
     const first=!data;data=await request();
     if(first)drawCatalog();drawGuide();drawSettings();drawDevices();
-    info('按下面三步完成接入，连接结果会自动更新。');
+    info('选择设备后，按页面提示连接即可。');
   } catch(e) {info(e.message,true);} finally {loading=false;}
 }
 async function mutate(path,value) {

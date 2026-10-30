@@ -33,3 +33,11 @@ class Provisioning(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await self.client.post('/api/clients/echoear-s3/prepare',json={},headers={'Origin':'https://foreign.invalid'})).status,403)
   self.assertEqual((await self.client.post('/api/clients/echoear-s3/prepare',json={},headers={'Host':'foreign.invalid'})).status,401)
   self.assertFalse(self.client.app[HUB].connections.device_ready)
+
+class PhysicalNetworks(unittest.TestCase):
+ def test_fake_ethernet_tunnels_are_excluded_from_setup_choices(self):
+  from types import SimpleNamespace as NS
+  from voicehub.provisioning import interfaces
+  addrs={name:[NS(family=socket.AF_INET,address=address)] for name,address in [('feth2177','172.23.55.123'),('feth2916','10.147.18.10'),('en0','10.159.134.213'),('utun8','10.126.126.234')]}
+  with patch('voicehub.provisioning.hardware_ports',return_value={'en0':'Wi-Fi'}),patch('voicehub.provisioning.psutil.net_if_addrs',return_value=addrs),patch('voicehub.provisioning.psutil.net_if_stats',return_value={}):
+   self.assertEqual(interfaces(),[{'interface':'en0','address':'10.159.134.213','label':'Wi-Fi'}])

@@ -157,27 +157,27 @@
         <section data-panel="connections" hidden>
           <div class="section-intro"><p>选好客户端，按步骤连上 VoiceHub，就可以开始聊天。</p><button class="secondary" id="connections-refresh">刷新状态</button></div>
           <p id="connections-notice" class="hint" role="status">正在读取连接状态…</p>
-          <h2 class="onboarding-section-title">1. 选择你要使用的客户端</h2><div id="client-catalog" class="connection-grid"></div>
+          <h2 class="onboarding-section-title">选择设备</h2><div id="client-catalog" class="connection-grid"></div>
           <article class="panel onboarding-guide"><div class="section-heading"><h2 id="client-guide-title">接入向导</h2><span id="client-guide-status" class="tag"></span></div><p id="client-guide-hardware" class="hint"></p><ol id="client-guide-steps"></ol><p id="client-install-note" class="hint"></p><div id="client-install-actions" class="button-row"></div></article>
           <article id="echoear-installer" class="panel onboarding-guide" hidden>
-            <h2>用 USB 连接喵伴</h2><p class="hint">这台电脑运行 VoiceHub，也负责给喵伴配网。准备一根数据线，电脑保持连接目标 Wi-Fi，无需另一台配网设备。</p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
-            <h3>1. 插入 USB，识别设备</h3><p id="echoear-serial-note" class="hint"></p><p id="echoear-device-info" class="hint"></p>
-            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">连接并检查设备</button><button type="button" class="text-button" id="echoear-disconnect" disabled>断开 USB</button></div>
-            <h3>2. 选择网络，备份并连接</h3><p class="hint">填写与电脑可互通的 2.4 GHz Wi-Fi。先保存完整原机备份，再写入网络和 VoiceHub 连接信息，完成后自动重启。密码仅通过本机浏览器与 USB 处理。</p>
+            <h2>连接喵伴</h2><p class="hint">USB 插上猫头，填写 Wi-Fi，剩下的交给 VoiceHub。</p>
+            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">连接 USB</button><span id="echoear-device-info" class="hint"></span><button type="button" class="text-button" id="echoear-disconnect" disabled hidden>断开</button></div>
             <form id="echoear-network-form">
-              <label>Wi-Fi 名称<input id="echoear-wifi-ssid" autocomplete="off" maxlength="32" required placeholder="例如：CFC-SW" /></label>
+              <label>Wi-Fi 名称<input id="echoear-wifi-ssid" autocomplete="off" maxlength="32" required placeholder="与电脑相同的 2.4 GHz Wi-Fi" /></label>
               <label>Wi-Fi 密码<input id="echoear-wifi-password" type="password" autocomplete="new-password" maxlength="64" placeholder="开放网络可留空" /></label>
-              <label id="echoear-network-choice" hidden>电脑使用的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
-              <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />同时更新到已验证的适配固件（可选）</label><p id="echoear-update-note" class="hint"></p>
-              <button id="echoear-setup" class="primary" type="submit" disabled>保存原机备份并连接</button>
+              <label id="echoear-network-choice" hidden>电脑连接的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
+              <button id="echoear-setup" class="primary" type="submit" disabled>备份并连接</button>
             </form>
-            <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度"></progress><p id="echoear-install-status" role="status">先连接 USB 并检查设备，再填写网络。</p>
-            <details><summary>固件升级与备份恢复</summary><p class="hint">已有兼容固件可直接配网，无需升级。原机备份包含原固件和设备设置，仅保存到本机。恢复只写应用与设置，不改写引导程序、分区表或资源。</p>
-              <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>保存升级前备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>安装已验证升级</button></div>
-              <label for="echoear-restore-file">选择本机备份</label><input id="echoear-restore-file" type="file" accept=".vhbackup,.vhdevice" disabled/><button type="button" class="secondary" id="echoear-restore" disabled>确认恢复这台设备的备份</button>
+            <p class="hint">会先让你保存原机备份，再自动配置并重启。Wi-Fi 密码只通过本机 USB 写入。</p>
+            <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度" hidden></progress><p id="echoear-install-status" role="status">先点击“连接 USB”。</p>
+            <p id="echoear-verify-status" role="status"></p><button type="button" class="primary" id="echoear-heard" disabled hidden>听到回复，完成连接</button>
+            <details class="echoear-advanced"><summary>高级选项</summary>
+              <p id="echoear-serial-note" class="hint"></p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
+              <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />连接时同时更新固件</label><p id="echoear-update-note" class="hint"></p>
+              <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>另存升级备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>单独安装升级</button></div>
+              <h3>从备份恢复</h3><p class="hint">选择这台喵伴的 .vhdevice 或 .vhbackup 备份，恢复原应用和设置。</p><label for="echoear-restore-file">备份文件</label><input id="echoear-restore-file" type="file" accept=".vhbackup,.vhdevice" disabled/><button type="button" class="secondary" id="echoear-restore" disabled>恢复备份</button>
+              <h3>其他配网方式</h3><button type="button" class="secondary" id="echoear-copy-setup">复制 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">供设备热点配网页使用。</p>
             </details>
-            <details><summary>手动热点配网（其他连接方式）</summary><p class="hint">设备已支持配网页时，也可连接设备热点填写设置。</p><button type="button" class="secondary" id="echoear-copy-setup">复制我的 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">连接入口含设备访问凭据，请仅用于自己的设备。</p></details>
-            <h3>说一句“你好”，确认可以对话</h3><p id="echoear-verify-status" role="status">写入连接设置并重启后，这里会检查上线状态。唤醒后说“你好”，看到识别文字、听到回复再完成接入。</p><button type="button" class="primary" id="echoear-heard" disabled>我听到了回复，完成接入</button>
           </article><details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>
           <div class="connection-grid">
             <article class="panel"><div class="section-heading"><h2>WebSocket 设备监听</h2><span class="tag" id="ws-device-state">读取中</span></div><p id="ws-console-address" class="hint"></p><p id="ws-device-address" class="hint"></p>
@@ -189,7 +189,7 @@
               <p class="hint"><a href="https://github.com/zhiwehu/miaoban/blob/feature/voicehub-control-center/docs/MQTT_UDP.md" target="_blank" rel="noopener noreferrer">Broker 与设备初始化说明</a></p><p class="hint">先停止网关再修改配置。网关连接已有 Broker，不负责安装或启停 Broker。密码、ACL 和配网令牌沿用私有配置。</p><div class="button-row" id="mqtt-connection-actions"><button class="secondary" type="button" data-action="start">启动</button><button class="secondary" type="button" data-action="stop">停止</button><button class="secondary" type="button" data-action="restart">重启</button></div>
             </article>
           </div><datalist id="local-addresses"></datalist><p id="local-address-hint" class="hint"></p></details>
-          <article class="panel onboarding-guide"><div class="section-heading"><h2>3. 检查连接，开始聊天</h2><span id="connections-online-count" class="tag">0 在线</span></div><div id="connections-devices"></div></article>
+          <article class="panel onboarding-guide"><div class="section-heading"><h2>已连接设备</h2><span id="connections-online-count" class="tag">0 在线</span></div><div id="connections-devices"></div></article>
           <details class="panel onboarding-guide"><summary>查看历史对话和日志</summary><p class="hint">设备离线后也能查看。这里显示最近 20 个会话。</p><div id="connections-recent"></div></details>
         </section>
         <section data-panel="models" hidden>

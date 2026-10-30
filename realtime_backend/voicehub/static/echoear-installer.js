@@ -29,16 +29,19 @@ function controls(){
  for(const id of ['echoear-wifi-ssid','echoear-wifi-password','echoear-network-host'])$(id).disabled=busy;
  if(!thisComputer)$('echoear-setup-status').textContent='USB 一体接入请在运行 VoiceHub 的这台电脑上，通过 localhost 打开页面。';
  $('echoear-heard').disabled=!$('echoear-heard').dataset.ready;
+ $('echoear-heard').hidden=!$('echoear-heard').dataset.ready;
+ $('echoear-disconnect').hidden=!transport;
+ $('echoear-install-progress').hidden=!busy;
 }
 async function action(fn){if(busy)return;busy=true;controls();try{await fn();}catch(e){
  const stage=lastStage;console.warn('EchoEar operation failed:',stage,e.name,e.message);
  const cancelled=!writing&&(e.name==='AbortError'||e.name==='NotFoundError');
  const serialTimeout=/No serial data|Serial data stream stopped|timed?\s*out|Timeout/i.test(e.message||'');
- const message=cancelled?'已取消。设备没有开始安装。':messages[e.message]||
+ const message=e.keepConnection?e.message:cancelled?'已取消。设备没有开始安装。':messages[e.message]||
   (serialTimeout?'USB 读取中断或超时。请重新连接；若反复发生，请保留下面的阶段和错误信息。':'操作没有完成。请检查数据线、关闭占用串口的软件，再重新连接；已有备份可用于恢复。');
  // A failed inspection must not retain a stale loader or keep the robot in
  // download mode. Never reset automatically after a failed flash write.
- if(!writing)await disconnect();
+ if(!writing&&!e.keepConnection)await disconnect();
  status(message+(cancelled?'':'\n停止阶段：'+stage+'\n错误：'+String(e.message||e.name).slice(0,200)));
  }finally{busy=false;writing=false;controls();}}
 async function disconnect(){
@@ -57,7 +60,7 @@ window.addEventListener('voicehub:firmware',event=>{
  controls();
 });
 $('echoear-connect').onclick=()=>action(async()=>{
- await disconnect();heard=false;connectingAt=0;expectedMac='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
+ await disconnect();heard=false;connectingAt=0;expectedMac='';$('echoear-verify-status').textContent='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
  const port=await navigator.serial.requestPort();
  const {ESPLoader,Transport}=await import('./vendor/esptool-js-0.7.0/bundle.js');
  transport=new Transport(port,false);
@@ -73,8 +76,8 @@ $('echoear-connect').onclick=()=>action(async()=>{
   status((messages[e.message]||'当前固件检查未通过。')+' 可展开“固件升级与备份恢复”选择原机备份。',0);return;
  }
  expectedMac=device.mac;
- $('echoear-device-info').textContent='已识别兼容的 EchoEar（ESP32-S3，实际 Flash '+device.flashSize+'），当前应用版本 '+device.current.version+'。设备型号、容量、分区和现有固件检查通过。';
- status('设备检查通过。下一步保存备份。',1);
+ $('echoear-device-info').textContent='已连接喵伴';
+ status('USB 已连接。填写 Wi-Fi 后，点击“备份并连接”。',1);
 });
 $('echoear-backup').onclick=()=>action(async()=>{
  backup=null;
@@ -117,6 +120,7 @@ $('echoear-restore').onclick=()=>action(async()=>{
 });
 $('echoear-disconnect').onclick=()=>action(async()=>{await disconnect();status('USB 已断开，设备已尝试重启。');});
 async function prepareConnection(){
+ try{
  const host=$('echoear-network-host').value;
  const response=await fetch('/api/clients/echoear-s3/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(host?{host}:{})});
  if(response.status===401)throw new Error('请先使用管理员账号登录。');
@@ -124,12 +128,14 @@ async function prepareConnection(){
  if(!response.ok){
   if(value.interfaces?.length){
    const select=$('echoear-network-host');select.replaceChildren();
-   for(const item of value.interfaces){const option=document.createElement('option');option.value=item.address;option.textContent=item.interface+'（'+item.address+'）';select.append(option);}
+   const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='请选择电脑连接喵伴的网络';select.append(placeholder);
+   for(const item of value.interfaces){const option=document.createElement('option');option.value=item.address;option.textContent=(item.label||item.interface)+'（'+item.address+'）';select.append(option);}
    $('echoear-network-choice').hidden=false;
   }
   throw new Error(value.error?.message||'设备连接服务准备失败。');
  }
  return value;
+ }catch(error){error.keepConnection=true;throw error;}
 }
 $('echoear-network-form').onsubmit=event=>{
  event.preventDefault();
@@ -179,7 +185,7 @@ $('echoear-copy-setup').onclick=async()=>{
 };
 $('echoear-heard').onclick=()=>{heard=true;$('echoear-verify-status').textContent='你已确认听到设备回复，语音接入完成。之后可以在对话记录和日志里查看。';};
 setInterval(async()=>{
- if(!expectedMac||document.hidden||$('echoear-installer').hidden||heard)return;
+ if(!expectedMac||!connectingAt||document.hidden||$('echoear-installer').hidden||heard)return;
  try{
   const response=await fetch('/api/clients/echoear-s3/verify?device='+encodeURIComponent(expectedMac));
   if(!response.ok)return;const value=await setupResponse(response);
