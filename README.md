@@ -27,10 +27,25 @@
 唤醒后转头一致性、真实外放自然插话、长时间与多设备运行尚未完整验收。
 后台支持取消机制并不等于当前ESP32已完成全双工AEC。
 
+## MCP 工具与本地决策
+
+支持天气、新闻、本机系统信息、本地音乐及指定目录文件整理 MCP 工具，支持参数校验、缺参追问，
+耗时调用前先播报提示。网页聊天和对话记录显示调用参数、状态、耗时和失败原因，
+独立 MCP 页面可查看参数并启停工具。
+
+默认可用对话模型生成受限计划；可选本地 Rex + rank-16 LoRA 联合分类和参数抽取。
+本仓库包含训练、评估和运行代码，不包含基础模型、adapter 权重或训练产物。
+MCP 页面可配置音乐目录、搜索和控制播放（Mac 后端默认音频设备）。支持远程 Streamable HTTP 地址接入，以及上传单个 stdio/HTTP JSON 配置或 Python ZIP；上传不执行，需明确信任后启用验证。扩展以当前用户权限运行，不提供 OS 沙箱，也不自动安装依赖。
+
+- [工具、Rex 准备与验证说明](docs/MCP.md)
+- [购物清单、计时器、位置记录与 Rex 候选训练](docs/EVERYDAY_MCP.md)
+- [指定目录文件整理：预览、确认与撤销](realtime_backend/docs/SPEC-file-organizer.md)
+- [管理界面及扩展设计](realtime_backend/docs/SPEC-mcp-management.md)
+
 ## 目录
 
 ```text
-realtime_backend/           独立后端、网页、67项测试、启动脚本
+realtime_backend/           独立后端、网页、启动脚本与回归测试
 firmware/base_controller/  底座ESP32-C3控制器源码
 firmware/shared/           串口协议解析
 firmware/head/             EchoEar 猫头源码工程、依赖锁和构建配置
@@ -131,3 +146,11 @@ python3 scripts/test_firmware_logic.py
 
 这两组测试不刷写设备。硬件构建与物理效果需要另外验收。
 本次发布的测试结果、采样性能和未完事项见docs/VALIDATION.md。
+
+### 内置模型服务管理
+
+后台「模型与语音」支持为内置 ASR / LLM / TTS 独立启动、停止、重启，实时查看状态和 PID。详见 [内置模型服务说明](docs/managed-model-services.md)。
+
+### 客户端接入向导
+
+后台「客户端接入」提供已验证客户端列表、安装与连接引导、设备协议状态，以及按会话查看对话与日志的入口。普通用户无需操作 IP / MQTT 参数；管理员可展开高级连接设置管理设备监听和网关。详见 [客户端接入](docs/CLIENT_ONBOARDING.md)。

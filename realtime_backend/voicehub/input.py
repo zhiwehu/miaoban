@@ -62,15 +62,18 @@ class AudioInput:
                     probability = await asyncio.to_thread(self.vad.probability, pcm)
                     onset, segment = self.segmenter.feed(pcm, probability)
                     if onset:
+                        session.input_active=True
                         session.last_activity = time.monotonic()
                         if session.turn:
                             if self.config['barge_in']:
                                 await session.interrupt('speech')
                             else:
                                 self.segmenter.reset()
+                                session.input_active=False
                                 continue
                         await session.emit('speech.started', probability=round(probability, 3))
                     if segment is not None:
+                        session.input_active=False
                         if not session.turn:
                             await session.submit(pcm=segment)
                         else:
@@ -82,5 +85,6 @@ class AudioInput:
                 await session.emit('error', code='audio_input_failed', message='音频输入失败，请重新连接。')
 
     async def close(self):
+        self.session.input_active=False
         self.task.cancel()
         await asyncio.gather(self.task, return_exceptions=True)

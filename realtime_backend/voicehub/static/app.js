@@ -1,7 +1,11 @@
+import {createMcpUi} from './mcp-ui.js';
+
 const $ = (id) => document.getElementById(id);
 const state = {
   view: "overview",
   config: null,
+  logSession: null,
+  services: [],
   sessions: [],
   status: null,
   logs: [],
@@ -31,6 +35,9 @@ const eventLabels = {
   "config.saved": "配置已保存",
   "transcript.final": "识别完成",
   "reply.final": "回复生成完成",
+  "tool.started": "工具查询中",
+  "tool.completed": "工具查询完成",
+  "tool.failed": "工具查询失败",
   error: "处理错误",
 };
 const time = (value) =>
@@ -77,8 +84,10 @@ async function api(path, options = {}) {
   }
   return response.json();
 }
+const mcp = createMcpUi({api,node,notice,onConfig:()=>{}});
 function view(name) {
-  if (!["overview", "conversations", "models", "logs", "lab"].includes(name))
+  if(name === 'skills') name = 'mcp';
+  if (!["overview", "conversations", "connections", "models", "mcp", "logs", "lab"].includes(name))
     name = "overview";
   state.view = name;
   document
@@ -91,16 +100,22 @@ function view(name) {
     overview: "运行总览",
     conversations: "对话记录",
     models: "模型与语音",
+    mcp: "MCP 工具",
+    connections: "客户端接入",
     logs: "事件日志",
-    lab: "连接实验室",
+    lab: "网页聊天",
   }[name];
   if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  window.dispatchEvent(new CustomEvent("voicehub:view", {detail:name}));
 }
 document
   .querySelectorAll("[data-view]")
   .forEach((el) => (el.onclick = () => view(el.dataset.view)));
 $("go-lab").onclick = () => view("lab");
 $("go-logs").onclick = () => view("logs");
+$("mcp-settings").onclick = () => {
+  $('mcp-common-settings').scrollIntoView({behavior:'smooth',block:'start'});
+};
 window.onhashchange = () => view(location.hash.slice(1));
 view(location.hash.slice(1));
 setInterval(() => ($("clock").textContent = time()), 1000);
@@ -115,7 +130,7 @@ function renderOverview() {
   const cfg = state.config;
   if (cfg) {
     $("engine-status").textContent =
-      cfg.llm.provider === "mlx" ? "本地 MLX" : "HTTP API";
+      cfg.llm.provider === "builtin" ? "内置服务" : "HTTP API";
     $("engine-model").textContent = cfg.llm.model;
   }
   const devices = $("devices");
@@ -124,14 +139,14 @@ function renderOverview() {
     empty(
       devices,
       "暂时没有在线设备",
-      "前往连接实验室，验证你的第一个客户端。",
+      "前往网页聊天，验证你的第一个客户端。",
     );
   for (const device of s.sessions) {
     const row = node("div", "device-row");
     const text = node("div");
     text.append(
       node("strong", "", device.device_id),
-      node("small", "", device.id.slice(0, 12) + " · " + device.wake_mode),
+      node("small", "", device.id.slice(0, 12) + " · " + (device.protocol || "未知协议") + " · " + device.wake_mode),
     );
     row.append(
       node("span", "device-icon", "◉"),
@@ -160,6 +175,7 @@ function renderOverview() {
 }
 function renderSessions() {
   const target = $("sessions");
+  const scrollTop = target.scrollTop;
   target.replaceChildren();
   if (!state.sessions.length)
     empty(target, "还没有会话", "记录会在开始对话后出现。");
@@ -173,8 +189,10 @@ function renderSessions() {
       node("small", "", dateTime(s.updated) + " · " + s.id.slice(0, 8)),
     );
     b.onclick = () => selectSession(s.id);
+    b.setAttribute("aria-current", String(s.id === state.selected));
     target.append(b);
   }
+  target.scrollTop = scrollTop;
 }
 const deliveryLabels = {
   confirmed: "已识别",
@@ -198,15 +216,29 @@ function bubble(message) {
   );
   return wrapper;
 }
-function renderMessages(target, messages, sid, includeLive = true) {
+function renderMessages(target, messages, sid, includeLive = true, scrollMode = "follow") {
+  const previousTop = target.scrollTop;
+  const previousHeight = target.scrollHeight;
+  const follow = previousHeight - previousTop - target.clientHeight < 80;
   target.replaceChildren();
-  for (const m of messages) target.append(bubble(m));
+  const rendered = new Set();
+  const appendCalls = tid => {
+    if (!tid || rendered.has(tid)) return;
+    target.append(...mcp.renderCalls(sid,tid));
+    rendered.add(tid);
+  };
+  for (const m of messages) {
+    if (m.role === 'assistant') appendCalls(m.turn_id);
+    target.append(bubble(m));
+    if (m.role === 'user') appendCalls(m.turn_id);
+  }
   for (const [key, value] of state.live) {
     if (
       includeLive &&
       value.sid === sid &&
       !messages.some((m) => m.turn_id === key && m.role === "assistant")
-    )
+    ) {
+      appendCalls(key);
       target.append(
         bubble({
           role: "assistant",
@@ -215,14 +247,20 @@ function renderMessages(target, messages, sid, includeLive = true) {
           created: value.created,
         }),
       );
+    }
   }
   if (!target.children.length)
     empty(target, "对话已经准备好", "发送一句话，或开启麦克风。");
-  target.scrollTop = target.scrollHeight;
+  if (scrollMode === "prepend") target.scrollTop = previousTop + target.scrollHeight - previousHeight;
+  else if (scrollMode === "end" || follow) target.scrollTop = target.scrollHeight;
+  else target.scrollTop = previousTop;
 }
-async function selectSession(sid) {
+async function selectSession(sid, preserveScroll = false) {
   state.selected = sid;
-  state.messages = await api("sessions/" + sid + "/messages");
+  const messages = await api("sessions/" + sid + "/messages");
+  await mcp.loadCalls(sid,messages);
+  if (state.selected !== sid) return;
+  state.messages = messages;
   $("conversation-title").textContent =
     state.sessions.find((s) => s.id === sid)?.device_id || sid.slice(0, 12);
   $("interrupt-session").disabled = !state.status?.sessions.some(
@@ -230,7 +268,7 @@ async function selectSession(sid) {
   );
   $("more-messages").hidden = state.messages.length < 100;
   renderSessions();
-  renderMessages($("messages"), state.messages, sid);
+  renderMessages($("messages"), state.messages, sid, true, preserveScroll ? "follow" : "end");
 }
 $("interrupt-session").onclick = () =>
   api("sessions/" + state.selected + "/interrupt", { method: "POST" }).catch(
@@ -243,7 +281,8 @@ $("more-messages").onclick = async () => {
       "sessions/" + state.selected + "/messages?before=" + state.messages[0].id,
     );
     state.messages = [...older, ...state.messages];
-    renderMessages($("messages"), state.messages, state.selected);
+    await mcp.loadCalls(state.selected,older);
+    renderMessages($("messages"), state.messages, state.selected, true, "prepend");
     $("more-messages").hidden = older.length < 100;
   } catch (e) {
     notice(e.message, true);
@@ -280,7 +319,7 @@ function renderLogs() {
     const payload = item.payload || {};
     const values = Object.entries(payload)
       .filter(([k]) => !["seq", "timestamp", "text"].includes(k))
-      .map(([k, v]) => k + ": " + String(v))
+      .map(([k, v]) => k + ": " + (typeof v === 'object' ? JSON.stringify(v) : String(v)))
       .join(" · ");
     detail.append(
       node("div", "mono", item.session_id?.slice(0, 12) || "system"),
@@ -303,7 +342,7 @@ $("more-logs").onclick = async () => {
   try {
     const last = state.logs.at(-1);
     if (!last) return;
-    const older = await api("logs?before=" + last.id);
+    const older = await api("logs?before=" + last.id + (state.logSession ? "&session_id=" + encodeURIComponent(state.logSession) : ""));
     state.logs.push(...older);
     renderLogs();
     $("more-logs").hidden = older.length < 100;
@@ -311,12 +350,33 @@ $("more-logs").onclick = async () => {
     notice(e.message, true);
   }
 };
+window.addEventListener("voicehub:open-session", async (event) => {
+  try {
+    const {sid, target} = event.detail;
+    if (target === "logs") {
+      state.logSession = sid;
+      $("log-session-scope").textContent = "当前会话：" + sid;
+      $("log-session-scope").hidden = $("clear-log-session").hidden = false;
+      $("log-filter").value = "all";
+      view("logs");
+      await refresh();
+    } else {
+      view("conversations");
+      await selectSession(sid);
+    }
+  } catch (e) { notice(e.message, true); }
+});
+$("clear-log-session").onclick = () => {
+  state.logSession = null;
+  $("log-session-scope").hidden = $("clear-log-session").hidden = true;
+  refresh().catch(e => notice(e.message, true));
+};
 let refreshTimer;
 async function refresh() {
   const [status, sessions, logs] = await Promise.all([
     api("status"),
     api("sessions"),
-    api("logs"),
+    api("logs" + (state.logSession ? "?session_id=" + encodeURIComponent(state.logSession) : "")),
   ]);
   state.status = status;
   state.sessions = sessions;
@@ -324,7 +384,7 @@ async function refresh() {
   renderOverview();
   renderSessions();
   renderLogs();
-  if (state.selected) await selectSession(state.selected);
+  if (state.selected) await selectSession(state.selected, true);
 }
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
@@ -347,6 +407,11 @@ function observe() {
   };
   monitor.onmessage = (event) => {
     const e = JSON.parse(event.data);
+    mcp.track(e);
+    if (e.type.startsWith('tool.')) {
+      if (state.selected === e.session_id) renderMessages($('messages'),state.messages,state.selected);
+      if (identity?.session_id === e.session_id) renderLab();
+    }
     if (e.type === "reply.delta") {
       const item = state.live.get(e.turn_id) || {
         sid: e.session_id,
@@ -376,6 +441,9 @@ function observe() {
     scheduleRefresh();
   };
   monitor.onclose = () => {
+    mcp.unconfirm();
+    if (state.selected) renderMessages($('messages'),state.messages,state.selected);
+    renderLab();
     $("server-dot").classList.add("off");
     $("connection-label").textContent = "事件流重连中";
     clearTimeout(monitorRetry);
@@ -383,6 +451,56 @@ function observe() {
   };
   monitor.onerror = () => monitor.close();
 }
+
+const serviceBusy = new Set();
+const serviceLabels = {running: "运行中", starting: "加载中", stopped: "已停止", failed: "失败",
+  blocked: "端口被占用", external: "外部服务", embedded: "随后台运行", system: "系统语音"};
+function renderServices() {
+  for (const item of state.services) {
+    const container = $(item.kind + "-service");
+    if (!container) continue;
+    const status = $(item.kind + "-service-status");
+    const detail = [serviceLabels[item.state] || item.state];
+    if (item.pid) detail.push("PID " + item.pid);
+    if (item.active) detail.push(item.active + " 个请求处理中");
+    if (item.needs_restart) detail.push("模型已修改，请重启生效");
+    if (item.error) detail.push(item.error);
+    if (!item.managed) detail.push("选择内置服务并保存后可操作");
+    status.textContent = detail.join(" · ");
+    status.classList.toggle("error", ["failed", "blocked"].includes(item.state));
+    for (const button of container.querySelectorAll("button")) {
+      button.disabled = !item.managed || serviceBusy.has(item.kind) ||
+        (button.dataset.action === "start" && ["running", "starting"].includes(item.state)) ||
+        (button.dataset.action !== "start" && !item.pid && item.state === "stopped");
+    }
+  }
+}
+async function refreshServices() {
+  state.services = await api("services");
+  renderServices();
+}
+async function controlService(kind, action) {
+  serviceBusy.add(kind);
+  renderServices();
+  try {
+    await api("services/" + kind + "/" + action, {method: "POST"});
+    await refreshServices();
+    notice(action === "stop" ? "服务已停止，模型进程已释放。" : "操作已提交，模型加载状态会自动更新。");
+  } catch (e) {
+    notice(e.message, true);
+    await refreshServices().catch(() => {});
+  } finally {
+    serviceBusy.delete(kind);
+    renderServices();
+  }
+}
+let servicePolling = false;
+setInterval(async () => {
+  if (state.view !== "models" || document.hidden || servicePolling) return;
+  servicePolling = true;
+  try { await refreshServices(); } catch (e) { notice(e.message, true); }
+  finally { servicePolling = false; }
+}, 2000);
 
 function field(label, id, value, type = "text") {
   const l = node("label", "", label);
@@ -419,11 +537,12 @@ function populateConfig(cfg) {
     select.id = kind + "-provider";
     for (const [value, text] of kind === "tts"
       ? [
+          ["builtin", "内置服务（可启停）"],
           ["macos", "macOS 原生语音"],
           ["http", "兼容 HTTP API"],
         ]
       : [
-          ["mlx", "Mac 本地 MLX"],
+          ["builtin", "内置服务（可启停）"],
           ["http", "兼容 HTTP API"],
         ]) {
       const option = node("option", "", text);
@@ -473,14 +592,36 @@ function populateConfig(cfg) {
       );
     }
     select.onchange = () => {
+      if (kind === "tts" && select.value === "builtin" && $("tts-model").value === "tts-1") {
+        $("tts-model").value = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit";
+        $("tts-voice").value = "Serena";
+        $("tts-sample_rate").value = 24000;
+      }
       for (const key of ["url", "key_env"])
         $(kind + "-" + key).disabled = select.value !== "http";
       if (kind === "tts")
         $("tts-sample_rate").disabled = select.value === "macos";
     };
+    const service = node("div", "service-controls");
+    service.id = kind + "-service";
+    const status = node("p", "service-state", "正在读取服务状态…");
+    status.id = kind + "-service-status";
+    status.setAttribute("role", "status");
+    const actions = node("div", "button-row");
+    for (const [action, text] of [["start", "启动"], ["stop", "停止"], ["restart", "重启"]]) {
+      const button = node("button", "secondary", text);
+      button.type = "button";
+      button.dataset.action = action;
+      button.setAttribute("aria-label", names[kind][0] + text);
+      button.onclick = () => controlService(kind, action);
+      actions.append(button);
+    }
+    service.append(status, actions);
+    panel.append(service);
     target.append(panel);
     select.onchange();
   }
+  renderServices();
   const mapping = {
     "wake-mode": cfg.wake.mode,
     "wake-phrase": cfg.wake.phrase,
@@ -523,12 +664,14 @@ $("settings-form").onsubmit = async (event) => {
     });
     cfg.system_prompt = $("system-prompt").value;
     cfg.retention_days = Number($("retention-days").value);
-    const result = await api("config", {
+    delete cfg.tools;
+    const result = await api("config/models", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cfg),
     });
     populateConfig(result.config);
+    await refreshServices();
     notice("配置已保存。请让客户端重新连接，以使用新配置。");
   } catch (e) {
     notice(e.message, true);
@@ -571,6 +714,7 @@ let manualDisconnect = false,
   labMessages = [],
   partial = "",
   clientReady = false;
+let activeWakeMode = "manual", activeWakePhrase = "";
 let identity;
 try {
   identity = JSON.parse(sessionStorage.getItem("voicehub-client") || "null");
@@ -601,59 +745,122 @@ function clearPlayback() {
 }
 async function audioContext() {
   if (!context || context.state === "closed") {
-    context = new AudioContext({ sampleRate: 16000 });
+    // Let Chrome negotiate the AirPods hardware rate; capture.js converts to 16 kHz.
+    context = new AudioContext();
     await context.audioWorklet.addModule("/static/capture.js");
   }
   await context.resume();
   return context;
 }
+let microphonePackets = 0, microphoneFrames = 0, microphonePeak = 0;
+let microphoneLastFrame = 0, microphoneStarted = 0;
+function renderMicrophone() {
+  const track = stream?.getAudioTracks()[0];
+  const target = $("microphone-status");
+  if (!track) { target.textContent = "麦克风未开启"; $("microphone-level").value = 0; return; }
+  const age = performance.now() - (microphoneLastFrame || microphoneStarted);
+  const state = track.readyState !== "live" ? "输入已断开，请重新开启麦克风" :
+    track.muted ? "输入设备暂无音频" : context?.state !== "running" ? "音频已暂停，请点击开启麦克风恢复" :
+    age > 3000 ? "没有采集到音频帧，请重新开启麦克风或切换输入设备" :
+    microphonePeak < .001 ? "输入接近静音，请检查麦克风选择和耳机佩戴" : "正在采集";
+  target.textContent = [track.label || "默认输入", state,
+    (context?.sampleRate || "—") + " Hz → 16000 Hz",
+    "采集 " + microphoneFrames + " 帧 / 已上传 " + microphonePackets + " 帧"].join(" · ");
+  $("microphone-level").value = Math.min(1, microphonePeak * 5);
+}
+async function refreshMicrophones() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const select = $("microphone-device"), selected = select.value;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  select.replaceChildren();
+  const automatic = node("option", "", "系统默认麦克风"); automatic.value = "";
+  select.append(automatic);
+  let index = 0;
+  for (const device of devices.filter(d => d.kind === "audioinput")) {
+    const option = node("option", "", device.label || "麦克风 " + (++index));
+    option.value = device.deviceId; select.append(option);
+  }
+  select.value = [...select.options].some(o => o.value === selected) ? selected : "";
+}
 async function microphone() {
-  await audioContext();
   if (stream) return;
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 1,
-    },
-    video: false,
-  });
-  micSource = context.createMediaStreamSource(stream);
-  capture = new AudioWorkletNode(context, "voicehub-capture");
-  mute = context.createGain();
-  mute.gain.value = 0;
-  micSource.connect(capture).connect(mute).connect(context.destination);
-  capture.port.onmessage = (event) => {
-    if (socket?.readyState === WebSocket.OPEN && clientReady) {
-      if (socket.bufferedAmount > 64000) {
-        notice("上传音频积压，已断开以避免延迟累积。", true);
-        disconnect();
+  try {
+    const device = $("microphone-device").value;
+    // Opening Bluetooth input may change the hardware route and its sample rate.
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        channelCount: 1, ...(device ? {deviceId: {exact: device}} : {})}, video: false,
+    });
+    // Discard the old output route before constructing the input graph.
+    if (context && context.state !== "closed") await context.close();
+    context = null;
+    await audioContext();
+    micSource = context.createMediaStreamSource(stream);
+    capture = new AudioWorkletNode(context, "voicehub-capture");
+    mute = context.createGain(); mute.gain.value = 0;
+    micSource.connect(capture).connect(mute).connect(context.destination);
+    microphonePackets = microphoneFrames = 0;
+    microphonePeak = 0;
+    microphoneLastFrame = 0; microphoneStarted = performance.now();
+    capture.port.onmessage = (event) => {
+      if (event.data?.type === "level") {
+        microphonePeak = event.data.peak;
+        microphoneLastFrame = performance.now();
+        renderMicrophone();
         return;
       }
-      socket.send(event.data);
-    }
-  };
+      microphoneFrames++;
+      microphoneLastFrame = performance.now();
+      if (socket?.readyState === WebSocket.OPEN && clientReady) {
+        if (socket.bufferedAmount > 64000) {
+          notice("上传音频积压，已断开以避免延迟累积。", true); disconnect(); return;
+        }
+        socket.send(event.data);
+        microphonePackets++;
+      }
+    };
+    const track = stream.getAudioTracks()[0];
+    track.onmute = track.onunmute = renderMicrophone;
+    track.onended = () => { renderMicrophone(); notice("麦克风已断开，请选择输入设备后重新开启。", true); };
+    capture.onprocessorerror = () => notice("音频采集已停止，请重新开启麦克风。", true);
+    renderMicrophone();
+    await refreshMicrophones().catch(() => {});
+  } catch (e) {
+    stopMicrophone();
+    throw e;
+  }
 }
 function stopMicrophone() {
-  if (stream) for (const track of stream.getTracks()) track.stop();
+  if (stream) for (const track of stream.getTracks()) {
+    track.onmute = track.onunmute = track.onended = null;
+    track.stop();
+  }
   stream = null;
-  micSource?.disconnect();
-  capture?.disconnect();
-  mute?.disconnect();
-  capture = null;
-  micSource = null;
-  mute = null;
+  if (capture) { capture.port.onmessage = null; capture.onprocessorerror = null; }
+  micSource?.disconnect(); capture?.disconnect(); mute?.disconnect();
+  capture = null; micSource = null; mute = null;
+  renderMicrophone();
 }
+setInterval(() => { if (stream) renderMicrophone(); }, 1000);
+navigator.mediaDevices?.addEventListener("devicechange", () => refreshMicrophones().catch(() => {}));
+$("microphone-device").onchange = () => {
+  if (stream) connect(true);
+};
+refreshMicrophones().catch(() => {});
+
 function phase(name, detail) {
   $("client-phase").textContent = labels[name] || name;
   $("client-detail").textContent =
-    detail || "你的声音正在通过统一 WebSocket 协议传输。";
+    detail || "我在听。说完一句话后稍等，就会收到回复。";
   $("mic-orb").className = "mic-orb " + name;
 }
 async function loadLabMessages() {
   if (!identity?.session_id) return;
-  labMessages = await api("sessions/" + identity.session_id + "/messages");
+  const sid = identity.session_id;
+  const messages = await api("sessions/" + sid + "/messages");
+  await mcp.loadCalls(sid,messages);
+  if (identity?.session_id !== sid) return;
+  labMessages = messages;
   renderLab();
 }
 function renderLab() {
@@ -683,8 +890,8 @@ async function connect(useMic = false) {
     }
     clearPlayback();
     stopMicrophone();
-    await audioContext();
     if (useMic) await microphone();
+    else await audioContext();
     openClient();
   } catch (e) {
     stopMicrophone();
@@ -728,6 +935,8 @@ function openClient() {
     void (async () => {
       if (socket !== ws) return;
       const e = JSON.parse(event.data);
+      mcp.track(e);
+      if (e.type.startsWith('tool.')) renderLab();
       if (e.type === "hello") {
         $("notice").hidden = true;
         retries = 0;
@@ -737,6 +946,10 @@ function openClient() {
           resume_token: e.resume_token,
         };
         sessionStorage.setItem("voicehub-client", JSON.stringify(identity));
+        activeWakeMode = e.wake_mode;
+        activeWakePhrase = e.wake_phrase || "";
+        $("wake-feedback").hidden = activeWakeMode !== "backend";
+        $("wake-feedback").textContent = '待机时请说“' + activeWakePhrase + '，你好”。只说唤醒词会进入聆听，不会立即回复。';
         setClientReady(true);
         $("connect-text").disabled = $("connect-mic").disabled = false;
         $("client-status").textContent =
@@ -744,9 +957,16 @@ function openClient() {
         $("lab-session").textContent = e.session_id.slice(0, 12);
         await loadLabMessages();
         if (e.wake_mode !== "backend") send({ type: "session.activate" });
-        else phase("standby", "持续上传已开启，等待唤醒词。");
+        else phase("standby", "请说“" + activeWakePhrase + "”唤醒；无需点击激活聆听。");
         if (wantsMic && !e.capabilities.barge_in)
           notice("客户端未声明有效回声消除，自然插话未开启；仍可点击打断。");
+        return;
+      }
+      if (e.type === "wake.check") {
+        $("wake-feedback").hidden = false;
+        $("wake-feedback").textContent = e.matched
+          ? '已匹配“' + e.phrase + '”，进入聆听。'
+          : '未匹配“' + e.phrase + '”。本次识别：' + (e.heard || '（未识别到文字）') + '。请完整说出唤醒词。';
         return;
       }
       if (e.type === "error") {
@@ -763,7 +983,7 @@ function openClient() {
       if (e.type === "session.state")
         phase(
           e.state,
-          e.state === "standby" ? "等待唤醒或手动激活。" : undefined,
+          e.state === "standby" ? (activeWakeMode === "backend" ? "请说“" + activeWakePhrase + "”唤醒。" : "等待唤醒或手动激活。") : undefined,
         );
       if (e.type === "reply.delta") {
         partial += e.text;
@@ -858,7 +1078,15 @@ function disconnect() {
 $("connect-text").onclick = () => connect(false);
 $("connect-mic").onclick = () => connect(true);
 $("disconnect-client").onclick = disconnect;
-$("activate-client").onclick = () => send({ type: "session.activate" });
+$("activate-client").onclick = () => {
+  context?.resume().catch(() => {});
+  send({ type: "session.activate" });
+};
+$("client-wake").onchange = () => {
+  $("wake-feedback").hidden = $("client-wake").value !== "backend";
+  $("wake-feedback").textContent = '待机时请说“' + (state.config?.wake.phrase || "小宝同学") + '，你好”。无需点击激活聆听。';
+  if (socket) connect(wantsMic);
+};
 $("stop-client").onclick = () => {
   clearPlayback();
   send({ type: "interrupt" });
@@ -879,8 +1107,10 @@ window.addEventListener("pagehide", () => {
 });
 async function boot() {
   try {
-    populateConfig((await api("config")).config);
+    populateConfig((await api("config/models")).config);
     await refresh();
+    await refreshServices();
+    if (state.view === 'mcp') await mcp.refreshCatalogue();
     observe();
   } catch (e) {
     notice(e.message, true);

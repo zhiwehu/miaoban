@@ -26,6 +26,70 @@ class Pipeline:
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_preamble_audio_cannot_start_a_tool(self):
+        from voicehub.tools import ToolNotice
+        called = []
+        async def chat(history):
+            yield ToolNotice('news', '我查一下。')
+            called.append(True)
+            yield '结果。'
+        async def speech(text):
+            if False:
+                yield b''
+        self.pipeline.chat, self.pipeline.speech = chat, speech
+        await self.session.submit('查询新闻')
+        await asyncio.wait_for(self.session.turn.task, 1)
+        self.assertFalse(called)
+        self.assertTrue(any(e['type']=='error' for e in self.events))
+
+
+    async def test_tool_only_starts_after_acknowledgement_audio_has_drained(self):
+        from voicehub.tools import ToolNotice, ToolStatus
+        order = []
+        async def chat(history):
+            yield ToolNotice('news', '我看一下新闻，请稍等。')
+            order.append(('tool', time.monotonic()))
+            yield ToolStatus('news', 'started')
+            yield '新闻结果。'
+        self.pipeline.chat = chat
+        async def send(event):
+            self.events.append(event)
+            if event['type'] == 'audio.chunk':
+                order.append(('audio', time.monotonic()))
+        self.session.send = send
+        self.session.playback_ack = False
+        await self.session.submit('新闻')
+        await asyncio.wait_for(self.session.turn.task, 2)
+        self.assertEqual(order[0][0], 'audio')
+        tool_index = next(i for i, (kind, _) in enumerate(order) if kind == 'tool')
+        self.assertGreaterEqual(order[tool_index][1]-order[0][1], .078)
+        self.assertTrue(any(e['type'] == 'tool.started' for e in self.events))
+        tool_event = next(i for i, e in enumerate(self.events) if e['type'] == 'tool.started')
+        self.assertTrue(any(e['type'] == 'session.state' and e.get('state') == 'speaking'
+                            for e in self.events[tool_event:]))
+        self.assertEqual(sum(e['type']=='audio.end' for e in self.events), 1)
+
+
+    async def test_interrupt_during_acknowledgement_prevents_tool_execution(self):
+        from voicehub.tools import ToolNotice
+        called = []
+        async def chat(history):
+            yield ToolNotice('news', '我看一下新闻，请稍等。')
+            called.append(True)
+            yield '不能出现的旧结果。'
+        self.pipeline.chat = chat
+        async def send(event):
+            self.events.append(event)
+            if event['type'] == 'audio.chunk':
+                await self.session.interrupt('speech')
+        self.session.send = send
+        await self.session.submit('新闻')
+        task = self.session.turn.task
+        await asyncio.wait_for(task, 1)
+        self.assertFalse(called)
+        self.assertFalse(any('旧结果' in e.get('text', '') for e in self.events))
+
+
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.store = Store(Path(self.tmp.name) / 'test.db')
@@ -118,6 +182,30 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.session.state,'standby')
         self.assertFalse(self.store.messages('one'))
         self.assertFalse(any(e['type']=='transcript.final' for e in self.events))
+
+    async def test_wake_check_feedback_is_ephemeral_and_does_not_activate(self):
+        self.session.wake_mode = 'backend'
+        async def transcribe(pcm): return '小保同学'
+        self.pipeline.transcribe = transcribe
+        await self.session.submit(pcm=b'input')
+        await self.session.turn.task
+        check = next(e for e in self.events if e['type'] == 'wake.check')
+        self.assertFalse(check['matched'])
+        self.assertEqual(check['heard'], '小保同学')
+        self.assertEqual(check['phrase'], '小宝同学')
+        self.assertFalse(any(e['type'] == 'wake.check' for e in self.store.events()))
+        self.assertEqual(self.session.state, 'standby')
+
+    async def test_wake_phrase_alone_activates_without_creating_empty_reply(self):
+        self.session.wake_mode = 'backend'
+        async def transcribe(pcm): return '小宝，同学！'
+        self.pipeline.transcribe = transcribe
+        await self.session.submit(pcm=b'input')
+        await self.session.turn.task
+        check = next(e for e in self.events if e['type'] == 'wake.check')
+        self.assertTrue(check['matched'])
+        self.assertEqual(self.session.state, 'listening')
+        self.assertFalse(self.store.messages('one'))
 
     async def test_next_sentence_is_synthesized_before_first_finishes_sending(self):
         sent = 0

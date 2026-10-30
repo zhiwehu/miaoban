@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from .tools import ToolNotice, ToolStatus
 
 
 @dataclass
@@ -16,6 +17,8 @@ class Turn:
     played: asyncio.Event = field(default_factory=asyncio.Event)
     text: str = ''
     recorded: bool = False
+    delivery: str = ''
+    notification_id: str = ''
     started: float = field(default_factory=time.monotonic)
 
 
@@ -24,6 +27,8 @@ class Session:
                  wake_phrase='小宝同学', playback_ack=True, idle_seconds=30):
         self.id, self.device_id = sid, device_id
         self.store, self.pipeline, self.send = store, pipeline, send
+        self.pipeline.session_id=sid
+        self.pipeline.device_id=device_id
         self.publish = publish or (lambda event: None)
         self.wake_mode, self.wake_phrase = wake_mode, wake_phrase
         self.playback_ack, self.idle_seconds = playback_ack, idle_seconds
@@ -31,6 +36,14 @@ class Session:
         self.tasks, self.closed = set(), False
         self.last_activity = time.monotonic()
         self.store.session(sid, device_id)
+        self.input_active=False
+        self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
+        self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
+        self.notification_callback=self.queue_notification
+        self.announcer=None
+        if self.operations:
+            self.operations.bind(sid,self.notification_callback)
+            self.announcer=asyncio.create_task(self.announce_results())
 
     async def emit(self, kind, turn=None, **data):
         if self.closed or (turn and (turn.cancelled or self.turn is not turn)):
@@ -38,10 +51,10 @@ class Session:
         self.seq += 1
         event = dict(type=kind, session_id=self.id, turn_id=turn.id if turn else None,
                      seq=self.seq, timestamp=time.time(), **data)
-        # PCM and token deltas are intentionally excluded from the persistent event journal.
-        if kind not in ('audio.chunk', 'reply.delta'):
+        # Background wake transcripts are sent only to their own client, never journalled.
+        if kind not in ('audio.chunk', 'reply.delta', 'wake.check'):
             self.store.event(event)
-        if kind != 'audio.chunk':
+        if kind not in ('audio.chunk', 'wake.check'):
             self.publish(event)
         await asyncio.wait_for(self.send(event), 3)
 
@@ -63,12 +76,17 @@ class Session:
     def record_reply(self, turn, status):
         if not turn.recorded:
             turn.recorded = True
+            turn.delivery = status
             if turn.text:
                 self.store.message(self.id, turn.id, 'assistant', turn.text, status)
 
     async def interrupt(self, reason='manual'):
         turn = self.turn
         if turn and not turn.cancelled:
+            if self.operations and turn.notification_id and reason!='disconnect':
+                record=self.operations.get(turn.notification_id)
+                if (record.get('calendar_question') or record.get('everyday_question')) and record['delivery']=='pending':
+                    record['delivery']='superseded';self.operations.save(record)
             turn.cancelled = True  # Invalidate BEFORE cancelling provider or awaiting network I/O.
             if turn.task:
                 turn.task.cancel()
@@ -88,21 +106,22 @@ class Session:
         self.tasks.add(turn.task)
         turn.task.add_done_callback(self.tasks.discard)
 
-    async def _run(self, turn, text, pcm):
+    async def _run(self, turn, text, pcm, announcement=None):
         was_standby = self.state == 'standby'
         activated = not was_standby or self.wake_mode != 'backend'
         transcribed = text is None
         try:
             async with asyncio.timeout(120):
                 await self.transition('thinking', turn)
+                if announcement is not None:text=announcement
                 if text is None:
                     text = (await self.pipeline.transcribe(pcm)).strip()
-                if not text:
-                    return
-                if was_standby and self.wake_mode == 'backend':
+                if announcement is None and was_standby and self.wake_mode == 'backend':
                     phrase = re.sub(r'[\W_]+', '', self.wake_phrase)
                     pattern = r'[\W_]*'.join(re.escape(c) for c in phrase)
                     match = re.search(pattern, text, flags=re.IGNORECASE)
+                    await self.emit('wake.check', turn, matched=bool(match),
+                                    phrase=self.wake_phrase, heard=text[:500])
                     if not match:
                         await self.transition('standby', turn)
                         return
@@ -111,11 +130,14 @@ class Session:
                     text = text[match.end():].lstrip(' ，。！？,.:;!?')
                     if not text:
                         return
-                if transcribed:
+                if not text:
+                    return
+                if transcribed and announcement is None:
                     await self.emit('transcript.final', turn, text=text,
                                     elapsed_ms=round((time.monotonic()-turn.started)*1000))
-                self.store.message(self.id, turn.id, 'user', text, 'confirmed')
-                await self.emit('message.user', turn, text=text)
+                if announcement is None:
+                    self.store.message(self.id, turn.id, 'user', text, 'confirmed')
+                    await self.emit('message.user', turn, text=text)
                 history = [{'role': m['role'], 'content': m['content'] +
                             ('（回复被打断）' if m['status'] == 'interrupted' else '')}
                            for m in self.store.messages(self.id, limit=20)]
@@ -130,16 +152,59 @@ class Session:
                 sentences = asyncio.Queue(maxsize=4)
                 async def produce():
                     pending = ''
-                    async with contextlib.aclosing(self.pipeline.chat(history)) as source:
+                    async def notification():yield announcement
+                    async def cancel_operation():
+                        running=[r for r in self.operations.recent(self.id) if r['status'] in ('queued','running')]
+                        if running:
+                            await self.operations.cancel(running[0]['id']);yield '已请求停止最近一项后台任务，请查看任务记录核实已执行的操作。'
+                        else:yield '当前没有运行中的后台任务。'
+                    cancelling=announcement is None and self.operations and re.sub(r'[\s，。！？,.!?]','',text) in ('取消任务','取消后台任务') and bool(self.operations.tasks)
+                    source=notification() if announcement is not None else cancel_operation() if cancelling else self.pipeline.chat(history)
+                    detached=False
+                    try:
                         async for delta in source:
                             if turn.cancelled:
                                 return
+                            if isinstance(delta, ToolStatus):
+                                metadata={}
+                                if delta.arguments is not None:metadata['arguments']=delta.arguments
+                                if delta.planner:metadata['planner']=delta.planner
+                                await self.emit('tool.'+delta.phase, turn, tool=delta.name,
+                                                elapsed_ms=delta.elapsed_ms, code=delta.code, **metadata)
+                                continue
+                            if isinstance(delta, ToolNotice):
+                                if pending.strip():
+                                    await sentences.put(pending)
+                                    pending = ''
+                                turn.text += delta.text
+                                await self.emit('reply.delta', turn, text=delta.text)
+                                await sentences.put(delta.text)
+                                delivered = asyncio.Event()
+                                gate=asyncio.Event()
+                                if self.operations and announcement is None:
+                                    try:
+                                        operation=self.operations.start(self.id,turn.id,text,source,gate,self.emit_operation)
+                                        manager=getattr(getattr(self.pipeline,'local',None),'workflows',None)
+                                        if manager:manager.transfer_owner(asyncio.current_task(),self.operations.tasks[operation['id']])
+                                    except ValueError:
+                                        message='后台任务数量已满，请等待已有任务完成。'
+                                        turn.text+=message;await self.emit('reply.delta',turn,text=message)
+                                        await sentences.put(message);break
+                                    detached=True
+                                try:
+                                    await sentences.put(delivered)
+                                    await delivered.wait()
+                                finally:gate.set()
+                                if detached:break
+                                continue
                             turn.text += delta
                             pending += delta
                             await self.emit('reply.delta', turn, text=delta)
                             if re.search(r'[。！？!?\n]', pending) or len(pending) >= 70:
                                 await sentences.put(pending)
                                 pending = ''
+                    finally:
+                        if not detached:await source.aclose()
                     if not turn.text.strip():
                         raise RuntimeError('empty_reply')
                     if pending.strip():
@@ -151,6 +216,9 @@ class Session:
                 async def synthesize():
                     audio_samples = 0
                     while (sentence := await sentences.get()) is not None:
+                        if isinstance(sentence, asyncio.Event):
+                            await audio.put(sentence)
+                            continue
                         async with contextlib.aclosing(self.pipeline.speech(sentence)) as source:
                             async for pcm_chunk in source:
                                 for offset in range(0, len(pcm_chunk), 1280):  # <=40 ms @ 16 kHz s16le
@@ -170,12 +238,32 @@ class Session:
                     deadline = None
                     audio_samples = 0
                     while (block := await audio.get()) is not None:
+                        if isinstance(block, asyncio.Event):
+                            if deadline is None:
+                                raise RuntimeError('tool_preamble_unavailable')
+                            # Complete the last 60ms Opus frame and cover codec lookahead.
+                            # Keep one stream/turn: an interim audio.end would incorrectly
+                            # count its playback acknowledgement as the final reply's ACK.
+                            padding = (-audio_samples) % 960 + 960
+                            for size in range(0, padding, 640):
+                                samples = min(640, padding-size)
+                                await asyncio.sleep(max(0, deadline-time.monotonic()))
+                                await self.emit('audio.chunk', turn,
+                                                data=base64.b64encode(b'\0\0'*samples).decode())
+                                audio_samples += samples
+                                deadline += samples/16000
+                            await asyncio.sleep(max(0, deadline + lead - time.monotonic()))
+                            block.set()
+                            await self.transition('thinking', turn)
+                            continue
                         if deadline is None:
                             await self.transition('speaking', turn)
                             await self.emit('audio.start', turn, sample_rate=16000,
                                             format='pcm_s16le', channels=1,
                                             elapsed_ms=round((time.monotonic()-turn.started)*1000))
                             deadline = time.monotonic() - lead
+                        elif self.state != 'speaking':
+                            await self.transition('speaking', turn)
                         deadline = max(deadline, time.monotonic() - lead)
                         await asyncio.sleep(max(0, deadline-time.monotonic()))
                         await self.emit('audio.chunk', turn, data=base64.b64encode(block).decode())
@@ -223,7 +311,52 @@ class Session:
                     with contextlib.suppress(Exception):
                         await self.transition('listening' if activated else 'standby')
 
+    async def emit_operation(self,event):
+        # Tool execution belongs to the original request, even after its audio is cleared.
+        self.store.event(event);self.publish(event)
+        if not self.closed:
+            with contextlib.suppress(Exception):await asyncio.wait_for(self.send(event),3)
+
+    def queue_notification(self,record):
+        if record['id'] not in self.notification_ids and not self.notifications.full():
+            self.notification_ids.add(record['id']);self.notifications.put_nowait(record)
+
+    async def announce_results(self):
+        try:
+            while True:
+                record=await self.notifications.get()
+                while self.turn or self.input_active or time.monotonic()-self.last_activity<.5:
+                    await asyncio.sleep(.1)
+                if self.closed:return
+                calendar=getattr(getattr(self.pipeline,'local',None),'calendar_reminders',None)
+                if record.get('kind')=='calendar' and calendar:
+                    event=calendar.store.get(record['event_id'])
+                    if not calendar.enabled():calendar.store.mark(event['event_id'],'muted');calendar.cancel_notification(event['event_id'])
+                    elif event['status']=='cancelled':calendar.cancel_notification(record['event_id'])
+                    elif time.time()-event['remind_at']>calendar.store.settings()['late_minutes']*60:
+                        calendar.store.mark(event['event_id'],'missed');calendar.cancel_notification(event['event_id'])
+                timers=getattr(getattr(self.pipeline,'local',None),'timer_reminders',None)
+                if record.get('kind')=='timer' and (not timers or not timers.valid(record)):
+                    fresh=self.operations.get(record['id']);fresh['delivery']='cancelled';self.operations.save(fresh)
+                if self.operations.get(record['id'])['delivery']!='pending':
+                    self.notification_ids.discard(record['id']);continue
+                text=('' if record.get('kind') in ('calendar','timer') else '后台任务结果：')+record['text'][:120]+('。完整结果可在 MCP 页查看。' if len(record['text'])>120 else '')
+                turn=self.turn=Turn(notification_id=record['id'])
+                turn.task=asyncio.create_task(self._run(turn,None,None,announcement=text))
+                self.tasks.add(turn.task);turn.task.add_done_callback(self.tasks.discard)
+                await asyncio.gather(turn.task,return_exceptions=True)
+                self.notification_ids.discard(record['id'])
+                if turn.delivery in ('generated','played') and not turn.cancelled:self.operations.announced(record['id'])
+                elif not self.closed and turn.delivery!='failed':
+                    # An interrupted announcement is retried only after the next quiet turn.
+                    self.last_activity=time.monotonic();self.queue_notification(record)
+        except asyncio.CancelledError:pass
+
     async def idle(self):
+        timers=getattr(getattr(self.pipeline,'local',None),'timer_reminders',None)
+        if timers and timers.enabled() and timers.store.running(self.device_id):return
+        if self.operations and (self.notification_ids or any(self.operations.get(identity)['session_id']==self.id for identity in self.operations.tasks)):
+            return  # Keep the voice channel available for long-running completion announcements.
         if not self.turn and self.state == 'listening' and time.monotonic()-self.last_activity > self.idle_seconds:
             await self.transition('standby')
 
@@ -233,6 +366,9 @@ class Session:
         await self.interrupt('disconnect')
         self.closed = True
         self.state = 'disconnected'
+        if self.operations:self.operations.unbind(self.id,self.notification_callback)
+        if self.announcer:
+            self.announcer.cancel();await asyncio.gather(self.announcer,return_exceptions=True)
         await asyncio.gather(*self.tasks, return_exceptions=True)
         self.store.event(dict(type='session.disconnected', session_id=self.id, turn_id=None,
                               timestamp=time.time()))

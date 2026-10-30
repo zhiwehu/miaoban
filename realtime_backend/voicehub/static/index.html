@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f4f3ed" />
     <title>声桥 VoiceHub · 实时语音工作台</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/app.js" type="module"></script>
+    <script src="/static/connections.js" type="module"></script>
+    <script src="/static/echoear-installer.js" type="module"></script>
   </head>
   <body>
     <div class="shell">
@@ -24,9 +26,11 @@
           <button data-view="conversations">
             <span>▤</span>对话记录 <b id="session-count">0</b>
           </button>
+          <button data-view="connections"><span>⌁</span>客户端接入</button>
           <button data-view="models"><span>≋</span>模型与语音</button>
+          <button data-view="mcp"><span>◇</span>MCP 工具</button>
           <button data-view="logs"><span>⌘</span>事件日志</button>
-          <button data-view="lab"><span>↗</span>连接实验室</button>
+          <button data-view="lab"><span>↗</span>网页聊天</button>
         </nav>
         <div class="rail-bottom">
           <span class="dot" id="server-dot"></span
@@ -68,7 +72,7 @@
                 Mac，连接你的下一个语音终端。
               </p>
               <button class="primary" id="go-lab">
-                打开连接实验室 <span>↗</span>
+                打开网页聊天 <span>↗</span>
               </button>
             </div>
             <div class="signal-art" aria-hidden="true">
@@ -127,7 +131,7 @@
           <div class="conversation-layout">
             <aside class="panel session-list">
               <h2>最近会话</h2>
-              <div id="sessions"></div>
+              <div id="sessions" role="region" aria-label="最近会话列表" tabindex="0"></div>
               <button class="secondary" id="more-sessions">更早会话</button>
             </aside>
             <article class="panel transcript">
@@ -140,21 +144,63 @@
               <button id="more-messages" class="text-button" hidden>
                 加载更早消息
               </button>
-              <div id="messages">
+              <div id="messages" role="region" aria-label="对话消息" tabindex="0">
                 <div class="empty">
                   <span>▤</span>
                   <h3>对话会在这里留下记录</h3>
-                  <p>连接一个设备，或到连接实验室开始第一段对话。</p>
+                  <p>连接一个设备，或到网页聊天开始第一段对话。</p>
                 </div>
               </div>
             </article>
           </div>
         </section>
+        <section data-panel="connections" hidden>
+          <div class="section-intro"><p>选好客户端，按步骤连上 VoiceHub，就可以开始聊天。</p><button class="secondary" id="connections-refresh">刷新状态</button></div>
+          <p id="connections-notice" class="hint" role="status">正在读取连接状态…</p>
+          <h2 class="onboarding-section-title">选择设备</h2><div id="client-catalog" class="connection-grid"></div>
+          <article class="panel onboarding-guide"><div class="section-heading"><h2 id="client-guide-title">接入向导</h2><span id="client-guide-status" class="tag"></span></div><p id="client-guide-hardware" class="hint"></p><ol id="client-guide-steps"></ol><p id="client-install-note" class="hint"></p><div id="client-install-actions" class="button-row"></div></article>
+          <article id="echoear-installer" class="panel onboarding-guide" hidden>
+            <h2>连接喵伴</h2>
+            <ol class="usb-steps" aria-label="连接步骤"><li data-usb-step="1" aria-current="step"><b>1</b><span>连接设备</span></li><li data-usb-step="2"><b>2</b><span>配网</span></li><li data-usb-step="3"><b>3</b><span>开始对话</span></li></ol>
+            <div data-usb-panel="1"><p class="hint">先用 USB 数据线把喵伴连接到这台电脑，然后点击下方按钮。在弹窗中选择喵伴设备。</p>
+            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">开始连接</button><span id="echoear-device-info" class="hint"></span></div></div>
+            <div data-usb-panel="2" hidden><div id="echoear-network-intro"><p>喵伴已连接。下一步，把它连接到电脑所在的 Wi-Fi。</p><button type="button" class="primary" id="echoear-open-network">开始配网</button></div><form id="echoear-network-form" hidden>
+              <label>配网方式<select id="echoear-wifi-mode"><option value="new">使用电脑当前 Wi-Fi（可修改）</option><option value="keep">沿用喵伴已保存的 Wi-Fi</option></select></label>
+              <p id="echoear-wifi-hint" class="hint">无需填写密码。电脑需与喵伴处于可互通的网络；不会读取电脑保存的 Wi-Fi 密码。</p>
+              <div id="echoear-wifi-fields" hidden>
+              <label>Wi-Fi 名称<input id="echoear-wifi-ssid" autocomplete="off" maxlength="32" required placeholder="填写 2.4 GHz Wi-Fi 名称" /></label>
+              <label>Wi-Fi 密码<input id="echoear-wifi-password" type="password" autocomplete="new-password" maxlength="64" placeholder="填写该 Wi-Fi 的密码" /></label>
+              <label class="check"><input id="echoear-wifi-open" type="checkbox" />这是无需密码的开放网络</label></div>
+              <label id="echoear-network-choice" hidden>电脑连接的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
+              <button id="echoear-setup" class="primary" type="submit" disabled>开始配置</button>
+            </form></div>
+            <p class="hint">接下来交给 VoiceHub。请保持数据线连接，等待完成。</p>
+            <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度" hidden></progress><p id="echoear-install-status" role="status">先点击“连接 USB”。</p>
+            <div data-usb-panel="3" hidden><h3>等待喵伴联网</h3><p>联网成功后，使用设备当前的唤醒词开始对话。</p><p id="echoear-verify-status" role="status"></p><button type="button" class="primary" id="echoear-heard" disabled hidden>听到回复，完成连接</button></div><button type="button" class="text-button" id="echoear-disconnect" disabled hidden>断开 USB</button>
+            <details class="echoear-advanced"><summary>高级选项</summary><details><summary>查看详细信息</summary><pre id="echoear-technical-details"></pre></details>
+              <p id="echoear-serial-note" class="hint"></p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
+              <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />连接时同时更新固件</label><p id="echoear-update-note" class="hint"></p>
+              <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>立即备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>单独安装升级</button></div>
+              <h3>恢复设备</h3><p class="hint">自动使用这台喵伴最近且校验通过的备份，恢复原应用和设置。</p><button type="button" class="secondary" id="echoear-restore" disabled>恢复最近可用备份</button>
+              <h3>其他配网方式</h3><button type="button" class="secondary" id="echoear-copy-setup">复制 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">供设备热点配网页使用。</p>
+            </details>
+          </article><details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>
+          <div class="connection-grid">
+            <article class="panel"><div class="section-heading"><h2>WebSocket 设备监听</h2><span class="tag" id="ws-device-state">读取中</span></div><p id="ws-console-address" class="hint"></p><p id="ws-device-address" class="hint"></p>
+              <form id="ws-connection-form"><label for="ws-device-host">设备监听 IPv4</label><input id="ws-device-host" required placeholder="选择当前电脑的局域网地址" list="local-addresses"/><label for="ws-device-port">设备监听端口</label><input id="ws-device-port" type="number" min="1" max="65535" required value="8766"/><button class="secondary" type="submit">保存 WebSocket 配置</button></form>
+              <p class="hint">此监听仅提供设备接入，不开放管理台。设备仍需访问令牌。停止或重启会断开该监听上的设备。</p><div class="button-row" id="ws-connection-actions"><button class="secondary" type="button" data-action="start">启动</button><button class="secondary" type="button" data-action="stop">停止</button><button class="secondary" type="button" data-action="restart">重启</button></div>
+            </article>
+            <article class="panel"><div class="section-heading"><h2>MQTT + UDP 网关</h2><span class="tag" id="mqtt-connection-state">读取中</span></div><p id="mqtt-connection-warning" class="hint"></p>
+              <form id="mqtt-connection-form"><label for="mqtt-broker-host">Broker IPv4</label><input id="mqtt-broker-host" required list="local-addresses"/><label for="mqtt-broker-port">Broker 端口</label><input id="mqtt-broker-port" type="number" min="1" max="65535" required/><label for="mqtt-udp-host">UDP 监听 / 通告 IPv4</label><input id="mqtt-udp-host" required list="local-addresses"/><label for="mqtt-udp-port">UDP 音频端口</label><input id="mqtt-udp-port" type="number" min="0" max="65535" required/><fieldset><legend>允许接入的已配置设备</legend><div id="mqtt-configured-devices"></div></fieldset><button class="secondary" type="submit">保存 MQTT 配置</button></form>
+              <p class="hint"><a href="https://github.com/zhiwehu/miaoban/blob/feature/voicehub-control-center/docs/MQTT_UDP.md" target="_blank" rel="noopener noreferrer">Broker 与设备初始化说明</a></p><p class="hint">先停止网关再修改配置。网关连接已有 Broker，不负责安装或启停 Broker。密码、ACL 和配网令牌沿用私有配置。</p><div class="button-row" id="mqtt-connection-actions"><button class="secondary" type="button" data-action="start">启动</button><button class="secondary" type="button" data-action="stop">停止</button><button class="secondary" type="button" data-action="restart">重启</button></div>
+            </article>
+          </div><datalist id="local-addresses"></datalist><p id="local-address-hint" class="hint"></p></details>
+          <article class="panel onboarding-guide"><div class="section-heading"><h2>已连接设备</h2><span id="connections-online-count" class="tag">0 在线</span></div><div id="connections-devices"></div></article>
+        </section>
         <section data-panel="models" hidden>
           <div class="section-intro">
             <p>
-              分别选择识别、对话和语音服务。本地推理与兼容 HTTP API
-              可以自由组合。
+              分别选择识别、对话和语音服务。选择“内置服务”并保存后，可独立启动、停止和重启。停止或重启会中断该服务正在处理的请求。
             </p>
             <span class="tag">保存后对新连接生效</span>
           </div>
@@ -253,6 +299,70 @@
             </div>
           </form>
         </section>
+        <section data-panel="mcp" hidden>
+          <div class="section-intro">
+            <div><p>让对话连接实时信息与本机能力。</p><p class="hint" id="mcp-summary">正在读取工具列表…</p></div>
+            <div class="button-row"><button class="secondary" id="mcp-refresh">刷新列表</button><button class="secondary" id="mcp-settings">决策设置</button></div>
+          </div>
+          <article id="mcp-common-settings" class="panel"></article>
+          <p id="mcp-planner" class="hint mcp-catalogue-note">正在读取决策方式…</p>
+          <p id="mcp-load-status" role="status"></p>
+          <div id="mcp-tool-list" class="mcp-tool-grid"></div>
+          <div id="mcp-tool-settings-storage" hidden>
+          <article class="panel mcp-extension">
+            <h2>本地音乐目录</h2>
+            <p class="hint">声音从后端电脑的默认音频设备播放。支持 MP3、WAV、M4A、AAC、AIFF、FLAC；首次使用请设置目录并启用。</p>
+            <form id="music-settings-form">
+              <label>音乐目录（后端电脑上的绝对路径）<input id="music-directory" maxlength="2048" placeholder="例如：/Users/你的用户名/Music" /></label>
+              <label class="check"><input type="checkbox" id="music-enabled" />启用本地音乐</label>
+              <div class="button-row"><button class="primary" type="submit">保存音乐设置</button><button class="secondary" type="button" id="music-scan">扫描音乐目录</button></div>
+            </form>
+            <p id="music-status" role="status" class="hint"></p><div id="music-library"></div>
+          </article>
+          <article class="panel mcp-extension">
+            <h2>指定目录文件整理</h2>
+            <p class="hint">只整理所选目录第一层的普通文件，按类型归入分类文件夹。子目录、隐藏文件和链接会跳过；不读取文件内容，不删除或覆盖文件。先预览再确认，支持撤销最近一次整理。</p>
+            <form id="file-settings-form">
+              <label>允许整理的目录（后端电脑绝对路径）<input id="file-directory" maxlength="2048" placeholder="例如：/Users/你的用户名/Downloads/待整理" /></label>
+              <label class="check"><input type="checkbox" id="file-enabled" />启用指定目录文件整理</label>
+              <div class="button-row"><button class="primary" type="submit">保存整理设置</button><button class="secondary" type="button" id="file-preview">生成整理预览</button><button class="secondary" type="button" id="file-refresh">刷新整理计划</button></div>
+            </form>
+            <p class="hint">试着说：“整理一下指定目录里的文件”。语音只生成方案，请在这里核对完整清单并确认执行。最多扫描 2000 项、整理 1000 个文件；操作过程中请勿更改目录或文件。</p>
+            <p id="file-status" class="hint" role="status"></p><div id="file-plans"></div>
+          </article>
+          </div>
+          <details class="panel mcp-extension mcp-add-services">
+            <summary>添加与管理 MCP</summary>
+          <article class="panel mcp-extension">
+            <h2>连接远程 MCP</h2>
+            <p class="hint">填写 Streamable HTTP 服务的完整端点，例如 https://example.com/mcp。保存时不会连接；启用后才验证工具。暂不支持旧版 HTTP+SSE 和 OAuth 登录。</p>
+            <form id="mcp-remote-form">
+              <label>服务 ID<input id="mcp-remote-id" required maxlength="32" pattern="[a-zA-Z][a-zA-Z0-9_-]{0,31}" placeholder="例如：my-remote" /></label>
+              <label>显示名称<input id="mcp-remote-name" maxlength="80" placeholder="例如：我的远程工具" /></label>
+              <label>MCP 服务地址<input id="mcp-remote-url" type="url" required maxlength="2048" placeholder="https://example.com/mcp" /></label>
+              <label>Bearer Token（可选）<input id="mcp-remote-token" type="password" autocomplete="off" maxlength="4000" placeholder="仅填写 Token，不含 Bearer 前缀" /></label>
+              <details class="mcp-schema"><summary>协议版本与自定义认证</summary>
+                <label>协议版本<select id="mcp-remote-version"><option value="2025-11-25">2025-11-25（会话模式，兼容 2025 服务）</option><option value="2026-07-28">2026-07-28（无会话模式）</option><option value="2025-06-18">2025-06-18</option><option value="2025-03-26">2025-03-26</option></select></label>
+                <label>自定义认证请求头 JSON<textarea id="mcp-remote-headers" rows="3" placeholder='{"X-API-Key":"你的密钥"}' autocomplete="off" spellcheck="false"></textarea></label>
+                <p class="hint">认证信息仅保存于后端，不会回填到页面或提供给模型。暂不支持修改已保存凭据；需要更换时删除后重新添加。</p>
+              </details>
+              <label class="check"><input type="checkbox" id="mcp-remote-private" />允许此服务访问本地或局域网地址（HTTP 会明文传输）</label>
+              <div class="button-row"><button class="primary" type="submit">保存远程服务</button></div>
+            </form>
+            <p id="mcp-remote-status" role="status" class="hint"></p>
+          </article>
+          <article class="panel mcp-extension">
+            <h2>上传自己的 MCP</h2>
+            <p>上传 JSON 服务配置（stdio 填 command，HTTP 填 type 和 url），或根目录含 mcp.json 和 Python 服务的 ZIP 包。上传后处于停用状态，启用时才会运行并验证。</p>
+            <p class="hint">本地代码启用后以当前系统用户权限运行，并非安全沙箱。远程服务会收到调用参数。仅启用你信任的服务；不会自动安装依赖。ZIP 最大 2 MB、50 个文件，每个服务最多 20 个工具。</p>
+            <a class="connection-link" href="/api/mcp/example" download="local-echo-mcp.zip">下载可上传的回显示例</a>
+            <form id="mcp-upload-form"><label>MCP 配置或插件包<input type="file" id="mcp-upload-file" accept=".json,.zip" required /></label><div class="button-row"><button class="primary" type="submit">上传并检查文件</button></div></form>
+            <p id="mcp-upload-status" role="status" class="hint"></p>
+            <h3>外部 MCP 服务</h3><div id="mcp-external-servers"></div>
+            <p class="hint">现有 Rex 仍只识别原三类查询。新增外部工具通过动态目录交给对话模型规划，不会因上传而自动训练 Rex。</p>
+          </article>
+          </details>
+        </section>
         <section data-panel="logs" hidden>
           <div class="section-intro">
             <p>按会话追踪连接、状态、错误和轮次耗时。音频内容不会写入日志。</p>
@@ -266,6 +376,7 @@
               ><button class="secondary" id="refresh-logs">刷新</button>
             </div>
           </div>
+          <p class="hint" id="log-session-scope" hidden></p><button class="secondary" id="clear-log-session" hidden>查看全部会话日志</button>
           <article class="panel log-panel">
             <div class="log-header">
               <span>时间</span><span>事件</span><span>会话 / 详情</span>
@@ -276,13 +387,13 @@
         </section>
         <section data-panel="lab" hidden>
           <div class="section-intro">
-            <p>网页是一个真实客户端，与其他设备使用同一套 WebSocket 协议。</p>
-            <span class="tag">PROTOCOL V1</span>
+            <p>选好麦克风并开启，就能用声音聊天；也可以直接发送文字。</p>
+            <span class="tag">语音 / 文字</span>
           </div>
           <div class="lab-grid">
             <article class="panel client-panel">
               <div class="section-heading">
-                <h2>浏览器语音终端</h2>
+                <h2>和 VoiceHub 聊天</h2>
                 <span class="tag" id="client-status">未连接</span>
               </div>
               <div class="mic-display">
@@ -308,6 +419,12 @@
                   <option value="device">客户端唤醒事件</option>
                 </select></label
               >
+              <p class="hint" id="wake-feedback" role="status" hidden></p>
+              <label>输入麦克风<select id="microphone-device">
+                <option value="">系统默认麦克风</option>
+              </select></label>
+              <label>麦克风音量<meter id="microphone-level" min="0" max="1" value="0"></meter></label>
+              <p class="hint" id="microphone-status" role="status">麦克风未开启</p>
               <div class="button-row">
                 <button id="connect-text" class="secondary">连接文字</button
                 ><button id="connect-mic" class="primary">开启麦克风</button>

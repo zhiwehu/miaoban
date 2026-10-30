@@ -5,13 +5,14 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from pathlib import Path
 from urllib.parse import urlsplit
 
 DEFAULT = {
     'system_prompt': '你是小宝，一个温暖、自然的语音伙伴。用简短中文回答。只输出可直接朗读的正文，不使用emoji、颜文字、动作或表情旁白。',
-    'asr': {'provider': 'mlx', 'model': 'mlx-community/Qwen3-ASR-0.6B-8bit',
+    'asr': {'provider': 'builtin', 'model': 'mlx-community/Qwen3-ASR-0.6B-8bit',
             'url': 'http://127.0.0.1:8000/v1', 'key_env': 'VOICE_ASR_KEY', 'language': 'Chinese'},
-    'llm': {'provider': 'mlx', 'model': 'mlx-community/Qwen3-4B-Instruct-2507-4bit',
+    'llm': {'provider': 'builtin', 'model': 'mlx-community/Qwen3-4B-Instruct-2507-4bit',
             'url': 'http://127.0.0.1:1234/v1', 'key_env': 'VOICE_LLM_KEY', 'max_tokens': 240},
     'tts': {'provider': 'macos', 'model': 'tts-1', 'voice': 'Tingting',
             'url': 'http://127.0.0.1:8000/v1', 'key_env': 'VOICE_TTS_KEY', 'sample_rate': 24000},
@@ -19,10 +20,19 @@ DEFAULT = {
     'audio': {'barge_in': True, 'vad_model': '', 'speech_threshold': .65,
               'onset_ms': 160, 'silence_ms': 640, 'max_utterance_seconds': 15},
     'retention_days': 30,
+    'tools': {'shopping_list':False,'timer':False,'item_memory':False,'calendar': True,'weather': True, 'news': True, 'system_info': True, 'music':False, 'music_directory':'','file_organizer':False,'file_directory':'',
+              'default_city': '', 'news_source': 'bbc', 'news_limit': 3,
+              'timeout_seconds': 20, 'planner': 'llm'},
 }
 
 
 def validate(config):
+    if isinstance(config, dict) and 'tools' not in config:
+        config = {**config, 'tools': copy.deepcopy(DEFAULT['tools'])}
+    elif isinstance(config,dict) and isinstance(config.get('tools'),dict) and 'planner' not in config['tools']:
+        config={**config,'tools':{**config['tools'],'planner':'llm'}}
+    if isinstance(config,dict) and isinstance(config.get('tools'),dict):
+        config={**config,'tools':{'shopping_list':False,'timer':False,'item_memory':False,'calendar':True,'music':False,'music_directory':'','file_organizer':False,'file_directory':'',**config['tools']}}
     if not isinstance(config, dict) or set(config) != set(DEFAULT):
         raise ValueError('配置字段不完整或包含未知字段')
     if not isinstance(config['system_prompt'], str) or len(config['system_prompt']) > 8000:
@@ -30,9 +40,14 @@ def validate(config):
     for section in ('asr', 'llm', 'tts', 'wake', 'audio'):
         if not isinstance(config[section], dict) or set(config[section]) != set(DEFAULT[section]):
             raise ValueError(f'{section} 配置字段不完整或包含未知字段')
+    # Accept old files and clients, but only expose the canonical service provider.
+    config = copy.deepcopy(config)
+    for kind in ('asr', 'llm'):
+        if config[kind]['provider'] == 'mlx':
+            config[kind]['provider'] = 'builtin'
     for kind in ('asr', 'llm', 'tts'):
         c = config[kind]
-        allowed = ('macos', 'http') if kind == 'tts' else ('mlx', 'http')
+        allowed = ('builtin', 'macos', 'http') if kind == 'tts' else ('builtin', 'http')
         if c['provider'] not in allowed:
             raise ValueError(f'{kind} 不支持该提供商')
         for key in ('url', 'key_env', 'model'):
@@ -64,6 +79,28 @@ def validate(config):
         raise ValueError('音频配置无效')
     if type(a['speech_threshold']) not in (int, float) or not .3 <= a['speech_threshold'] <= .95:
         raise ValueError('人声阈值需为 0.3–0.95')
+    t = config['tools']
+    if not isinstance(t, dict) or set(t) != set(DEFAULT['tools']):
+        raise ValueError('工具配置字段不完整或包含未知字段')
+    if any(type(t[name]) is not bool for name in ('weather', 'news', 'system_info','music','file_organizer','calendar','shopping_list','timer','item_memory')):
+        raise ValueError('工具开关需要为布尔值')
+    if not isinstance(t['music_directory'],str) or len(t['music_directory'])>2048 or '\0' in t['music_directory']:
+        raise ValueError('音乐目录无效')
+    if t['music_directory'] and not Path(t['music_directory']).expanduser().is_absolute():
+        raise ValueError('音乐目录需要为绝对路径')
+    if not isinstance(t['file_directory'],str) or len(t['file_directory'])>2048 or '\0' in t['file_directory']:
+        raise ValueError('整理目录无效')
+    if t['file_directory'] and not Path(t['file_directory']).expanduser().is_absolute():
+        raise ValueError('整理目录需要为绝对路径')
+    if not isinstance(t['default_city'], str) or len(t['default_city']) > 80:
+        raise ValueError('默认城市最多 80 字符')
+    if t['news_source'] not in ('chinanews', 'bbc'):
+        raise ValueError('无效新闻源')
+    if t['planner'] not in ('llm','rex'):
+        raise ValueError('无效工具规划器')
+    for key, low, high in [('news_limit', 1, 5), ('timeout_seconds', 5, 600)]:
+        if type(t[key]) is not int or not low <= t[key] <= high:
+            raise ValueError(f'tools.{key} 需要为 {low}–{high} 的整数')
     return config
 
 
@@ -72,7 +109,10 @@ class ConfigFile:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
-            self.value = validate(json.loads(self.path.read_text()))
+            original = json.loads(self.path.read_text())
+            self.value = validate(original)
+            if self.value != original:
+                self.save(self.value)
         else:
             self.save(copy.deepcopy(DEFAULT))
 
@@ -80,7 +120,7 @@ class ConfigFile:
         return copy.deepcopy(self.value)
 
     def save(self, value):
-        validate(value)
+        value = validate(value)
         fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.settings-')
         try:
             with os.fdopen(fd, 'w') as f:

@@ -86,6 +86,7 @@ class MqttGateway(asyncio.DatagramProtocol):
         if retained or len(parts) != 3 or parts[0] != 'voicehub' or parts[2] != 'up':return
         device = parts[1]
         if device not in self.config['devices'] or len(payload) > 32768:return
+        if self.config['devices'][device].get('enabled',True) is not True:return
         now = time.monotonic()
         window, count = self.windows.get(device, (now, 0))
         if now-window >= 1:window, count = now, 0

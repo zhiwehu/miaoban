@@ -19,7 +19,8 @@ log = logging.getLogger('voicehub.qwen_tts')
 
 
 class QwenVoice:
-    def __init__(self):
+    def __init__(self, model_name=MODEL):
+        self.model_name = model_name
         self.worker = LocalModels()
         self.model = None
 
@@ -27,7 +28,7 @@ class QwenVoice:
         if self.model is None:
             from huggingface_hub import snapshot_download
             from mlx_audio.tts.utils import load_model
-            path = snapshot_download(MODEL, local_files_only=True)
+            path = snapshot_download(self.model_name, local_files_only=True)
             self.model = load_model(Path(path))
         return self.model
 

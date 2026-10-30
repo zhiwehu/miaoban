@@ -133,10 +133,18 @@ class Pipeline:
         self.config, self.http, self.local = config, http, local
 
     def headers(self, kind):
+        if self.config[kind]['provider'] == 'builtin':
+            from .services import ServiceError
+            try:
+                return self.local.services.headers(kind)
+            except ServiceError as exc:
+                raise ProviderError(exc.code) from None
         value = os.environ.get(self.config[kind]['key_env'], '')
         return {'Authorization': 'Bearer '+value} if value else {}
 
     def endpoint(self, kind, path):
+        if self.config[kind]['provider'] == 'builtin':
+            return self.local.services.endpoint(kind) + '/' + path
         return self.config[kind]['url'].rstrip('/') + '/' + path
 
     def check(self, response):
@@ -182,14 +190,22 @@ class Pipeline:
         return json.loads(raw)
 
     async def chat(self, history):
+        from .tool_chat import chat
+        async with contextlib.aclosing(chat(self, history)) as source:
+            async for item in source:
+                yield item
+
+    async def raw_chat(self, history, *, system_prompt=None, max_tokens=None):
         c = self.config['llm']
-        messages = [{'role':'system', 'content':self.config['system_prompt']}] + history
+        token_limit=c['max_tokens'] if max_tokens is None else max_tokens
+        if type(token_limit) is not int or not 16<=token_limit<=2048:raise ProviderError('invalid_token_limit')
+        messages = [{'role':'system', 'content':system_prompt if system_prompt is not None else self.config['system_prompt']}] + history
         if c['provider'] == 'mlx':
             def generate(stop):
                 import mlx_lm
                 model, tokenizer = self.local.model('llm', c['model'])
                 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                for result in mlx_lm.stream_generate(model, tokenizer, prompt, max_tokens=c['max_tokens']):
+                for result in mlx_lm.stream_generate(model, tokenizer, prompt, max_tokens=token_limit):
                     if stop.is_set():
                         break
                     yield result.text
@@ -199,7 +215,7 @@ class Pipeline:
         else:
             async with self.http.post(self.endpoint('llm', 'chat/completions'),
                     headers=self.headers('llm'), json=dict(model=c['model'], messages=messages,
-                                                         max_tokens=c['max_tokens'], stream=True)) as response:
+                                                         max_tokens=token_limit, stream=True)) as response:
                 self.check(response)
                 count = 0
                 async for event in sse(response):
