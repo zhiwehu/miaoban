@@ -44,6 +44,26 @@ export function inspectNvs(raw){
  for(const r of records)if(r.ns!==0&&![...spaces.values()].includes(r.ns))fail('invalid_nvs');
  return{pages,records,spaces};
 }
+export function compactNvs(raw){
+ const original=inspectNvs(raw),data=new Uint8Array(raw.length).fill(255);let page,index=-1,tail=0;
+ for(const record of original.records){
+  if(!page||COUNT-tail<record.span){
+   if(page)view(page.bytes).setUint32(0,0xfffffffc,true);
+   if(++index>=raw.length/PAGE-1)fail('nvs_space_required');
+   const bytes=data.subarray(index*PAGE,(index+1)*PAGE),v=view(bytes);v.setUint32(0,0xfffffffe,true);v.setUint32(4,index,true);bytes[8]=0xfe;v.setUint32(28,crc32(bytes.subarray(4,28)),true);page={bytes};tail=0;
+  }
+  const bytes=record.page.bytes.subarray(64+record.index*32,64+(record.index+record.span)*32);
+  page.bytes.set(bytes,64+tail*32);for(let j=0;j<record.span;j++)mark(page,tail+j,2);tail+=record.span;
+ }
+ const packed=inspectNvs(data);
+ if(packed.records.length!==original.records.length)fail('invalid_nvs');
+ for(let i=0;i<original.records.length;i++){
+  const before=original.records[i],after=packed.records[i];
+  const a=before.page.bytes.subarray(64+before.index*32,64+(before.index+before.span)*32),b=after.page.bytes.subarray(64+after.index*32,64+(after.index+after.span)*32);
+  if(a.length!==b.length||!a.every((v,j)=>v===b[j]))fail('invalid_nvs');
+ }
+ return data;
+}
 function entry(ns,key,type,value){
  const bytes=new Uint8Array(32).fill(255),name=encoder.encode(key);if(name.length>15)fail('invalid_nvs_key');
  bytes[0]=ns;bytes[1]=type;bytes[2]=1;bytes.fill(0,8,24);bytes.set(name,8);bytes[8+name.length]=0;
@@ -56,20 +76,29 @@ function entry(ns,key,type,value){
  }
  view(bytes).setUint32(4,entryCRC(bytes),true);return bytes;
 }
-export function connectionNvs(raw,{ssid,password,ota_url,websocket}){
- if(typeof ssid!=='string'||encoder.encode(ssid).length<1||encoder.encode(ssid).length>32||ssid.includes('\0'))fail('invalid_wifi');
- if(typeof password!=='string'||encoder.encode(password).length>64||password.includes('\0')||password.length>0&&encoder.encode(password).length<8)fail('invalid_wifi');
+export function connectionNvs(raw,{ssid,password,ota_url,websocket,keepWifi=false}){
+ if(!keepWifi&&(typeof ssid!=='string'||encoder.encode(ssid).length<1||encoder.encode(ssid).length>32||ssid.includes('\0')))fail('invalid_wifi');
+ if(!keepWifi&&(typeof password!=='string'||encoder.encode(password).length>64||password.includes('\0')||password.length>0&&encoder.encode(password).length<8))fail('invalid_wifi');
  if(typeof ota_url!=='string'||!/^http:\/\/[^/]+\/xiaozhi\/ota\/[A-Za-z0-9_-]+\/$/.test(ota_url)||ota_url.length>512||
   !websocket||typeof websocket.url!=='string'||!/^ws:\/\/[^/]+\/xiaozhi\/v1\/$/.test(websocket.url)||typeof websocket.token!=='string'||! /^[A-Za-z0-9_-]{16,128}$/.test(websocket.token)||websocket.version!==1)fail('invalid_connection');
  if(new URL(ota_url).host!==new URL(websocket.url).host)fail('invalid_connection');
- const data=raw.slice(),nvs=inspectNvs(data),changes=[['wifi','ssid',0x21,ssid],['wifi','password',0x21,password],['wifi','ota_url',0x21,ota_url],['wifi','force_ap',0x14,0],['websocket','url',0x21,websocket.url],['websocket','token',0x21,websocket.token],['websocket','version',0x14,1]];
+ const data=raw.slice();let nvs=inspectNvs(data),compacted=false;const changes=[['wifi','ota_url',0x21,ota_url],['wifi','force_ap',0x14,0],['websocket','url',0x21,websocket.url],['websocket','token',0x21,websocket.token],['websocket','version',0x14,1]];
+ if(keepWifi){
+  const values=new Map(nvs.records.filter(r=>r.ns===nvs.spaces.get('wifi')&&r.type===0x21).map(r=>[r.key,decoder.decode(r.value.subarray(0,-1))]));
+  if(!Array.from({length:10},(_,i)=>i?String(i):'').some(suffix=>values.get('ssid'+suffix)&&values.has('password'+suffix)))fail('wifi_credentials_required');
+ }else changes.unshift(['wifi','ssid',0x21,ssid],['wifi','password',0x21,password]);
  let sequence=Math.max(...nvs.pages.filter(p=>!p.free).map(p=>p.sequence));
  if(sequence>0xfffffffc)fail('invalid_nvs');
  let active=nvs.pages.filter(p=>!p.free&&p.state===0xfffffffe).sort((a,b)=>b.sequence-a.sequence)[0];
  function append(bytes){
   const span=bytes.length/32;
   if(!active||COUNT-active.tail<span){
-   const free=nvs.pages.filter(p=>p.free);if(free.length<2)fail('nvs_space_required');
+   const free=nvs.pages.filter(p=>p.free);if(free.length<2){
+    if(compacted)fail('nvs_space_required');
+    data.set(compactNvs(data));nvs=inspectNvs(data);compacted=true;sequence=Math.max(...nvs.pages.filter(p=>!p.free).map(p=>p.sequence));
+    active=nvs.pages.filter(p=>!p.free&&p.state===0xfffffffe).sort((a,b)=>b.sequence-a.sequence)[0];
+    return append(bytes);
+   }
    if(active){view(active.bytes).setUint32(0,0xfffffffc,true);active.state=0xfffffffc;}
    active=free[0];active.free=false;active.sequence=++sequence;active.tail=0;active.state=0xfffffffe;
    const v=view(active.bytes);v.setUint32(0,active.state,true);v.setUint32(4,sequence,true);active.bytes[8]=0xfe;v.setUint32(28,crc32(active.bytes.subarray(4,28)),true);
@@ -82,7 +111,7 @@ export function connectionNvs(raw,{ssid,password,ota_url,websocket}){
   append(entry(0,name,1,index));nvs.spaces.set(name,index);
  }
  for(const r of nvs.records){
-  const wifi=r.ns===nvs.spaces.get('wifi')&&/^(?:ssid[0-9]?|password[0-9]?|ota_url|force_ap|remember_bssid)$/.test(r.key);
+  const wifi=r.ns===nvs.spaces.get('wifi')&&(r.key==='ota_url'||r.key==='force_ap'||!keepWifi&&/^(?:ssid[0-9]?|password[0-9]?|remember_bssid)$/.test(r.key));
   const ws=r.ns===nvs.spaces.get('websocket')&&['url','token','version'].includes(r.key);
   const mqtt=r.ns===nvs.spaces.get('mqtt')&&r.key==='endpoint';
   if(wifi||ws||mqtt)for(let j=0;j<r.span;j++)mark(r.page,r.index+j,0);

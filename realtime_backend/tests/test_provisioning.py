@@ -34,6 +34,28 @@ class Provisioning(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await self.client.post('/api/clients/echoear-s3/prepare',json={},headers={'Host':'foreign.invalid'})).status,401)
   self.assertFalse(self.client.app[HUB].connections.device_ready)
 
+ async def test_idle_listener_moves_off_an_old_network_but_active_devices_are_preserved(self):
+  from types import SimpleNamespace
+  from unittest.mock import AsyncMock
+  from voicehub.connections import ConnectionError
+  hub=self.client.app[HUB];connections=hub.connections
+  connections.device_ready=True;connections.device_host='172.20.10.3'
+  async def action(value):
+   if value=='stop':connections.device_ready=False
+   if value=='start':connections.device_ready=True
+  connections.websocket_action=AsyncMock(side_effect=action)
+  async def save(value):connections.device_host=value['host']
+  connections.save_websocket=AsyncMock(side_effect=save)
+  with patch('voicehub.provisioning.interfaces',return_value=[{'interface':'en0','address':'10.159.134.213','label':'Wi-Fi'}]):
+   r=await self.client.post('/api/clients/echoear-s3/prepare',json={});self.assertEqual(r.status,200);self.assertEqual((await r.json())['host'],'10.159.134.213')
+   self.assertEqual([call.args[0] for call in connections.websocket_action.call_args_list],['stop','start'])
+   connections.websocket_action.reset_mock();connections.device_host='172.20.10.3'
+   hub.sessions['active']=SimpleNamespace(device_listener=True,closed=False)
+   try:
+    r=await self.client.post('/api/clients/echoear-s3/prepare',json={});self.assertEqual(r.status,409);self.assertEqual((await r.json())['error']['code'],'listener_on_other_network')
+    connections.websocket_action.assert_not_called()
+   finally:hub.sessions.pop('active')
+
 class PhysicalNetworks(unittest.TestCase):
  def test_fake_ethernet_tunnels_are_excluded_from_setup_choices(self):
   from types import SimpleNamespace as NS

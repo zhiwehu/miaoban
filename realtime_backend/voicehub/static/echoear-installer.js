@@ -1,9 +1,10 @@
+import {installFlashReader,installSlipReader} from './echoear-flash-reader.mjs';
 import {setupResponse} from './echoear-response.mjs';
 import {connectionNvs} from './echoear-nvs.mjs';
 import {encodeDeviceBackup,decodeDeviceBackup,validateDeviceBackup,applyNetwork,restoreDeviceBackup} from './echoear-device-backup.mjs';
 import {PROFILE,sha256,inspectDevice,inspectRecoveryDevice,readFlashBounded,encodeBackup,decodeBackup,validateBackup,upgrade,restore} from './echoear-upgrade-core.mjs';
 const $=id=>document.getElementById(id);
-const messages={invalid_wifi:'请填写 1–32 字节的 Wi-Fi 名称；密码为 8–64 字节，开放网络可留空。',invalid_connection:'设备连接信息不完整，请重新准备连接。',invalid_nvs:'现有设备设置的格式或校验不受支持，已停止，未清空设置。',nvs_space_required:'设备设置空间不足，已停止配网。请保留备份并联系管理员处理。',invalid_device_backup:'原机备份格式无效，请选择本向导保存的 .vhdevice 文件。',invalid_image:'读取的应用镜像格式不完整，请重新检查设备。',wrong_image:'当前应用镜像的芯片或配置不符合这个升级包。',invalid_image_checksum:'读取的应用校验和未通过，请重新检查设备。',invalid_image_hash:'读取的应用指纹校验未通过，请重新检查设备。',wrong_device:'芯片型号或实际 Flash 容量不在支持范围内，已停止检查。',protected_device:'设备启用了安全保护，本向导不支持升级，请联系管理员。',
+const messages={usb_in_use:'USB 正由另一个页面操作。请等该页面完成或断开后再连接。',wifi_credentials_required:'喵伴没有可沿用的 Wi-Fi，请选择“连接新的 Wi-Fi”并填写。',flash_read_checksum_failed:'USB 读取的数据校验未通过，备份已停止，没有开始写入。',flash_recovery_failed:'USB 读取恢复失败，没有开始写入。',invalid_wifi:'请填写 1–32 字节的 Wi-Fi 名称；密码为 8–64 字节，开放网络可留空。',invalid_connection:'设备连接信息不完整，请重新准备连接。',invalid_nvs:'现有设备设置的格式或校验不受支持，已停止，未清空设置。',nvs_space_required:'设备有效设置已占满，整理后仍无足够空间，未修改设备。请先在高级选项保存备份，再处理。',invalid_device_backup:'原机备份格式无效，请选择本向导保存的 .vhdevice 文件。',invalid_image:'读取的应用镜像格式不完整，请重新检查设备。',wrong_image:'当前应用镜像的芯片或配置不符合这个升级包。',invalid_image_checksum:'读取的应用校验和未通过，请重新检查设备。',invalid_image_hash:'读取的应用指纹校验未通过，请重新检查设备。',wrong_device:'芯片型号或实际 Flash 容量不在支持范围内，已停止检查。',protected_device:'设备启用了安全保护，本向导不支持升级，请联系管理员。',
  unsupported_partition_table:'设备分区与当前升级包不匹配。本向导不能直接安装到这台新设备，需要先确认对应固件方案。',unrecognized_existing_firmware:'已读到设备，但当前固件不在已验证的升级来源中。请记录设备型号和固件版本，不能直接安装此升级包。',
  flash_read_incomplete:'设备返回的数据不完整，检查已停止，没有开始安装。请重新连接后重试。',
  invalid_ota_data:'无法确认设备的启动分区，已停止操作。',pending_ota_validation:'设备上次升级尚未确认，请先让设备正常启动。',
@@ -11,8 +12,22 @@ const messages={invalid_wifi:'请填写 1–32 字节的 Wi-Fi 名称；密码�
  invalid_backup_range:'备份的写入范围不受支持，已停止操作。',flash_verification_failed:'写入后的检查未通过。请保持 USB 连接，使用已保存的备份恢复。',
  device_state_changed:'设备状态已改变，请重新连接检查，再保存一份新的备份。',release_not_hardware_validated:'这一版本还在等待实机验收，暂不能安装。'};
 let releaseKey='',release,loader,transport,device,backup,recovery,busy=false,writing=false,expectedMac='',heard=false;
-let lastStage='',fullBackup=null,connectingAt=0;const thisComputer=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+let lastStage='',fullBackup=null,connectingAt=0,releaseUsbLock=null;const thisComputer=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
 function status(text,progress){lastStage=text;$('echoear-install-status').textContent=text;if(progress!==undefined)$('echoear-install-progress').value=Math.round(Math.max(0,Math.min(1,progress))*100);}
+function wifiMode(){
+ const keep=$('echoear-wifi-mode').value==='keep',open=$('echoear-wifi-open').checked;
+ $('echoear-wifi-fields').hidden=keep;
+ $('echoear-wifi-ssid').required=!keep;$('echoear-wifi-password').required=!keep&&!open;
+ $('echoear-wifi-ssid').disabled=busy||keep;$('echoear-wifi-password').disabled=busy||keep||open;
+ $('echoear-wifi-mode').disabled=busy;$('echoear-wifi-open').disabled=busy;
+ $('echoear-wifi-hint').textContent=keep?'无需填写密码。电脑需与喵伴处于可互通网络；不会读取电脑保存的 Wi-Fi 密码。':'填写目标网络的名称和密码；开放网络请明确勾选。';
+}
+function stepControls(){
+ const step=connectingAt?3:device?.current?2:1;
+ document.querySelectorAll('[data-usb-step]').forEach(el=>{const n=Number(el.dataset.usbStep);if(n===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');el.classList.toggle('done',n<step);});
+ document.querySelectorAll('[data-usb-panel]').forEach(el=>el.hidden=Number(el.dataset.usbPanel)!==step);
+}
+$('echoear-wifi-mode').onchange=wifiMode;$('echoear-wifi-open').onchange=wifiMode;
 function controls(){
  const supported=!!navigator.serial&&!!window.isSecureContext&&!!window.showSaveFilePicker;
  $('echoear-serial-note').textContent=supported?'使用数据线连接猫头的 USB 接口，选择猫头对应设备。检查会暂时进入下载模式，期间停止联网对话；检查或备份结束后点“断开 USB”让设备重启。新机器也需核对分区和原厂固件，能联网对话不代表适配此升级包。':'请用电脑上的 Chrome 或 Edge，通过 HTTPS 或本机 localhost 打开本页面。';
@@ -26,7 +41,7 @@ function controls(){
  $('echoear-update-with-setup').disabled=busy||release?.install?.validated!==true;
  if(release?.install?.validated!==true)$('echoear-update-with-setup').checked=false;
  $('echoear-update-note').textContent=release?.install?.validated===true?'兼容设备可勾选升级；将先保存原机备份。':'已有兼容固件可以直接连接。候选新固件尚未完成实机验收，更新选项暂不可选。';
- for(const id of ['echoear-wifi-ssid','echoear-wifi-password','echoear-network-host'])$(id).disabled=busy;
+ $('echoear-network-host').disabled=busy;wifiMode();stepControls();
  if(!thisComputer)$('echoear-setup-status').textContent='USB 一体接入请在运行 VoiceHub 的这台电脑上，通过 localhost 打开页面。';
  $('echoear-heard').disabled=!$('echoear-heard').dataset.ready;
  $('echoear-heard').hidden=!$('echoear-heard').dataset.ready;
@@ -37,17 +52,27 @@ async function action(fn){if(busy)return;busy=true;controls();try{await fn();}ca
  const stage=lastStage;console.warn('EchoEar operation failed:',stage,e.name,e.message);
  const cancelled=!writing&&(e.name==='AbortError'||e.name==='NotFoundError');
  const serialTimeout=/No serial data|Serial data stream stopped|timed?\s*out|Timeout/i.test(e.message||'');
- const message=e.keepConnection?e.message:cancelled?'已取消。设备没有开始安装。':messages[e.message]||
+ const message=e.keepConnection?(messages[e.message]||e.message):cancelled?'已取消。设备没有开始安装。':messages[e.message]||
   (serialTimeout?'USB 读取中断或超时。请重新连接；若反复发生，请保留下面的阶段和错误信息。':'操作没有完成。请检查数据线、关闭占用串口的软件，再重新连接；已有备份可用于恢复。');
  // A failed inspection must not retain a stale loader or keep the robot in
  // download mode. Never reset automatically after a failed flash write.
  if(!writing&&!e.keepConnection)await disconnect();
  status(message+(cancelled?'':'\n停止阶段：'+stage+'\n错误：'+String(e.message||e.name).slice(0,200)));
  }finally{busy=false;writing=false;controls();}}
+async function acquireUsbLock(){
+ if(releaseUsbLock||!navigator.locks)return;
+ let decide;const acquired=new Promise(resolve=>{decide=resolve});
+ navigator.locks.request('voicehub-echoear-usb',{ifAvailable:true},lock=>{
+  if(!lock){decide(false);return;}
+  return new Promise(resolve=>{releaseUsbLock=resolve;decide(true);});
+ }).catch(()=>decide(false));
+ if(!await acquired)throw new Error('usb_in_use');
+}
 async function disconnect(){
  if(loader){try{await loader.after('hard_reset');}catch{}}
  if(transport){try{await transport.disconnect();}catch{}}
- loader=transport=device=backup=recovery=fullBackup=null;
+ loader=transport=device=backup=recovery=fullBackup=null;$('echoear-device-info').textContent='';
+ if(releaseUsbLock){releaseUsbLock();releaseUsbLock=null;}
 }
 window.addEventListener('voicehub:firmware',event=>{
  const next=event.detail;
@@ -59,14 +84,18 @@ window.addEventListener('voicehub:firmware',event=>{
  release.install.validated?'已提供通过实机验收的版本 '+release.version:'版本 '+release.version+' 已构建，正在等待实机验收；可先检查设备和保存备份。';
  controls();
 });
-$('echoear-connect').onclick=()=>action(async()=>{
- await disconnect();heard=false;connectingAt=0;expectedMac='';$('echoear-verify-status').textContent='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
- const port=await navigator.serial.requestPort();
- const {ESPLoader,Transport}=await import('./vendor/esptool-js-0.7.0/bundle.js');
- transport=new Transport(port,false);
+async function openUsbLoader(port){
+ const {ESPLoader,Transport,ESPError}=await import('./vendor/esptool-js-0.7.0/bundle.js');
+ transport=installSlipReader(new Transport(port,false),ESPError);
  loader=new ESPLoader({transport,baudrate:115200,romBaudrate:115200,debugLogging:false,serialOptions:{bufferSize:1024*1024},
   terminal:{clean(){},writeLine(text){if(text?.trim())status('USB：'+text.trim());},write(){}}});
- loader.FLASH_READ_TIMEOUT=10000;
+ loader.FLASH_READ_TIMEOUT=10000;installFlashReader(loader);
+}
+$('echoear-connect').onclick=()=>action(async()=>{
+ await disconnect();heard=false;connectingAt=0;expectedMac='';$('echoear-verify-status').textContent='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
+ await acquireUsbLock();
+ const port=await navigator.serial.requestPort();
+ await openUsbLoader(port);
  status('正在连接设备，请稍等…',0);await loader.main();
  try{device=await inspectDevice(loader,release,status);}
  catch(e){
@@ -141,21 +170,39 @@ $('echoear-network-form').onsubmit=event=>{
  event.preventDefault();
  return action(async()=>{
   if(!device||!thisComputer)throw new Error('请在 VoiceHub 本机连接并检查 USB 设备。');
-  const ssid=$('echoear-wifi-ssid').value,password=$('echoear-wifi-password').value,bytes=new TextEncoder();
-  if(!ssid||bytes.encode(ssid).length>32||ssid.includes('\0')||bytes.encode(password).length>64||password.includes('\0')||password.length>0&&bytes.encode(password).length<8)throw new Error('invalid_wifi');
+  const keepWifi=$('echoear-wifi-mode').value==='keep',ssid=$('echoear-wifi-ssid').value,password=$('echoear-wifi-open').checked?'':$('echoear-wifi-password').value,bytes=new TextEncoder();
+  if(!keepWifi&&(!ssid||bytes.encode(ssid).length>32||ssid.includes('\0')||bytes.encode(password).length>64||password.includes('\0')||!$('echoear-wifi-open').checked&&bytes.encode(password).length<8))throw new Error('invalid_wifi');
   // The picker must run before the first network await to retain user activation.
   const handle=await window.showSaveFilePicker({suggestedName:'EchoEar-'+device.mac.replaceAll(':','')+'-original.vhdevice',types:[{description:'喵伴原机备份',accept:{'application/octet-stream':['.vhdevice']}}]});
   status('正在自动准备 VoiceHub 设备连接服务…',0);
   const connection=await prepareConnection();
+  status('正在检查设备设置空间…',0);
+  try{connectionNvs(await readFlashBounded(loader,PROFILE.nvs,PROFILE.nvsSize),{ssid,password,keepWifi,...connection});}
+  catch(error){if(error.message==='wifi_credentials_required'){$('echoear-wifi-mode').value='new';error.keepConnection=true;}throw error;}
   const size=device.flashSize==='32MB'?32*1024*1024:16*1024*1024;
-  const flash=await readFlashBounded(loader,0,size,(_chunk,read,total)=>status('正在备份原机固件与设置（'+(read/1024/1024).toFixed(1)+' / '+(total/1024/1024)+' MB）…',read/total));
+  const flash=await readFlashBounded(loader,0,size,(_chunk,read,total)=>status('正在备份原机固件与设置（'+(read/1024/1024).toFixed(1)+' / '+(total/1024/1024)+' MB）…',read/total),{recover:async({attempt,completed})=>{
+  status('USB 读取中断，正在重新连接并从 '+(completed.length/1024/1024).toFixed(1)+' MB 继续（第 '+attempt+' 次）…',completed.length/size);
+  const port=transport.device;await transport.disconnect();
+  for(let attempt=0;;attempt++){
+   await new Promise(resolve=>setTimeout(resolve,200*(attempt+1)));
+   try{await openUsbLoader(port);await loader.main();break;}
+   catch(error){if(attempt>=2||!/(?:Failed to open|already open)/i.test(error.message||''))throw error;try{await transport.disconnect();}catch{}}
+  }
+  const identity=await inspectRecoveryDevice(loader,release);
+  if(identity.mac!==device.mac||identity.layout!==device.layout||identity.flashSize!==device.flashSize)throw new Error('backup_wrong_device');
+  // The first block includes table, NVS and OTA. A reboot or device swap may
+  // invalidate a partial backup; never combine it with changed settings.
+  const prefix=completed.subarray(0,Math.min(completed.length,64*1024));
+  if(prefix.length&&await sha256(await loader.readFlash(0,prefix.length))!==await sha256(prefix))throw new Error('device_state_changed');
+  return loader;
+ }});
   const encoded=await encodeDeviceBackup(device,flash),writable=await handle.createWritable();
   try{await writable.write(encoded);await writable.close();}catch(e){try{await writable.abort();}catch{}throw e;}
   const saved=new Uint8Array(await(await handle.getFile()).arrayBuffer());
   if(await sha256(saved)!==await sha256(encoded))throw new Error('backup_checksum_failed');
   fullBackup=await decodeDeviceBackup(saved);await validateDeviceBackup(fullBackup,device);recovery=fullBackup;
   // Validate capacity and all settings before the first device write.
-  const nvs=connectionNvs(fullBackup.data.subarray(PROFILE.nvs,PROFILE.nvs+PROFILE.nvsSize),{ssid,password,...connection});
+  const nvs=connectionNvs(fullBackup.data.subarray(PROFILE.nvs,PROFILE.nvs+PROFILE.nvsSize),{ssid,password,keepWifi,...connection});
   if($('echoear-update-with-setup').checked){
    status('原机备份已保存并校验，正在核对更新包…',0);
    const response=await fetch(release.download);if(!response.ok)throw new Error('firmware_download_failed');

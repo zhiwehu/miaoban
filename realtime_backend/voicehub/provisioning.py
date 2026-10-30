@@ -60,12 +60,17 @@ async def prepare(request):
             'message':'请选择喵伴要连接的本机网络。' if choices else '请先让这台电脑连接可供喵伴使用的局域网。'},'interfaces':choices},status=409)
     async with hub.provision_lock:
         try:
-            if connections.device_ready and connections.device_host!=host:raise ConnectionError('listener_on_other_network')
+            if connections.device_ready and connections.device_host!=host:
+                if any(getattr(session,'device_listener',False) and not getattr(session,'closed',False) for session in hub.sessions.values()):
+                    raise ConnectionError('listener_on_other_network')
+                # No device uses the old listener: follow the newly selected LAN.
+                await connections.websocket_action('stop')
             if not connections.device_ready:
                 await connections.save_websocket({'host':host,'port':connections.device_port})
                 await connections.websocket_action('start')
         except ConnectionError as exc:
-            return web.json_response({'error':{'code':str(exc),'message':'设备连接服务未能准备好，请检查网卡或端口占用；已有连接服务不会自动停止。'}},status=409)
+            message='已有喵伴正在使用另一个网络，请先断开它再切换。' if str(exc)=='listener_on_other_network' else '设备连接服务启动失败，请检查当前网络和监听端口。'
+            return web.json_response({'error':{'code':str(exc),'message':message}},status=409)
         token=hub.auth['device_token'];port=connections.device_port
         return web.json_response({'host':host,'port':port,
             'websocket':{'url':f'ws://{host}:{port}/xiaozhi/v1/','token':token,'version':1},

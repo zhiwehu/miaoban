@@ -1,17 +1,24 @@
+import {retryableFlashRead} from './echoear-flash-reader.mjs';
 // Exact existing-device upgrade profile. No arbitrary-address or erase-all API.
 export const PROFILE={board:'echoear-s3',flashSizes:['16MB','32MB'],table:0x8000,nvs:0x9000,nvsSize:0x4000,
  ota:0xd000,otaSize:0x2000,apps:[0x20000,0x410000],appSize:0x3f0000};
 const fail=code=>{throw new Error(code);};
-// Bound each esptool read: the bundled reader copies its growing buffer on
-// every packet and allows 1024 packets in flight. A whole 4MB slot is a large
-// burst for Web Serial. Keep the existing protocol but limit each request.
-export async function readFlashBounded(loader,address,size,progress=()=>{}){
- const data=new Uint8Array(size),chunkSize=64*1024;
- for(let offset=0;offset<size;offset+=chunkSize){
-  const length=Math.min(chunkSize,size-offset);
-  const chunk=await loader.readFlash(address+offset,length);
-  if(!(chunk instanceof Uint8Array)||chunk.length!==length)fail('flash_read_incomplete');
-  data.set(chunk,offset);progress(chunk,offset+length,size);
+// Only verified complete blocks advance progress. Backup callers may reconnect
+// after a transient read failure, with a global cap and identity/snapshot check.
+export async function readFlashBounded(loader,address,size,progress=()=>{},options={}){
+ const data=new Uint8Array(size),chunkSize=64*1024;let active=loader,recoveries=0;
+ for(let offset=0;offset<size;){
+  const length=Math.min(chunkSize,size-offset);let chunk;
+  try{
+   chunk=await active.readFlash(address+offset,length);
+   if(!(chunk instanceof Uint8Array)||chunk.length!==length)fail('flash_read_incomplete');
+  }catch(error){
+   if(!options.recover||recoveries>=2||!retryableFlashRead(error))throw error;
+   active=await options.recover({attempt:++recoveries,address:address+offset,completed:data.subarray(0,offset)});
+   if(!active||typeof active.readFlash!=='function')fail('flash_recovery_failed');
+   continue;
+  }
+  data.set(chunk,offset);offset+=length;progress(chunk,offset,size);
  }
  return data;
 }

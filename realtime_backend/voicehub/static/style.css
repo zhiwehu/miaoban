@@ -1107,3 +1107,12 @@ footer {
 .mcp-email-settings > summary { display:none; }
 .skill-result { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; }
 [data-panel="skills"] > details > summary { cursor:pointer; color:var(--teal); }
+
+.usb-steps { display:flex; align-items:center; list-style:none; padding:0; margin:22px 0; gap:14px; }
+.usb-steps li { display:flex; align-items:center; gap:8px; color:#8c9690; flex:1; }
+.usb-steps li:not(:last-child)::after { content:'→'; margin-left:auto; color:#a9b6ad; }
+.usb-steps b { display:grid; place-items:center; width:30px; height:30px; border:1px solid #d5ddd6; border-radius:50%; font-size:14px; flex-shrink:0; }
+.usb-steps [aria-current="step"] { color:#315b4c; font-weight:650; }
+.usb-steps [aria-current="step"] b { background:#315b4c; color:white; border-color:#315b4c; }
+.usb-steps .done b { background:#edf3ef; color:#315b4c; }
+@media(max-width:480px) { .usb-steps { gap:7px; } .usb-steps li { gap:5px; font-size:12px; } .usb-steps b { width:25px; height:25px; } }
