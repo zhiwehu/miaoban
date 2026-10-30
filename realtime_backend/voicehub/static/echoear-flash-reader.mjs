@@ -24,8 +24,8 @@ export function installFlashReader(loader){
  loader.readFlash=async function(address,size,progress){
   if(!this.IS_STUB)fail('flash_stub_required');
   if(!Number.isInteger(address)||address<0||!Number.isInteger(size)||size<1||size>64*1024||address+size>32*1024*1024)fail('flash_read_range');
-  // At most four 1KB packets in flight; keep USB bursts bounded.
-  if(await this.checkCommand('read flash',this.ESP_READ_FLASH,words(address,size,1024,4))!==0)fail('flash_read_rejected');
+  // One 1KB packet in flight; acknowledge before the next USB burst.
+  if(await this.checkCommand('read flash',this.ESP_READ_FLASH,words(address,size,1024,1))!==0)fail('flash_read_rejected');
   const data=new Uint8Array(size),timeout=this.FLASH_READ_TIMEOUT;
   for(let offset=0;offset<size;){
    const packet=await this.transport.read(timeout),expected=Math.min(1024,size-offset);
@@ -48,7 +48,28 @@ export function retryableFlashRead(error){
 // Reuse one scratch buffer instead, so long Flash reads do not churn gigabytes
 // of temporary arrays and stall the USB receive loop.
 export function installSlipReader(transport,ErrorType=Error){
- const scratch=new Uint8Array(65536);let reading=false;
+ const scratch=new Uint8Array(65536);let reading=false,wake=null,ended=false;
+ transport.notifySerialData=()=>{if(wake){const resolve=wake;wake=null;resolve();}};
+ transport.readLoop=async function(){
+  ended=false;
+  try{
+   while(this.device.readable){
+    const reader=this.device.readable.getReader();this.reader=reader;
+    try{
+     const {value,done}=await reader.read();if(done)break;
+     if(value?.length){const next=new Uint8Array(this.buffer.length+value.length);next.set(this.buffer);next.set(value,this.buffer.length);this.buffer=next;this.notifySerialData();}
+    }catch(error){if(!['BufferOverrunError','FramingError','BreakError','ParityError'].includes(error.name))break;}
+    finally{reader.releaseLock();if(this.reader===reader)this.reader=undefined;}
+   }
+  }finally{ended=true;this.notifySerialData();}
+ };
+ async function waitForData(timeout){
+  if(ended)throw new ErrorType('Serial data stream stopped: Possible serial noise or corruption.');
+  await new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>{wake=null;reject(new ErrorType('No serial data received.'));},Math.max(1,timeout));
+   wake=()=>{clearTimeout(timer);resolve();};
+  });
+ }
  transport.read=async function(timeout=10000){
   if(reading)throw new ErrorType('Concurrent serial read');reading=true;
   let count=0,started=false,escaped=false;const deadline=Date.now()+timeout;
@@ -56,7 +77,7 @@ export function installSlipReader(transport,ErrorType=Error){
    for(;;){
     if(!this.buffer.length){
      if(Date.now()>=deadline)throw new ErrorType(started?'No serial data received.':'Serial data stream stopped: Possible serial noise or corruption.');
-     await new Promise(resolve=>setTimeout(resolve,1));continue;
+     await waitForData(deadline-Date.now());continue;
     }
     const bytes=this.buffer;this.buffer=new Uint8Array(0);
     for(let i=0;i<bytes.length;i++){

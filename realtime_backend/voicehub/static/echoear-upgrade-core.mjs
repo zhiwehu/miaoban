@@ -6,19 +6,19 @@ const fail=code=>{throw new Error(code);};
 // Only verified complete blocks advance progress. Backup callers may reconnect
 // after a transient read failure, with a global cap and identity/snapshot check.
 export async function readFlashBounded(loader,address,size,progress=()=>{},options={}){
- const data=new Uint8Array(size),chunkSize=64*1024;let active=loader,recoveries=0;
+ const data=new Uint8Array(size),chunkSize=64*1024;let active=loader,recoveries=0,blockRecoveries=0;
  for(let offset=0;offset<size;){
   const length=Math.min(chunkSize,size-offset);let chunk;
   try{
    chunk=await active.readFlash(address+offset,length);
    if(!(chunk instanceof Uint8Array)||chunk.length!==length)fail('flash_read_incomplete');
   }catch(error){
-   if(!options.recover||recoveries>=2||!retryableFlashRead(error))throw error;
-   active=await options.recover({attempt:++recoveries,address:address+offset,completed:data.subarray(0,offset)});
+   if(!options.recover||recoveries>=8||blockRecoveries>=2||!retryableFlashRead(error))throw error;
+   blockRecoveries++;active=await options.recover({attempt:++recoveries,address:address+offset,completed:data.subarray(0,offset)});
    if(!active||typeof active.readFlash!=='function')fail('flash_recovery_failed');
    continue;
   }
-  data.set(chunk,offset);offset+=length;progress(chunk,offset,size);
+  blockRecoveries=0;data.set(chunk,offset);offset+=length;progress(chunk,offset,size);
  }
  return data;
 }

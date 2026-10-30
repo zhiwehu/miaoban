@@ -106,15 +106,15 @@ export function connectionNvs(raw,{ssid,password,ota_url,websocket,keepWifi=fals
   for(let j=0;j<span;j++)if(bitmap(active,active.tail+j)!==3)fail('invalid_nvs');
   active.bytes.set(bytes,64+active.tail*32);for(let j=0;j<span;j++)mark(active,active.tail+j,2);active.tail+=span;
  }
- for(const name of ['wifi','websocket'])if(!nvs.spaces.has(name)){
-  const used=new Set(nvs.spaces.values());let index=1;while(used.has(index))index++;if(index>254)fail('invalid_nvs');
-  append(entry(0,name,1,index));nvs.spaces.set(name,index);
- }
  for(const r of nvs.records){
   const wifi=r.ns===nvs.spaces.get('wifi')&&(r.key==='ota_url'||r.key==='force_ap'||!keepWifi&&/^(?:ssid[0-9]?|password[0-9]?|remember_bssid)$/.test(r.key));
   const ws=r.ns===nvs.spaces.get('websocket')&&['url','token','version'].includes(r.key);
   const mqtt=r.ns===nvs.spaces.get('mqtt')&&r.key==='endpoint';
   if(wifi||ws||mqtt)for(let j=0;j<r.span;j++)mark(r.page,r.index+j,0);
+ }
+ for(const name of ['wifi','websocket'])if(!nvs.spaces.has(name)){
+  const used=new Set(nvs.spaces.values());let index=1;while(used.has(index))index++;if(index>254)fail('invalid_nvs');
+  append(entry(0,name,1,index));nvs.spaces.set(name,index);
  }
  for(const [ns,key,type,value] of changes)append(entry(nvs.spaces.get(ns),key,type,value));
  inspectNvs(data);return data;

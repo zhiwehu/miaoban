@@ -13,7 +13,7 @@ test('transport MD5 agrees with independent Node crypto for boundaries and full 
 function stub(){
  let frames=[],ack=0;const requests=[],acks=[];
  const loader={IS_STUB:true,ESP_READ_FLASH:0xd2,FLASH_READ_TIMEOUT:100,
-  async checkCommand(_name,op,payload){assert.equal(frames.length,0,'previous digest must be consumed');assert.equal(op,0xd2);const v=new DataView(payload.buffer);requests.push([v.getUint32(0,true),v.getUint32(4,true)]);assert.equal(v.getUint32(12,true),4);const data=Uint8Array.from({length:v.getUint32(4,true)},(_,i)=>(v.getUint32(0,true)+i)%251);ack=0;const packetSize=v.getUint32(8,true);assert.equal(packetSize,1024);for(let i=0;i<data.length;i+=packetSize)frames.push(data.slice(i,i+packetSize));frames.push(digest(data));return 0;},
+  async checkCommand(_name,op,payload){assert.equal(frames.length,0,'previous digest must be consumed');assert.equal(op,0xd2);const v=new DataView(payload.buffer);requests.push([v.getUint32(0,true),v.getUint32(4,true)]);assert.equal(v.getUint32(12,true),1);const data=Uint8Array.from({length:v.getUint32(4,true)},(_,i)=>(v.getUint32(0,true)+i)%251);ack=0;const packetSize=v.getUint32(8,true);assert.equal(packetSize,1024);for(let i=0;i<data.length;i+=packetSize)frames.push(data.slice(i,i+packetSize));frames.push(digest(data));return 0;},
   transport:{async read(){return frames.shift()},async write(bytes){const value=new DataView(bytes.buffer).getUint32(0,true);assert.ok(value>ack);ack=value;acks.push(value);}}
  };return{loader:installFlashReader(loader),requests,acks};
 }
@@ -46,10 +46,26 @@ test('recovery is bounded and a failed identity/snapshot check cannot continue',
 
 test('linear SLIP reader decodes escaped fragmented frames and preserves following frames',async()=>{
  const transport=installSlipReader({buffer:new Uint8Array([0xc0,0xc0,1,0xdb])});
- const pending=transport.read(100);setTimeout(()=>{transport.buffer=new Uint8Array([0xdc,0xdb,0xdd,2,0xc0,0xc0,3,0xc0])},1);
+ const pending=transport.read(100);setTimeout(()=>{transport.buffer=new Uint8Array([0xdc,0xdb,0xdd,2,0xc0,0xc0,3,0xc0]);transport.notifySerialData()},1);
  assert.deepEqual(await pending,new Uint8Array([1,0xc0,0xdb,2]));assert.deepEqual(await transport.read(100),new Uint8Array([3]));
 });
 test('linear reader rejects malformed frames and bounds waiting',async()=>{
  await assert.rejects(()=>installSlipReader({buffer:new Uint8Array([0xc0,0xdb,1])}).read(20),/Invalid SLIP/);
- await assert.rejects(()=>installSlipReader({buffer:new Uint8Array(0)}).read(2),/Serial data stream stopped/);
+ await assert.rejects(()=>installSlipReader({buffer:new Uint8Array(0)}).read(2),/No serial data|Serial data stream stopped/);
 });
+
+test('serial stream data wakes the reader without timer polling and releases the stream lock',async()=>{
+ let controller;const readable=new ReadableStream({start(value){controller=value;}});
+ const transport=installSlipReader({buffer:new Uint8Array(0),device:{readable}}),loop=transport.readLoop();
+ const packet=transport.read(100);controller.enqueue(new Uint8Array([0xc0,8,9,0xc0]));assert.deepEqual(await packet,new Uint8Array([8,9]));
+ controller.close();await loop;assert.equal(readable.locked,false);
+ await assert.rejects(()=>transport.read(20),/Serial data stream stopped/);
+});
+
+ test('isolated failures can recover on later blocks, with a total recovery limit',async()=>{
+  let attempts=0;const failed=new Set();
+  const intermittent={async readFlash(address,size){if(!failed.has(address)){failed.add(address);throw new Error('No serial data received.')}return new Uint8Array(size)}};
+  const recover=async()=>{attempts++;return intermittent};
+  assert.equal((await readFlashBounded(intermittent,0,8*65536,()=>{},{recover})).length,8*65536);assert.equal(attempts,8);
+  failed.clear();attempts=0;await assert.rejects(()=>readFlashBounded(intermittent,0,9*65536,()=>{},{recover}),/No serial data/);assert.equal(attempts,8);
+ });
