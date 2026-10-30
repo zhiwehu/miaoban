@@ -2,6 +2,7 @@
 const states={planning:'正在规划',ready:'准备执行',running:'正在执行',pending:'待执行',completed:'已完成',waiting_input:'需要补充信息',waiting_configuration:'需要配置 SMTP',waiting_confirmation:'等待确认',failed:'执行失败',interrupted:'执行中断',cancelled:'已取消',unknown:'结果无法确认'};
 export function setupWorkflows({api,node}) {
   const host=document.getElementById('mcp-tool-list'),panel=node('details','panel mcp-extension mcp-workflows');
+  panel.hidden=true;
   host.after(panel);panel.append(node('summary','','任务链与执行记录'),node('p','hint','用自然语言组合已注册工具。生成文件后可准备邮件草稿，核对收件人、正文和附件后再发送。'));
   const status=node('p','hint');status.setAttribute('role','status');
   const form=node('form'),label=node('label','','任务目标'),goal=node('textarea');goal.rows=3;goal.maxLength=2000;goal.required=true;goal.placeholder='例如：生成一份 Markdown 会议纪要，发给 demo@example.com';label.append(goal);
