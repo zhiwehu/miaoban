@@ -2,6 +2,19 @@
 export const PROFILE={board:'echoear-s3',flashSizes:['16MB','32MB'],table:0x8000,nvs:0x9000,nvsSize:0x4000,
  ota:0xd000,otaSize:0x2000,apps:[0x20000,0x410000],appSize:0x3f0000};
 const fail=code=>{throw new Error(code);};
+// Bound each esptool read: the bundled reader copies its growing buffer on
+// every packet and allows 1024 packets in flight. A whole 4MB slot is a large
+// burst for Web Serial. Keep the existing protocol but limit each request.
+export async function readFlashBounded(loader,address,size,progress=()=>{}){
+ const data=new Uint8Array(size),chunkSize=64*1024;
+ for(let offset=0;offset<size;offset+=chunkSize){
+  const length=Math.min(chunkSize,size-offset);
+  const chunk=await loader.readFlash(address+offset,length);
+  if(!(chunk instanceof Uint8Array)||chunk.length!==length)fail('flash_read_incomplete');
+  data.set(chunk,offset);progress(chunk,offset+length,size);
+ }
+ return data;
+}
 export async function sha256(bytes){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');}
 export function crc32(bytes,seed=0xffffffff){let crc=(seed^0xffffffff)>>>0;for(const b of bytes){crc^=b;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;}
 export function validateSecurity(info,flashSize){
@@ -87,13 +100,16 @@ export function validateBackup(backup,device){
  for(const r of backup.regions){const a=allowed[r.name];if(!a||r.address!==a[0]||r.data.length!==a[1])fail('invalid_backup_range');}
 }
 export async function inspectDevice(loader,manifest,progress=()=>{}){
+ progress('正在读取芯片安全状态和 Flash 容量…',0);
  const security=await loader.getSecurityInfo(),flashSize=await loader.detectFlashSize();
  progress('检测到芯片 ID '+security.chipId+'，实际 Flash '+(flashSize||'未知')+'，正在核对分区。',0);
  validateSecurity(security,flashSize);
  const mac=await loader.chip.readMac(loader);
- const table=await loader.readFlash(PROFILE.table,4096);const layout=await validateLayout(table,manifest.install);
+ const table=await readFlashBounded(loader,PROFILE.table,4096);const layout=await validateLayout(table,manifest.install);
+ progress('分区检查通过，正在读取启动分区…',0);
  const ota=await loader.readFlash(PROFILE.ota,PROFILE.otaSize),boot=selectBoot(ota);
- const bytes=await loader.readFlash(PROFILE.apps[boot.slot],PROFILE.appSize,(_p,w,t)=>progress('正在核对设备型号',w/t));
+ const bytes=await readFlashBounded(loader,PROFILE.apps[boot.slot],PROFILE.appSize,(_p,w,t)=>progress('正在读取现有应用以核对固件（'+Math.round(w/1024)+' / '+Math.round(t/1024)+' KB），此时不写入设备。',w/t));
+ progress('应用读取完成，正在校验固件指纹…',1);
  const image=await inspectImage(bytes);
  if(!(manifest.install.upgrade_from_sha256||[]).includes(image.sha256)&&image.sha256!==manifest.sha256)fail('unrecognized_existing_firmware');
  if(boot.sequence>=0xfffffffd)fail('invalid_ota_sequence');
@@ -102,7 +118,7 @@ export async function inspectDevice(loader,manifest,progress=()=>{}){
 async function writeAndVerify(loader,address,data,progress){
  await loader.writeFlash({fileArray:[{address,data}],flashSize:'keep',flashMode:'keep',flashFreq:'keep',eraseAll:false,compress:true,
   reportProgress:(_i,w,t)=>progress?.(w/t)});
- const actual=await loader.readFlash(address,data.length);
+ const actual=await readFlashBounded(loader,address,data.length);
  if(await sha256(actual)!==await sha256(data))fail('flash_verification_failed');
 }
 export async function upgrade(loader,device,manifest,image,backup,progress=()=>{}){

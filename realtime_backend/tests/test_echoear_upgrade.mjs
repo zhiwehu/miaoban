@@ -100,3 +100,24 @@ test('32MB physical Flash still requires exact layout and known application',asy
  await assert.rejects(()=>inspectDevice(f.loader,f.manifest),/unsupported_partition_table/);
  assert.deepEqual(f.writes,[]);
 });
+
+test('inspection bounds serial reads and reports application read progress',async()=>{
+ const f=await fixture(),read=f.loader.readFlash.bind(f.loader),sizes=[],progress=[];
+ f.loader.readFlash=async(address,size)=>{
+  sizes.push(size);assert.ok(size<=64*1024,'large burst risks overflowing the browser serial buffer');
+  return read(address,size);
+ };
+ const device=await inspectDevice(f.loader,f.manifest,(text,value)=>progress.push([text,value]));
+ assert.equal(device.current.sha256,await sha256(f.old));
+ assert.ok(sizes.length>60);assert.ok(progress.some(([text])=>text.includes('读取现有应用')));
+ assert.deepEqual(f.writes,[]);
+});
+
+test('bounded reads reject truncated serial data before accepting an image',async()=>{
+ const f=await fixture(),read=f.loader.readFlash.bind(f.loader);
+ f.loader.readFlash=async(address,size)=>{
+  const bytes=await read(address,size);return address>=PROFILE.apps[0]?bytes.slice(0,-1):bytes;
+ };
+ await assert.rejects(()=>inspectDevice(f.loader,f.manifest),/flash_read_incomplete/);
+ assert.deepEqual(f.writes,[]);
+});
