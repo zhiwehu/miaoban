@@ -9,7 +9,7 @@ from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMEN
 from .tools import validate_arguments
 from .rex_planner import PlannerError
 from .local_calendar import calendar_answer
-from .extension_routing import music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate,file_plan,file_candidate
+from .extension_routing import volume_request,music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate,file_plan,file_candidate
 
 
 async def rex_plan(pipeline,history,cfg):
@@ -35,6 +35,10 @@ async def chat(pipeline, history):
     latest=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'')
     if getattr(getattr(pipeline,'local',None),'skills',None) is None and re.search(r'(?:执行|运行|启动|调用)\s*(?:skill|技能)',latest,re.IGNORECASE):
         yield '技能功能已暂停。你可以直接查询天气、日程，或使用其他 MCP 工具。'
+        return
+    if volume_request(latest):
+        pipeline._previous_tool_plan=None
+        yield '暂时还不能用语音调节音量，请先用播放设备上的音量键调整。'
         return
     from .workflows.chat import route
     from .skill_chat import route as skill_route

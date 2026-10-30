@@ -71,3 +71,10 @@ def file_plan(text):
 
 def file_candidate(text):
     return re.search(r'文件|文件夹|目录|整理|归类|\b(?:files?|folder|directory|organize)\b',text,re.IGNORECASE) is not None
+
+
+def volume_request(text):
+    """Recognize only a direct volume command; never fabricate tool support."""
+    text=text.strip().rstrip('。！？!?,， ')
+    prefix=r'(?:(?:请|帮我|麻烦你)[\s，,]*)*'
+    return re.fullmatch(prefix+r'(?:把)?(?:音乐|播放|喵伴|设备|声音|的)*(?:音量|声音)(?:再)?(?:调|调节|调到|调成)?(?:降低|提高|调低|调高|调小|调大|小|大|低|高|轻|响)(?:一点|一些|点|些|一档|两档|一下)?',text) is not None

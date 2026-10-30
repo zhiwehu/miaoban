@@ -22,6 +22,13 @@ class ExtensionRoutingTests(unittest.IsolatedAsyncioTestCase):
         for text in ('不要播放音乐','你会播放音乐吗','播放两条新闻','解释播放音乐是什么意思'):
             self.assertIsNone(music_plan(text))
 
+    async def test_volume_request_explains_limit_without_failing_planner(self):
+        cfg=copy.deepcopy(DEFAULT);cfg['tools'].update(music=True,planner='rex')
+        pipeline=SimpleNamespace(config=cfg)
+        for text in ['把音乐音量降低一点。','音量降低一点。','把音量调小一点']:
+            result=[item async for item in chat(pipeline,[{'role':'user','content':text}])]
+            self.assertEqual(result,['暂时还不能用语音调节音量，请先用播放设备上的音量键调整。'])
+
     async def test_explicit_music_refusal_never_reaches_a_model_or_mcp(self):
         cfg=copy.deepcopy(DEFAULT);cfg['tools']['music']=True
         pipeline=SimpleNamespace(config=cfg)
