@@ -91,13 +91,7 @@ function drawDevices() {
     row.append(sessionButtons(device));target.append(row);
   }
   if(!data.devices.length)target.append(el('p','还没有设备连上来。完成上面的步骤后，这里会显示设备名称；连接成功后就可以开始对话。','hint'));
-  const recent=$('connections-recent');recent.replaceChildren();
-  for(const item of data.recent) {
-    const row=el('div',undefined,'connection-device');
-    row.append(el('strong',item.device_id),el('small',new Date(item.updated*1000).toLocaleString('zh-CN'),'hint'),sessionButtons(item));
-    recent.append(row);
-  }
-  if(!data.recent.length)recent.append(el('p','尚无历史会话。','hint'));
+
 }
 function drawSettings() {
   const ws=data.websocket, mqtt=data.mqtt;
