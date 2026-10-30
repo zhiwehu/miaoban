@@ -112,19 +112,35 @@ window.addEventListener('voicehub:firmware',event=>{
  release.install.validated?'已提供通过实机验收的版本 '+release.version:'版本 '+release.version+' 已构建，正在等待实机验收；可先检查设备和保存备份。';
  controls();
 });
-async function openUsbLoader(port){
+async function openUsbLoader(port,baudrate=460800){
  const {ESPLoader,Transport,ESPError}=await import('./vendor/esptool-js-0.7.0/bundle.js');
  transport=installSlipReader(new Transport(port,false),ESPError);
- loader=new ESPLoader({transport,baudrate:115200,romBaudrate:115200,debugLogging:false,serialOptions:{bufferSize:1024*1024},
+ loader=new ESPLoader({transport,baudrate,romBaudrate:115200,debugLogging:false,serialOptions:{bufferSize:1024*1024},
   terminal:{clean(){},writeLine(text){if(text?.trim())status('USB：'+text.trim());},write(){}}});
  loader.FLASH_READ_TIMEOUT=10000;installFlashReader(loader);
+}
+async function connectUsbLoader(port){
+ for(const baudrate of [460800,115200]){
+  try{
+   await openUsbLoader(port,baudrate);
+   status(baudrate===460800?'正在连接设备，请稍等…':'正在以兼容速率重新连接设备…',0);
+   await loader.main();
+   // Verify a real flash reply after changing speed, before inspection/backup.
+   await readFlashBounded(loader,PROFILE.table,4096);
+   return;
+  }catch(error){
+   try{await loader?.after('hard_reset');}catch{}
+   try{await transport?.disconnect();}catch{}
+   loader=transport=null;
+   if(baudrate===115200)throw error;
+  }
+ }
 }
 $('echoear-connect').onclick=()=>action(async()=>{
  await disconnect();$('echoear-network-intro').hidden=false;$('echoear-network-form').hidden=true;heard=false;connectingAt=0;expectedMac='';$('echoear-verify-status').textContent='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
  await acquireUsbLock();
  const port=await navigator.serial.requestPort();
- await openUsbLoader(port);
- status('正在连接设备，请稍等…',0);await loader.main();
+ await connectUsbLoader(port);
  try{device=await inspectDevice(loader,release,status);}
  catch(e){
   if(!['invalid_image','wrong_image','invalid_image_checksum','invalid_image_hash','unrecognized_existing_firmware','invalid_ota_data','pending_ota_validation'].includes(e.message))throw e;
@@ -147,7 +163,7 @@ async function saveOriginalBackup(){
   const port=transport.device;await transport.disconnect();
   for(let attempt=0;;attempt++){
    await new Promise(resolve=>setTimeout(resolve,200*(attempt+1)));
-   try{await openUsbLoader(port);await loader.main();break;}
+   try{await connectUsbLoader(port);break;}
    catch(error){if(attempt>=2||!/(?:Failed to open|already open)/i.test(error.message||''))throw error;try{await transport.disconnect();}catch{}}
   }
   const identity=await inspectRecoveryDevice(loader,release);
