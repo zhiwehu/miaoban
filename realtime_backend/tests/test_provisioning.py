@@ -63,3 +63,16 @@ class PhysicalNetworks(unittest.TestCase):
   addrs={name:[NS(family=socket.AF_INET,address=address)] for name,address in [('feth2177','172.23.55.123'),('feth2916','10.147.18.10'),('en0','10.159.134.213'),('utun8','10.126.126.234')]}
   with patch('voicehub.provisioning.hardware_ports',return_value={'en0':'Wi-Fi'}),patch('voicehub.provisioning.psutil.net_if_addrs',return_value=addrs),patch('voicehub.provisioning.psutil.net_if_stats',return_value={}):
    self.assertEqual(interfaces(),[{'interface':'en0','address':'10.159.134.213','label':'Wi-Fi'}])
+
+class CurrentWifi(unittest.IsolatedAsyncioTestCase):
+ async def test_ssid_is_best_effort_and_never_returns_a_password_or_assumes_band(self):
+  import subprocess
+  from types import SimpleNamespace
+  tmp=tempfile.TemporaryDirectory();client=TestClient(TestServer(create_app(tmp.name)));await client.start_server()
+  try:
+   with patch('voicehub.provisioning.sys.platform','darwin'),patch('voicehub.provisioning.hardware_ports',return_value={'en0':'Wi-Fi'}),patch('voicehub.provisioning.subprocess.run',return_value=SimpleNamespace(stdout='Current Wi-Fi Network: TestWifi\n')) as run:
+    response=await client.get('/api/clients/echoear-s3/current-wifi');self.assertEqual(response.status,200)
+    self.assertEqual(await response.json(),{'ssid':'TestWifi','band':None});self.assertEqual(run.call_args.args[0],['/usr/sbin/networksetup','-getairportnetwork','en0'])
+   with patch('voicehub.provisioning.sys.platform','darwin'),patch('voicehub.provisioning.hardware_ports',return_value={'en0':'Wi-Fi'}),patch('voicehub.provisioning.subprocess.run',side_effect=subprocess.TimeoutExpired('networksetup',2)):
+    self.assertEqual((await(await client.get('/api/clients/echoear-s3/current-wifi')).json())['ssid'],None)
+  finally:await client.close();tmp.cleanup()

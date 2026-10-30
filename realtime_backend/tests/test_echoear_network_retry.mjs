@@ -54,3 +54,16 @@ test('USB ownership spans pages until disconnect and blocks a second page from o
   assert.equal(app.nodes.get('echoear-backup').disabled,false);
   assert.equal(app.nodes.get('echoear-restore').disabled,false);
  });
+
+test('connected device asks to start Wi-Fi setup before displaying the form',async()=>{
+ const app=installer();app.setDevice({current:{}},{});app.controls();
+ await app.nodes.get('echoear-open-network').onclick();
+ assert.equal(app.nodes.get('echoear-network-intro').hidden,true);
+ assert.equal(app.nodes.get('echoear-network-form').hidden,false);
+ assert.equal(app.nodes.get('echoear-wifi-mode').value,'new');
+ assert.match(app.nodes.get('echoear-wifi-hint').textContent,/2.4 GHz/);
+});
+test('disconnect reports failed reboot rather than claiming success',async()=>{
+ const app=installer();app.setDevice({current:{}},{async disconnect(){}});
+ assert.equal(await app.disconnect(),false);
+});

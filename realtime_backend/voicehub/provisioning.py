@@ -75,3 +75,22 @@ async def prepare(request):
         return web.json_response({'host':host,'port':port,
             'websocket':{'url':f'ws://{host}:{port}/xiaozhi/v1/','token':token,'version':1},
             'ota_url':f'http://{host}:{port}/xiaozhi/ota/{token}/'},headers={'Cache-Control':'no-store'})
+
+
+async def current_wifi(request):
+    """Best effort SSID discovery only. Never query the OS password store."""
+    import asyncio
+    from .app import local_admin
+    if not local_admin(request):raise web.HTTPUnauthorized()
+    def discover():
+        if sys.platform != 'darwin':return None
+        for interface, label in hardware_ports().items():
+            if label not in ('Wi-Fi', 'AirPort'):continue
+            try:
+                output=subprocess.run(['/usr/sbin/networksetup','-getairportnetwork',interface],capture_output=True,text=True,timeout=2,check=True).stdout.rstrip('\r\n')
+                prefix='Current Wi-Fi Network: '
+                if output.startswith(prefix) and output[len(prefix):]:return output[len(prefix):]
+            except (OSError,subprocess.SubprocessError):pass
+        return None
+    ssid=await asyncio.to_thread(discover)
+    return web.json_response({'ssid':ssid,'band':None})

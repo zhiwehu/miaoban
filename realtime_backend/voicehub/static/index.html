@@ -162,21 +162,21 @@
           <article id="echoear-installer" class="panel onboarding-guide" hidden>
             <h2>连接喵伴</h2>
             <ol class="usb-steps" aria-label="连接步骤"><li data-usb-step="1" aria-current="step"><b>1</b><span>连接设备</span></li><li data-usb-step="2"><b>2</b><span>配网</span></li><li data-usb-step="3"><b>3</b><span>开始对话</span></li></ol>
-            <div data-usb-panel="1"><p class="hint">用数据线连接猫头，点击按钮选择 USB 设备。</p>
-            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">连接 USB</button><span id="echoear-device-info" class="hint"></span></div></div>
-            <form id="echoear-network-form" data-usb-panel="2" hidden>
-              <label>配网方式<select id="echoear-wifi-mode"><option value="keep">沿用喵伴已保存的 Wi-Fi</option><option value="new">连接新的 Wi-Fi</option></select></label>
+            <div data-usb-panel="1"><p class="hint">先用 USB 数据线把喵伴连接到这台电脑，然后点击下方按钮。在弹窗中选择喵伴设备。</p>
+            <div class="button-row"><button type="button" class="secondary" id="echoear-connect">开始连接</button><span id="echoear-device-info" class="hint"></span></div></div>
+            <div data-usb-panel="2" hidden><div id="echoear-network-intro"><p>喵伴已连接。下一步，把它连接到电脑所在的 Wi-Fi。</p><button type="button" class="primary" id="echoear-open-network">开始配网</button></div><form id="echoear-network-form" hidden>
+              <label>配网方式<select id="echoear-wifi-mode"><option value="new">使用电脑当前 Wi-Fi（可修改）</option><option value="keep">沿用喵伴已保存的 Wi-Fi</option></select></label>
               <p id="echoear-wifi-hint" class="hint">无需填写密码。电脑需与喵伴处于可互通的网络；不会读取电脑保存的 Wi-Fi 密码。</p>
               <div id="echoear-wifi-fields" hidden>
               <label>Wi-Fi 名称<input id="echoear-wifi-ssid" autocomplete="off" maxlength="32" required placeholder="填写 2.4 GHz Wi-Fi 名称" /></label>
               <label>Wi-Fi 密码<input id="echoear-wifi-password" type="password" autocomplete="new-password" maxlength="64" placeholder="填写该 Wi-Fi 的密码" /></label>
               <label class="check"><input id="echoear-wifi-open" type="checkbox" />这是无需密码的开放网络</label></div>
               <label id="echoear-network-choice" hidden>电脑连接的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
-              <button id="echoear-setup" class="primary" type="submit" disabled>备份并连接</button>
-            </form>
+              <button id="echoear-setup" class="primary" type="submit" disabled>开始配置</button>
+            </form></div>
             <p class="hint">原机备份会自动保存在本机，再配置并重启。Wi-Fi 密码只通过本机 USB 写入。</p>
             <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度" hidden></progress><p id="echoear-install-status" role="status">先点击“连接 USB”。</p>
-            <div data-usb-panel="3" hidden><p id="echoear-verify-status" role="status"></p><button type="button" class="primary" id="echoear-heard" disabled hidden>听到回复，完成连接</button></div><button type="button" class="text-button" id="echoear-disconnect" disabled hidden>断开 USB</button>
+            <div data-usb-panel="3" hidden><h3>等待喵伴联网</h3><p>联网成功后，使用设备当前的唤醒词开始对话。</p><p id="echoear-verify-status" role="status"></p><button type="button" class="primary" id="echoear-heard" disabled hidden>听到回复，完成连接</button></div><button type="button" class="text-button" id="echoear-disconnect" disabled hidden>断开 USB</button>
             <details class="echoear-advanced"><summary>高级选项</summary>
               <p id="echoear-serial-note" class="hint"></p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
               <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />连接时同时更新固件</label><p id="echoear-update-note" class="hint"></p>

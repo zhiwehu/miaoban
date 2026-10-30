@@ -22,13 +22,23 @@ function wifiMode(){
  $('echoear-wifi-ssid').required=!keep;$('echoear-wifi-password').required=!keep&&!open;
  $('echoear-wifi-ssid').disabled=busy||keep;$('echoear-wifi-password').disabled=busy||keep||open;
  $('echoear-wifi-mode').disabled=busy;$('echoear-wifi-open').disabled=busy;
- $('echoear-wifi-hint').textContent=keep?'无需填写密码。电脑需与喵伴处于可互通网络；不会读取电脑保存的 Wi-Fi 密码。':'填写目标网络的名称和密码；开放网络请明确勾选。';
+ $('echoear-wifi-hint').textContent=keep?'无需填写密码。电脑需与喵伴处于可互通网络；不会读取电脑保存的 Wi-Fi 密码。':'使用电脑相同的 2.4 GHz Wi-Fi，可修改名称。请填写密码；开放网络请明确勾选。';
 }
 function stepControls(){
  const step=connectingAt?3:device?.current?2:1;
  document.querySelectorAll('[data-usb-step]').forEach(el=>{const n=Number(el.dataset.usbStep);if(n===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');el.classList.toggle('done',n<step);});
  document.querySelectorAll('[data-usb-panel]').forEach(el=>el.hidden=Number(el.dataset.usbPanel)!==step);
 }
+$('echoear-open-network').onclick=async()=>{
+ $('echoear-network-intro').hidden=true;$('echoear-network-form').hidden=false;
+ $('echoear-wifi-mode').value='new';wifiMode();
+ try{
+  const response=await fetch('/api/clients/echoear-s3/current-wifi');
+  if(response.ok){const value=await response.json();if(value.ssid&&!$('echoear-wifi-ssid').value)$('echoear-wifi-ssid').value=value.ssid;}
+ }catch{}
+ $('echoear-wifi-hint').textContent=($('echoear-wifi-ssid').value?'已填入电脑当前 Wi-Fi 名称，可修改。':'无法自动读取电脑的 Wi-Fi，请填写名称。')+' 请确认支持 2.4 GHz，并填写密码；也可沿用喵伴已保存的 Wi-Fi。';
+};
+$('echoear-update-with-setup').onchange=controls;
 $('echoear-wifi-mode').onchange=wifiMode;$('echoear-wifi-open').onchange=wifiMode;
 function controls(){
  const supported=!!navigator.serial&&!!window.isSecureContext;
@@ -42,6 +52,7 @@ function controls(){
  $('echoear-update-with-setup').disabled=busy||release?.install?.validated!==true;
  if(release?.install?.validated!==true)$('echoear-update-with-setup').checked=false;
  $('echoear-update-note').textContent=release?.install?.validated===true?'兼容设备可勾选升级；将先保存原机备份。':'已有兼容固件可以直接连接。候选新固件尚未完成实机验收，更新选项暂不可选。';
+ $('echoear-setup').textContent=release?.install?.validated===true&&$('echoear-update-with-setup').checked?'开始安装并配网':'开始配置';
  $('echoear-network-host').disabled=busy;wifiMode();stepControls();
  if(!thisComputer)$('echoear-setup-status').textContent='USB 一体接入请在运行 VoiceHub 的这台电脑上，通过 localhost 打开页面。';
  $('echoear-heard').disabled=!$('echoear-heard').dataset.ready;
@@ -70,10 +81,12 @@ async function acquireUsbLock(){
  if(!await acquired)throw new Error('usb_in_use');
 }
 async function disconnect(){
- if(loader){try{await loader.after('hard_reset');}catch{}}
+ let resetRequested=false;
+ if(loader){try{await loader.after('hard_reset');resetRequested=true;}catch{}}
  if(transport){try{await transport.disconnect();}catch{}}
  loader=transport=device=backup=recovery=fullBackup=null;$('echoear-device-info').textContent='';
  if(releaseUsbLock){releaseUsbLock();releaseUsbLock=null;}
+ return resetRequested;
 }
 window.addEventListener('voicehub:firmware',event=>{
  const next=event.detail;
@@ -81,6 +94,7 @@ window.addEventListener('voicehub:firmware',event=>{
  const key=JSON.stringify([next?.sha256,next?.install]);
  if(releaseKey!==key){device=backup=recovery=null;expectedMac='';heard=false;$('echoear-heard').dataset.ready='';}
  releaseKey=key;release=next;
+ $('echoear-update-with-setup').checked=release?.install?.validated===true;
  $('echoear-release-status').textContent=!release?.install?'安装包还在准备中。已安装适配固件的设备可跳过升级，继续下面的联网设置。':
  release.install.validated?'已提供通过实机验收的版本 '+release.version:'版本 '+release.version+' 已构建，正在等待实机验收；可先检查设备和保存备份。';
  controls();
@@ -93,7 +107,7 @@ async function openUsbLoader(port){
  loader.FLASH_READ_TIMEOUT=10000;installFlashReader(loader);
 }
 $('echoear-connect').onclick=()=>action(async()=>{
- await disconnect();heard=false;connectingAt=0;expectedMac='';$('echoear-verify-status').textContent='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
+ await disconnect();$('echoear-network-intro').hidden=false;$('echoear-network-form').hidden=true;heard=false;connectingAt=0;expectedMac='';$('echoear-verify-status').textContent='';$('echoear-heard').dataset.ready='';status('请选择 USB 设备…',0);
  await acquireUsbLock();
  const port=await navigator.serial.requestPort();
  await openUsbLoader(port);
@@ -107,7 +121,7 @@ $('echoear-connect').onclick=()=>action(async()=>{
  }
  expectedMac=device.mac;
  $('echoear-device-info').textContent='已连接喵伴';
- status('USB 已连接。填写 Wi-Fi 后，点击“备份并连接”。',1);
+ status('喵伴已连接。点击“开始配网”继续。',1);
 });
 async function saveOriginalBackup(){
  if(!thisComputer)throw new Error('请在 VoiceHub 本机保存备份。');
@@ -204,8 +218,9 @@ $('echoear-network-form').onsubmit=event=>{
   }
   writing=true;await applyNetwork(loader,device,fullBackup,nvs,status);
   $('echoear-wifi-password').value='';connectingAt=Date.now();heard=false;$('echoear-heard').dataset.ready='';
-  await disconnect();
-  status('原机备份已保存并校验，连接设置已写入并读回核对。喵伴正在重启，请稍后唤醒并说“你好”。',1);
+  status('配置已保存并校验，正在请求喵伴重启…',1);
+  const resetRequested=await disconnect();
+  status(resetRequested?'配置已完成，已请求设备重启，正在等待联网确认。':'配置已完成，但自动重启请求失败。请将喵伴完全断电 5 秒后重新开机。',1);
   $('echoear-verify-status').textContent='正在等待喵伴上线，首次连接可能需要一些时间。';
   window.dispatchEvent(new CustomEvent('voicehub:connection-prepared'));
  });
@@ -225,7 +240,7 @@ setInterval(async()=>{
   const response=await fetch('/api/clients/echoear-s3/verify?device='+encodeURIComponent(expectedMac));
   if(!response.ok)return;const value=await setupResponse(response);
   $('echoear-heard').dataset.ready=value.recognized&&value.replied?'yes':'';
-  $('echoear-verify-status').textContent=!value.online?(connectingAt&&Date.now()-connectingAt>120000?'尚未看到设备上线。请确认 Wi-Fi 名称和密码、电脑与喵伴网络可互通；同名 Wi-Fi 也可能存在客户端隔离。原机备份可用于恢复设置。':'正在等待设备联网。'):!value.recognized?'设备已上线。请唤醒它并说一句“你好”。':
+  $('echoear-verify-status').textContent=!value.online?(connectingAt&&Date.now()-connectingAt>120000?'尚未看到设备上线。请确认 Wi-Fi 名称和密码、电脑与喵伴网络可互通；同名 Wi-Fi 也可能存在客户端隔离。原机备份可用于恢复设置。':'正在等待设备联网。'):!value.recognized?'喵伴已联网！请用设备当前唤醒词唤醒（若为“小宝同学”，请说“小宝同学”），再说一句“你好”。':
    !value.replied?'已收到语音识别，正在等待回复。':value.playback_reported?'设备已上报播放。请确认你是否听到了声音。':'已生成回复。请确认设备是否播放出声音。';controls();
  }catch{}
 },3000);
