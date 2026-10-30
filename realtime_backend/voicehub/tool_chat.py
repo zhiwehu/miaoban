@@ -9,7 +9,7 @@ from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMEN
 from .tools import validate_arguments
 from .rex_planner import PlannerError
 from .local_calendar import calendar_answer
-from .extension_routing import volume_request,music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate,file_plan,file_candidate
+from .extension_routing import file_request,volume_request,music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate,file_plan,file_candidate
 
 
 async def rex_plan(pipeline,history,cfg):
@@ -40,6 +40,11 @@ async def chat(pipeline, history):
         pipeline._previous_tool_plan=None
         yield '暂时还不能用语音调节音量，请先用播放设备上的音量键调整。'
         return
+    files=file_request(history)
+    if files is None and re.fullmatch(r'(?:文件夹|目录|那你帮我整理吧|开始整理)[。！？!?,， ]*',latest.strip()):
+        pipeline._previous_tool_plan=None
+        yield '你想整理文件吗？可以说“整理文件”，我会先准备一份整理方案。'
+        return
     from .workflows.chat import route
     from .skill_chat import route as skill_route
     from .calendar_chat import route as calendar_route
@@ -47,7 +52,7 @@ async def chat(pipeline, history):
     if workflow is None:workflow=calendar_route(pipeline,history)
     cached_rex=None
     cfg=pipeline.config['tools']
-    if workflow is None and music_plan(latest) is None and file_plan(latest) is None and not music_refusal(latest) and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
+    if workflow is None and music_plan(latest) is None and files is None and not music_refusal(latest) and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
         if re.search(r'购物|采购|清单|计时|倒数|倒计时|放哪|位置|记住|物品|存放',latest):yield ToolNotice('tool_planning','收到，我来处理。')
         try:cached_rex=await rex_plan(pipeline,history,cfg)
         except (PlannerError,ValueError,TimeoutError):
@@ -85,7 +90,6 @@ async def chat(pipeline, history):
             async for text in source:yield text
         return
     cfg = pipeline.config['tools']
-    files=file_plan(latest)
     if files is not None and not cfg.get('file_organizer'):
         pipeline._previous_tool_plan=None
         yield '文件整理尚未启用，请在 MCP 工具页设置允许整理的目录并启用。'

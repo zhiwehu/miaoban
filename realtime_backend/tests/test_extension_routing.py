@@ -107,3 +107,17 @@ class ExtensionRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(music_candidate('Play a song'))
         self.assertTrue(music_candidate('放一首周杰伦的歌'))
         self.assertFalse(music_candidate('和我聊聊今天的心情'))
+
+class FileFollowupTests(unittest.TestCase):
+    def test_explicit_and_contextual_organizing_route_to_preview(self):
+        from voicehub.extension_routing import file_request
+        for text in ['整理文件','帮我整理一下我的文件夹。']:
+            self.assertEqual(file_request([{'role':'user','content':text}]),{'action':'preview'})
+        for text in ['那你帮我整理吧。','我知道了，你赶紧开始整理吧。','开始整理']:
+            history=[{'role':'assistant','content':'指定目录第一层有438个可整理文件，没有移动文件。'},{'role':'user','content':text}]
+            self.assertEqual(file_request(history),{'action':'preview'})
+            self.assertIsNone(file_request([{'role':'user','content':text}]))
+    def test_refusals_and_unrelated_context_never_become_a_file_request(self):
+        from voicehub.extension_routing import file_request
+        for text in ['不要整理文件','整理是什么意思','把整理翻译成英文','删除全部文件','文件夹']:
+            self.assertIsNone(file_request([{'role':'assistant','content':'已生成文件分类预览'},{'role':'user','content':text}]))

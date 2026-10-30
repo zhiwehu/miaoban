@@ -62,7 +62,7 @@ def music_candidate(text):
 def file_plan(text):
     prefix=r'(?:(?:请|帮我|麻烦你)[\s，,]*)*'
     text=text.strip().rstrip('。！？!?,， ')
-    target=r'(?:这个|指定|授权|当前|已配置)?(?:目录|文件夹)?(?:里|中|内|下|的)*(?:文件)?'
+    target=r'(?:我的|这个|指定|授权|当前|已配置)?(?:目录|文件夹)?(?:里|中|内|下|的)*(?:文件)?'
     if re.fullmatch(prefix+r'(?:整理|分类|归类)(?:一下)?'+target+r'(?:按类型)?',text):return {'action':'preview'}
     if re.fullmatch(prefix+r'把'+target+r'按(?:文件)?类型(?:整理|分类|归类)(?:一下)?',text):return {'action':'preview'}
     if re.fullmatch(prefix+r'(?:统计|看看|查看)(?:一下)?'+target+r'(?:有多少|数量|类型|概况)',text):return {'action':'scan'}
@@ -78,3 +78,17 @@ def volume_request(text):
     text=text.strip().rstrip('。！？!?,， ')
     prefix=r'(?:(?:请|帮我|麻烦你)[\s，,]*)*'
     return re.fullmatch(prefix+r'(?:把)?(?:音乐|播放|喵伴|设备|声音|的)*(?:音量|声音)(?:再)?(?:调|调节|调到|调成)?(?:降低|提高|调低|调高|调小|调大|小|大|低|高|轻|响)(?:一点|一些|点|些|一档|两档|一下)?',text) is not None
+
+
+def file_request(history):
+    latest=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'')
+    explicit=file_plan(latest)
+    if explicit is not None:return explicit
+    text=latest.strip().rstrip('。！？!?,， ')
+    if not re.fullmatch(r'(?:(?:那|你|请|帮我|我知道了|赶紧|开始|继续|现在|就)[，,\s]*)*整理(?:一下)?(?:吧|了)?',text):return None
+    # Only the immediately preceding assistant response provides context. This
+    # can request a preview, never authorize moving files.
+    prior=history[:-1] if history and history[-1].get('role')=='user' else []
+    previous=next((m.get('content','') for m in reversed(prior) if m.get('role')=='assistant'),'')
+    if re.search(r'可整理文件|分类预览|整理方案|文件.*(?:分类|统计|整理)',previous):return {'action':'preview'}
+    return None
