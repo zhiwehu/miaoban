@@ -51,15 +51,20 @@ class Operations:
   return record
  def check_capacity(self,scope):
   if len(self.tasks)>=12 or sum(self.get(i)['session_id']==scope for i in self.tasks)>=3:raise ValueError('operation_capacity')
- def start(self,scope,turn_id,label,source,gate,emit=None):
+ def start(self,scope,turn_id,label,source,gate,emit=None,progress_text=None):
   self.check_capacity(scope)
   if len(list(self.path.glob('*.json')))>=1000:
    removable=[p for p in self.path.glob('*.json') if p.stem not in self.tasks and read_json(p).get('delivery') in ('announced','superseded','cancelled')]
    if not removable:raise ValueError('operation_history_full')
    min(removable,key=lambda p:p.stat().st_mtime).unlink()
   record={'id':uuid.uuid4().hex,'session_id':scope,'turn_id':turn_id,'label':label[:120],'status':'queued','delivery':'pending','created':time.time(),'text':''};self.save(record)
+  progress_id=uuid.uuid4().hex
+  async def progress():
+   await asyncio.sleep(1)
+   self.notify(progress_id,scope,label,progress_text,kind='progress')
   async def work():
    token=current_operation.set(record)
+   progress_task=asyncio.create_task(progress()) if progress_text else None
    try:
     async with contextlib.aclosing(source),asyncio.timeout(900):
      await gate.wait();record['status']='running';self.save(record);text='';failed=False
@@ -80,6 +85,12 @@ class Operations:
    except asyncio.CancelledError:record.update(status='unknown',text='已请求停止执行；正在进行的外部操作可能已经生效，请核实记录。')
    except Exception:record.update(status='failed',text='后台任务未能完成，请在 MCP 页查看状态并检查工具配置。')
    finally:
+    if progress_task:
+     progress_task.cancel()
+     await asyncio.gather(progress_task,return_exceptions=True)
+     with contextlib.suppress(FileNotFoundError):
+      notice=self.get(progress_id)
+      if notice['delivery']=='pending':notice['delivery']='superseded';self.save(notice)
     last=record.get('last_tool',{})
     if last.get('phase')=='started' and record['status'] in ('failed','unknown','cancelled'):
      event={'type':'tool.failed','session_id':scope,'turn_id':turn_id,'tool':last['name'],'background':True,'code':'operation_interrupted','timestamp':time.time()}

@@ -108,6 +108,13 @@ class ExtensionRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(music_candidate('放一首周杰伦的歌'))
         self.assertFalse(music_candidate('和我聊聊今天的心情'))
 
+    def test_acknowledgements_and_praise_stay_conversational(self):
+        from voicehub.extension_routing import is_conversational_turn
+        for text in ('太好了','真棒','明白了','知道了','好的，谢谢','不错啊','嗯嗯','非常好'):
+            self.assertTrue(is_conversational_turn(text),text)
+        for text in ('好的帮我查天气','不错，播放音乐','明白了，整理文件'):
+            self.assertFalse(is_conversational_turn(text),text)
+
 class FileFollowupTests(unittest.TestCase):
     def test_explicit_and_contextual_organizing_route_to_preview(self):
         from voicehub.extension_routing import file_request

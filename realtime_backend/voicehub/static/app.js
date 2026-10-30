@@ -916,7 +916,7 @@ function openClient() {
       type: "hello",
       version: 1,
       device_id: "web-" + (identity?.device || crypto.randomUUID().slice(0, 8)),
-      wake_mode: $("client-wake").value,
+      wake_mode: wantsMic ? $("client-wake").value : "manual",
       audio: { format: "pcm_s16le", sample_rate: 16000 },
       capabilities: {
         echo_cancellation: !!settings.echoCancellation,
@@ -949,7 +949,7 @@ function openClient() {
         activeWakeMode = e.wake_mode;
         activeWakePhrase = e.wake_phrase || "";
         $("wake-feedback").hidden = activeWakeMode !== "backend";
-        $("wake-feedback").textContent = '待机时请说“' + activeWakePhrase + '，你好”。只说唤醒词会进入聆听，不会立即回复。';
+        $("wake-feedback").textContent = '待机时请说“' + activeWakePhrase + '”唤醒，我会回应“我在，请说。”。待机后仍可再次唤醒。';
         setClientReady(true);
         $("connect-text").disabled = $("connect-mic").disabled = false;
         $("client-status").textContent =
@@ -1084,7 +1084,7 @@ $("activate-client").onclick = () => {
 };
 $("client-wake").onchange = () => {
   $("wake-feedback").hidden = $("client-wake").value !== "backend";
-  $("wake-feedback").textContent = '待机时请说“' + (state.config?.wake.phrase || "小宝同学") + '，你好”。无需点击激活聆听。';
+  $("wake-feedback").textContent = '待机时请说“' + (state.config?.wake.phrase || "小宝同学") + '”唤醒，无需点击激活聆听。';
   if (socket) connect(wantsMic);
 };
 $("stop-client").onclick = () => {

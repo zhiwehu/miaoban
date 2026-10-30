@@ -19,6 +19,7 @@ class Turn:
     recorded: bool = False
     delivery: str = ''
     notification_id: str = ''
+    audio_started: bool = False
     started: float = field(default_factory=time.monotonic)
 
 
@@ -85,7 +86,7 @@ class Session:
         if turn and not turn.cancelled:
             if self.operations and turn.notification_id and reason!='disconnect':
                 record=self.operations.get(turn.notification_id)
-                if (record.get('calendar_question') or record.get('everyday_question')) and record['delivery']=='pending':
+                if (record.get('calendar_question') or record.get('everyday_question') or turn.audio_started) and record['delivery']=='pending':
                     record['delivery']='superseded';self.operations.save(record)
             turn.cancelled = True  # Invalidate BEFORE cancelling provider or awaiting network I/O.
             if turn.task:
@@ -129,7 +130,7 @@ class Session:
                     await self.emit('session.activated', turn, mode='backend')
                     text = text[match.end():].lstrip(' ，。！？,.:;!?')
                     if not text:
-                        return
+                        announcement = text = '我在，请说。'
                 if not text:
                     return
                 if transcribed and announcement is None:
@@ -176,14 +177,19 @@ class Session:
                                 if pending.strip():
                                     await sentences.put(pending)
                                     pending = ''
-                                turn.text += delta.text
-                                await self.emit('reply.delta', turn, text=delta.text)
-                                await sentences.put(delta.text)
+                                if delta.text:
+                                    turn.text += delta.text
+                                    await self.emit('reply.delta', turn, text=delta.text)
+                                    await sentences.put(delta.text)
                                 delivered = asyncio.Event()
                                 gate=asyncio.Event()
                                 if self.operations and announcement is None:
                                     try:
-                                        operation=self.operations.start(self.id,turn.id,text,source,gate,self.emit_operation)
+                                        feedback=None
+                                        if not turn.text.strip():
+                                            feedback=('我查一下天气。' if re.search(r'天气|气温|下雨|降雨',text) else
+                                                      '我看看最新消息。' if re.search(r'新闻|资讯',text) else '我来处理一下。')
+                                        operation=self.operations.start(self.id,turn.id,text,source,gate,self.emit_operation,progress_text=feedback)
                                         manager=getattr(getattr(self.pipeline,'local',None),'workflows',None)
                                         if manager:manager.transfer_owner(asyncio.current_task(),self.operations.tasks[operation['id']])
                                     except ValueError:
@@ -191,6 +197,10 @@ class Session:
                                         turn.text+=message;await self.emit('reply.delta',turn,text=message)
                                         await sentences.put(message);break
                                     detached=True
+                                if not turn.text.strip():
+                                    gate.set()
+                                    if detached:break
+                                    continue
                                 try:
                                     await sentences.put(delivered)
                                     await delivered.wait()
@@ -205,7 +215,7 @@ class Session:
                                 pending = ''
                     finally:
                         if not detached:await source.aclose()
-                    if not turn.text.strip():
+                    if not turn.text.strip() and not detached:
                         raise RuntimeError('empty_reply')
                     if pending.strip():
                         await sentences.put(pending)
@@ -257,6 +267,7 @@ class Session:
                             await self.transition('thinking', turn)
                             continue
                         if deadline is None:
+                            turn.audio_started = True
                             await self.transition('speaking', turn)
                             await self.emit('audio.start', turn, sample_rate=16000,
                                             format='pcm_s16le', channels=1,
