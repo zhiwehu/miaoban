@@ -694,6 +694,10 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/clients/{client}/connection', client_connection)
     from .provisioning import prepare
     app.router.add_post('/api/clients/{client}/prepare', prepare)
+    from .device_backups import backups
+    app.router.add_post('/api/clients/echoear-s3/backups', backups)
+    app.router.add_get('/api/clients/echoear-s3/backups/latest', backups)
+    app.router.add_get('/api/clients/echoear-s3/backups/{identity}', backups)
     app.router.add_get('/api/events', events)
     from .calendar_api import calendar_api
     app.router.add_get('/api/calendar/settings',calendar_api)

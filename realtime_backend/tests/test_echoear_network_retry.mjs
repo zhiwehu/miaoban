@@ -9,7 +9,7 @@ function installer({locks}={}){
  const document={getElementById(id){if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},createElement:node,querySelectorAll(selector){return selector==='[data-usb-step]'?steps:panels}};
  const source=fs.readFileSync('voicehub/static/echoear-installer.js','utf8').replace(/^import .*;\n/gm,'');
  return vm.runInNewContext(source+'\n;({action,prepareConnection,controls,acquireUsbLock,disconnect,nodes,steps,panels,ready(){connectingAt=1;controls()},setDevice(value,link){device=value;transport=link},connected(){return !!device}})',{
-  document,nodes,steps,panels,location:{hostname:'127.0.0.1'},navigator:{serial:{},locks},window:{isSecureContext:true,showSaveFilePicker(){},addEventListener(){}},
+  document,nodes,steps,panels,location:{hostname:'127.0.0.1'},navigator:{serial:{},locks},window:{isSecureContext:true,addEventListener(){}},
   console:{warn(){}},setInterval(){},setupResponse,
   fetch:async()=>new Response(JSON.stringify({error:{code:'choose_network',message:'请选择电脑连接的网络'},interfaces:[{interface:'en0',address:'10.159.134.213',label:'Wi-Fi'}]}),{status:409})
  });
@@ -47,3 +47,10 @@ test('USB ownership spans pages until disconnect and blocks a second page from o
  await a.acquireUsbLock();await assert.rejects(()=>b.acquireUsbLock(),/usb_in_use/);
  await a.disconnect();await b.acquireUsbLock();await b.disconnect();assert.equal(held,false);
 });
+
+ test('USB setup works without file picker support and automatic restore needs only a connected device',()=>{
+  const app=installer();app.setDevice({current:{}},{});app.controls();
+  assert.equal(app.nodes.get('echoear-setup').disabled,false);
+  assert.equal(app.nodes.get('echoear-backup').disabled,false);
+  assert.equal(app.nodes.get('echoear-restore').disabled,false);
+ });

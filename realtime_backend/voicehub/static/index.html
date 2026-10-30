@@ -174,14 +174,14 @@
               <label id="echoear-network-choice" hidden>电脑连接的网络<select id="echoear-network-host"><option value="">自动选择</option></select></label>
               <button id="echoear-setup" class="primary" type="submit" disabled>备份并连接</button>
             </form>
-            <p class="hint">会先让你保存原机备份，再自动配置并重启。Wi-Fi 密码只通过本机 USB 写入。</p>
+            <p class="hint">原机备份会自动保存在本机，再配置并重启。Wi-Fi 密码只通过本机 USB 写入。</p>
             <progress id="echoear-install-progress" max="100" value="0" aria-label="接入进度" hidden></progress><p id="echoear-install-status" role="status">先点击“连接 USB”。</p>
             <div data-usb-panel="3" hidden><p id="echoear-verify-status" role="status"></p><button type="button" class="primary" id="echoear-heard" disabled hidden>听到回复，完成连接</button></div><button type="button" class="text-button" id="echoear-disconnect" disabled hidden>断开 USB</button>
             <details class="echoear-advanced"><summary>高级选项</summary>
               <p id="echoear-serial-note" class="hint"></p><p id="echoear-release-status" class="hint" role="status">正在读取升级版本…</p>
               <label class="check"><input id="echoear-update-with-setup" type="checkbox" disabled />连接时同时更新固件</label><p id="echoear-update-note" class="hint"></p>
-              <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>另存升级备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>单独安装升级</button></div>
-              <h3>从备份恢复</h3><p class="hint">选择这台喵伴的 .vhdevice 或 .vhbackup 备份，恢复原应用和设置。</p><label for="echoear-restore-file">备份文件</label><input id="echoear-restore-file" type="file" accept=".vhbackup,.vhdevice" disabled/><button type="button" class="secondary" id="echoear-restore" disabled>恢复备份</button>
+              <div class="button-row"><button type="button" class="secondary" id="echoear-backup" disabled>立即备份</button><button type="button" class="secondary" id="echoear-upgrade" disabled>单独安装升级</button></div>
+              <h3>恢复设备</h3><p class="hint">自动使用这台喵伴最近且校验通过的备份，恢复原应用和设置。</p><button type="button" class="secondary" id="echoear-restore" disabled>恢复最近可用备份</button>
               <h3>其他配网方式</h3><button type="button" class="secondary" id="echoear-copy-setup">复制 VoiceHub 连接入口</button><p id="echoear-setup-status" class="hint" role="status">供设备热点配网页使用。</p>
             </details>
           </article><details id="connection-advanced" class="onboarding-guide"><summary>高级连接设置 <small>供管理员使用，普通使用无需修改</small></summary><p class="hint">用于配置设备接入服务。网页客户端无需修改这些设置。</p>

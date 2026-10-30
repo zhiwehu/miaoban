@@ -1,4 +1,4 @@
-// Complete original Flash is kept only in the user's local backup file.
+// Complete original Flash is kept in VoiceHub's private local backup directory.
 import {PROFILE,sha256,readFlashBounded,writeAndVerify,inspectImage,selectBoot} from './echoear-upgrade-core.mjs';
 const magic=new TextEncoder().encode('VOICEHUB-DEVICE/1\n');
 const fail=code=>{throw new Error(code);};
