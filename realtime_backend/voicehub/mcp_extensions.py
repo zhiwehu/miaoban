@@ -29,7 +29,11 @@ def checked_schema(schema):
         if isinstance(value,dict):
             if any(key in value for key in ('$ref','$dynamicRef','$recursiveRef','pattern','patternProperties')):
                 raise ValueError('tool_schema_unsupported_reference_or_pattern')
-            for item in value.values():walk(item,depth+1)
+            for key,item in value.items():
+                if key in ('properties','$defs','definitions','dependentSchemas') and isinstance(item,dict):
+                    # Keys here name parameters/definitions, not schema rules.
+                    for child in item.values():walk(child,depth+2)
+                else:walk(item,depth+1)
         elif isinstance(value,list):
             if len(value)>100:raise ValueError('tool_schema_limit')
             for item in value:walk(item,depth+1)

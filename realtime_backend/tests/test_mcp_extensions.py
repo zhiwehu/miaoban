@@ -49,6 +49,15 @@ class ExtensionTests(unittest.IsolatedAsyncioTestCase):
         self.manager.import_bytes(raw.getvalue());self.assertFalse(marker.exists())
         with self.assertRaises(ValueError):self.manager.import_bytes(example_zip(('../escape.py','bad')))
         self.assertFalse((self.manager.root.parent/'escape.py').exists())
+    def test_property_names_are_not_schema_keywords(self):
+        from voicehub.mcp_extensions import validate_schema_arguments
+        schema={'type':'object','properties':{'pattern':{'type':'string'},'path':{'type':'string'}},'required':['pattern']}
+        self.assertEqual(checked_schema(schema),schema)
+        validate_schema_arguments(schema,{'pattern':'*.txt'})
+        with self.assertRaises(ValueError):validate_schema_arguments(schema,{'pattern':1})
+        with self.assertRaises(ValueError):checked_schema({'type':'object','properties':{'pattern':{'type':'string','pattern':'(a+)+$'}}})
+        with self.assertRaises(ValueError):checked_schema({'type':'object','properties':{'x':{'$ref':'https://example.com/schema'}}})
+
     async def test_schema_references_and_command_substitution_not_allowed(self):
         with self.assertRaises(ValueError):checked_schema({'type':'object','properties':{'x':{'$ref':'https://example.com'}}})
         with self.assertRaises(ValueError):
