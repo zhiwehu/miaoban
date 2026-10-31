@@ -54,6 +54,13 @@ async def recording_api(request):
 
         identity = request.match_info.get('identity', '')
         metadata = manager.get(identity)
+        if request.path.endswith('/transcript'):
+            if metadata is None:
+                raise web.HTTPNotFound()
+            transcript = manager.transcript(identity)
+            if transcript is None:
+                raise web.HTTPNotFound()
+            return web.json_response(transcript)
         if request.path.endswith('/audio'):
             if metadata is None or metadata.get('status') == 'active':
                 raise web.HTTPNotFound()

@@ -789,6 +789,7 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/recordings', recording_api)
     app.router.add_post('/api/recordings', recording_api)
     app.router.add_get('/api/recordings/{identity}/audio', recording_api)
+    app.router.add_get('/api/recordings/{identity}/transcript', recording_api)
     app.router.add_post('/api/recordings/{identity}/stop', recording_api)
     app.router.add_delete('/api/recordings/{identity}', recording_api)
     app.router.add_post('/api/services/{kind}/{action}', service_action)

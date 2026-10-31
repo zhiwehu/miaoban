@@ -53,7 +53,7 @@ class Session:
         self.recording_worker=None
         self.recording_confirm_timer=None
         self.recording_listen_after=0.0
-        self.recording_voice_notified=False
+        self.recording_asr_notified=False
         self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
         self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
         self.notification_callback=self.queue_notification
@@ -69,7 +69,8 @@ class Session:
         event = dict(type=kind, session_id=self.id, turn_id=turn.id if turn else None,
                      seq=self.seq, timestamp=time.time(), **data)
         # Background wake transcripts are sent only to their own client, never journalled.
-        if kind not in ('audio.chunk', 'reply.delta', 'wake.check'):
+        # Recording text already lives in its own .txt; do not double-store each line.
+        if kind not in ('audio.chunk', 'reply.delta', 'wake.check', 'recording.transcript'):
             self.store.event(event)
         if kind not in ('audio.chunk', 'wake.check'):
             self.publish(event)
@@ -103,9 +104,10 @@ class Session:
 
     def recording_listen_allowed(self):
         """Voice-stop detection is muted while a recording prompt is audible."""
-        return bool(self.recording) and self.turn is None and time.monotonic() >= self.recording_listen_after
+        return (bool(self.recording) and not self.recording.stopping and self.turn is None
+                and time.monotonic() >= self.recording_listen_after)
 
-    def recording_voice_stop_allowed(self):
+    def recording_local_asr_allowed(self):
         """Only local ASR may hear a recording; never stream it to an HTTP provider."""
         config = getattr(self.pipeline, 'config', None)
         asr = config.get('asr') if isinstance(config, dict) else None
@@ -125,7 +127,7 @@ class Session:
         self.recording = recording
         self.recording_queue = asyncio.Queue(maxsize=3)
         self.recording_listen_after = time.monotonic()+.2
-        self.recording_voice_notified = False
+        self.recording_asr_notified = False
         worker = self.recording_worker = asyncio.create_task(self._recording_worker())
         self.tasks.add(worker)
         worker.add_done_callback(self.tasks.discard)
@@ -136,9 +138,9 @@ class Session:
     async def stop_recording(self, reason='manual', *, speak=False, notify=True):
         """Finalize the WAV once; safe when a disconnect races a web stop."""
         recording = self.recording
-        if recording is None:
+        if recording is None or recording.stopping:
             return None
-        self.recording = None
+        recording.stopping = True
         self.recording_listen_after = 0
         timer = self.recording_confirm_timer
         self.recording_confirm_timer = None
@@ -147,9 +149,17 @@ class Session:
             await asyncio.gather(timer, return_exceptions=True)
         worker = self.recording_worker
         self.recording_worker = None
+        # Let the last recognized segment reach the .txt before finalizing.
+        if self.recording_queue is not None:
+            with contextlib.suppress(asyncio.QueueFull):
+                self.recording_queue.put_nowait(None)
         if worker and worker is not asyncio.current_task():
-            worker.cancel()
-            await asyncio.gather(worker, return_exceptions=True)
+            try:
+                await asyncio.wait_for(asyncio.shield(worker), 3)
+            except (TimeoutError, asyncio.CancelledError):
+                worker.cancel()
+                await asyncio.gather(worker, return_exceptions=True)
+        self.recording = None
         if self.turn and self.turn.system:
             with contextlib.suppress(Exception):
                 await self.interrupt('recording_stop')
@@ -168,8 +178,8 @@ class Session:
         return metadata
 
     def recording_heard(self, pcm):
-        """Queue one VAD segment for bounded voice-stop detection only."""
-        if not self.recording or self.recording_queue is None:
+        """Queue one VAD segment for stop detection and live transcription."""
+        if not self.recording or self.recording.stopping or self.recording_queue is None:
             return
         if self.recording_queue.full():
             with contextlib.suppress(asyncio.QueueEmpty):
@@ -177,12 +187,13 @@ class Session:
         with contextlib.suppress(asyncio.QueueFull):
             self.recording_queue.put_nowait(pcm)
 
-    async def recording_voice_unavailable(self, message):
-        if not self.recording or self.recording_voice_notified:
+    async def recording_transcription_unavailable(self, message):
+        if not self.recording or self.recording_asr_notified:
             return
-        self.recording_voice_notified = True
+        self.recording_asr_notified = True
+        self.recording.transcription_error = message
         with contextlib.suppress(Exception):
-            await self.emit('recording.voice_stop_unavailable', message=message)
+            await self.emit('recording.transcription_unavailable', message=message)
 
     async def recording_limit_reached(self):
         if self.recording is not None:
@@ -239,9 +250,9 @@ class Session:
         try:
             while self.recording is not None:
                 pcm = await self.recording_queue.get()
-                if self.recording is None:
+                if pcm is None or self.recording is None:
                     return
-                if not self.recording_listen_allowed():
+                if not self.recording_listen_allowed() and not self.recording.stopping:
                     continue
                 try:
                     async with asyncio.timeout(20):
@@ -249,19 +260,39 @@ class Session:
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    await self.recording_voice_unavailable(
-                        '语音停止指令暂时不可用，录音仍在继续；请用网页或开关键停止。')
+                    await self.recording_transcription_unavailable(
+                        '实时转写暂时不可用，录音仍在继续；请用网页或开关键停止。')
                     continue
                 if self.recording is None:
                     return
+                recording = self.recording
+                text = (text or '').strip()
+                if not text:
+                    continue
                 action = recording_command(text)
+                handled = False
                 if action == 'stop':
-                    if self.recording.confirming:
+                    handled = True
+                    if recording.confirming:
                         await self.stop_recording('voice', speak=True)
                     else:
                         await self.request_recording_stop()
-                elif action == 'confirm' and self.recording.confirming:
+                elif action == 'confirm' and recording.confirming:
+                    handled = True
                     await self.stop_recording('voice', speak=True)
+                if not handled and self.recording is recording:
+                    try:
+                        appended = recording.append_transcript(text)
+                    except OSError:
+                        await self.recording_transcription_unavailable(
+                            '转写写入失败，录音仍在继续；请检查磁盘空间。')
+                        continue
+                    if appended:
+                        line, clean = appended
+                        await self.emit('recording.transcript',
+                                        recording_id=recording.id, line=line,
+                                        text=clean, lines=recording.transcript_lines,
+                                        elapsed_ms=round(recording.duration*1000))
         except asyncio.CancelledError:
             pass
 

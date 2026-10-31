@@ -760,43 +760,133 @@ select {
     0 0 0 12px #f8e8e1,
     0 0 0 13px #efd4c9;
 }
-.recording-strip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  max-width: 100%;
-  margin: 14px auto 0;
-  padding: 8px 12px;
-  border: 1px solid #dfb69a;
-  border-radius: 999px;
-  background: #f7ece4;
-  color: #843f2b;
+.recording-link {
+  margin-top: 12px;
+}
+.recording-link .text-button {
+  padding: 0;
   font-size: 11px;
 }
-.recording-strip.confirming {
+.recording-grid {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 20px;
+}
+.recording-console,
+.recording-live {
+  min-width: 0;
+}
+.recording-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 0 10px;
+}
+.recording-orb {
+  width: 76px;
+  height: 76px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #e4ebdf;
+  border: 1px solid #c8d5c1;
+  display: grid;
+  place-items: center;
+  transition: box-shadow 0.3s, background 0.3s;
+}
+.recording-orb svg {
+  width: 30px;
+  height: 30px;
+  color: var(--teal);
+}
+.recording-orb.active {
+  background: #f1d6cd;
+  border-color: #dca48f;
+  box-shadow:
+    0 0 0 10px #f8e8e1,
+    0 0 0 11px #efd4c9;
+}
+.recording-orb.confirming {
   background: #f6e3c9;
   border-color: #d6a25c;
-  color: #7a5325;
 }
-.recording-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #c14a37;
-  animation: recording-pulse 1.4s ease-in-out infinite;
+.recording-hero-copy {
+  min-width: 0;
 }
-@keyframes recording-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(193, 74, 55, .35); }
-  50% { opacity: .55; box-shadow: 0 0 0 5px rgba(193, 74, 55, 0); }
+.recording-hero-copy h3 {
+  font-family: "Songti SC", serif;
+  font-size: 21px;
+  margin: 0 0 8px;
 }
-.recording-clock {
-  font-family: Menlo, monospace;
+.recording-hero-copy p {
   font-size: 11px;
+  color: var(--muted);
+  margin: 0;
 }
-.recording-note {
-  color: #8a5a45;
+.recording-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 4px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.recording-stats dt {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.recording-stats dd {
+  margin: 4px 0 0;
+  font-family: "Songti SC", serif;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.recording-live {
+  display: flex;
+  flex-direction: column;
+  min-height: 520px;
+}
+.recording-live .hint {
+  margin-top: auto;
+}
+.transcript-lines {
+  flex: 1;
+  max-height: 620px;
+  overflow: auto;
+  padding: 12px 2px;
+  border-top: 1px solid var(--line);
+}
+.transcript-line {
+  margin-bottom: 7px;
+  padding: 7px 12px;
+  border-left: 2px solid #c8d5c1;
+  border-radius: 0 5px 5px 0;
+  background: #f7f8f2;
+  color: #364039;
+  font-size: 13px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.recording-item.selected {
+  background: #f3f6ee;
+}
+.recording-item.selected .recording-main strong {
+  color: var(--teal);
+}
+@media (max-width: 1150px) {
+  .recording-grid {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+}
+@media (max-width: 850px) {
+  .recording-grid {
+    grid-template-columns: 1fr;
+  }
+  .recording-live {
+    min-height: 360px;
+  }
 }
 .danger {
   background: #a23c2e;

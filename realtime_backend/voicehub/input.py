@@ -51,15 +51,15 @@ class AudioInput:
                         recording_onset = False
                         self.recording_vad_failed = False
                         disabled = False
-                        if not session.recording_voice_stop_allowed():
+                        if not session.recording_local_asr_allowed():
                             self.recording_vad_failed = True
-                            await session.recording_voice_unavailable(
-                                '当前语音识别不是本机模型，录音不会上传做停止检测；请用网页或开关键停止。')
+                            await session.recording_transcription_unavailable(
+                                '当前 ASR 不是本机模型，无法实时转写；录音不会上传，仍在继续。请用网页或开关键停止。')
                     if self.codec is None:
                         try:
                             self.codec = AudioCodec(self.format)
                         except Exception:
-                            await session.recording_voice_unavailable(
+                            await session.recording_transcription_unavailable(
                                 '音频解码不可用，录音无法继续；请检查运行环境的音频依赖。')
                             continue
                     try:
@@ -167,8 +167,8 @@ class AudioInput:
         except Exception:
             self.recording_vad_failed = True
             with contextlib.suppress(Exception):
-                await session.recording_voice_unavailable(
-                    '语音检测模型不可用，录音仍在继续；请用网页或开关键停止。')
+                await session.recording_transcription_unavailable(
+                    '语音检测模型不可用，无法实时转写；录音仍在继续，请用网页或开关键停止。')
         else:
             self.vad = vad
 

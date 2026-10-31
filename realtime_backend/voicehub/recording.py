@@ -100,6 +100,11 @@ class ActiveRecording:
         self.ended_at = None
         self.confirming = False
         self.confirm_deadline = None
+        self.stopping = False
+        self.transcript_path = manager.root/f'{self.id}.txt'
+        self.transcript_file = None
+        self.transcript_lines = 0
+        self.transcription_error = None
         self.file = open(self.path, 'wb', buffering=0)
         os.chmod(self.path, 0o600)
         self.file.write(_wav_header())
@@ -114,7 +119,7 @@ class ActiveRecording:
 
     def write(self, pcm):
         """Append complete int16 samples; returns ``limit`` when the cap is hit."""
-        if self.status != 'active' or not pcm:
+        if self.status != 'active' or self.stopping or not pcm:
             return None
         if len(pcm) % SAMPLE_WIDTH:
             pcm = pcm[:-1]
@@ -131,7 +136,40 @@ class ActiveRecording:
         self.samples += len(pcm)//SAMPLE_WIDTH
         return 'limit' if over or self.samples >= self.max_samples else None
 
+    def append_transcript(self, text):
+        """Append one VAD segment as one line; returns (line_number, clean_text)."""
+        if self.status != 'active':
+            return None
+        clean = re.sub(r'\s+', ' ', text or '').strip()
+        if not clean:
+            return None
+        if len(clean) > 4000:
+            clean = clean[:4000]
+        if self.transcript_file is None:
+            self.transcript_file = open(self.transcript_path, 'a', encoding='utf-8')
+            os.chmod(self.transcript_path, 0o600)
+        self.transcript_file.write(clean+'\n')
+        self.transcript_file.flush()
+        self.transcript_lines += 1
+        return self.transcript_lines, clean
+
+    def close_transcript(self):
+        if self.transcript_file is None:
+            return
+        try:
+            self.transcript_file.flush()
+            os.fsync(self.transcript_file.fileno())
+        except OSError:
+            pass
+        finally:
+            try:
+                self.transcript_file.close()
+            except OSError:
+                pass
+            self.transcript_file = None
+
     def metadata(self):
+        transcript_available = self.transcript_file is not None or self.transcript_path.is_file()
         return {
             'id': self.id,
             'session_id': self.session_id,
@@ -148,6 +186,10 @@ class ActiveRecording:
             'sample_rate': SAMPLE_RATE,
             'channels': CHANNELS,
             'download_url': None if self.status == 'active' else f'/api/recordings/{self.id}/audio',
+            'transcript_available': transcript_available,
+            'transcript_url': f'/api/recordings/{self.id}/transcript' if transcript_available else None,
+            'transcript_lines': self.transcript_lines,
+            'transcription_error': self.transcription_error,
             'available': True,
         }
 
@@ -172,6 +214,7 @@ class ActiveRecording:
                 pass
         finally:
             self.file.close()
+        self.close_transcript()
         metadata = self.metadata()
         try:
             self.manager.write_metadata(metadata)
@@ -225,6 +268,52 @@ class Recordings:
         path = self.root/f'{identity}.wav'
         return path if path.is_file() else None
 
+    def transcript_path(self, identity):
+        if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
+            return None
+        path = self.root/f'{identity}.txt'
+        return path if path.is_file() else None
+
+    def transcript(self, identity):
+        metadata = self.get(identity)
+        if metadata is None:
+            return None
+        path = self.transcript_path(identity)
+        if path is None:
+            return {'id': identity, 'status': metadata.get('status'), 'available': False,
+                    'text': '', 'count': 0}
+        try:
+            data = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            data = ''
+        if len(data) > 4_000_000:
+            data = data[-4_000_000:]
+        if data and not data.endswith('\n'):
+            # A reader can race the next append; drop only the incomplete tail.
+            cut = data.rfind('\n')
+            data = data[:cut+1] if cut >= 0 else ''
+        lines = data.splitlines()
+        return {'id': identity, 'status': metadata.get('status'), 'available': True,
+                'text': '\n'.join(lines), 'count': len(lines)}
+
+    def decorate(self, metadata):
+        """Keep older sidecars working without a schema migration."""
+        identity = metadata.get('id')
+        path = self.transcript_path(identity)
+        metadata['transcript_available'] = bool(path)
+        metadata['transcript_url'] = (f'/api/recordings/{identity}/transcript'
+                                      if path else None)
+        current = metadata.get('transcript_lines')
+        if path and (not isinstance(current, int) or current == 0):
+            try:
+                text = path.read_text(encoding='utf-8', errors='replace')
+                metadata['transcript_lines'] = len(text.splitlines())
+            except OSError:
+                metadata['transcript_lines'] = 0
+        metadata.setdefault('transcript_lines', 0)
+        metadata.setdefault('transcription_error', None)
+        return metadata
+
     def write_metadata(self, metadata, *, file=None):
         if file is None:
             file = self.metadata_path(metadata['id'])
@@ -238,7 +327,7 @@ class Recordings:
             return None
         recording = self.active.get(identity)
         if recording is not None:
-            return recording.metadata()
+            return self.decorate(recording.metadata())
         path = self.metadata_path(identity)
         if not path.is_file():
             return None
@@ -248,10 +337,10 @@ class Recordings:
             return None
         if not isinstance(metadata, dict) or metadata.get('id') != identity:
             return None
-        return metadata
+        return self.decorate(metadata)
 
     def list(self):
-        items = {r.id: r.metadata() for r in self.active.values()}
+        items = {r.id: self.decorate(r.metadata()) for r in self.active.values()}
         try:
             paths = sorted(self.root.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)
         except OSError:
@@ -268,7 +357,7 @@ class Recordings:
             identity = metadata['id']
             if identity in items or not (self.root/f'{identity}.wav').is_file():
                 continue
-            items[identity] = metadata
+            items[identity] = self.decorate(metadata)
         return sorted(items.values(), key=lambda item: item.get('started_at') or 0, reverse=True)
 
     def delete(self, identity):
@@ -277,9 +366,10 @@ class Recordings:
         if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
             raise ValueError('recording_not_found')
         audio, metadata = self.root/f'{identity}.wav', self.metadata_path(identity)
+        transcript = self.root/f'{identity}.txt'
         if not audio.is_file() and not metadata.is_file():
             raise ValueError('recording_not_found')
-        for path in (audio, metadata):
+        for path in (audio, metadata, transcript):
             if path.exists():
                 path.unlink()
 
@@ -315,6 +405,15 @@ class Recordings:
                 os.chmod(audio, 0o600)
                 samples = data_bytes//SAMPLE_WIDTH
                 started_at = audio.stat().st_mtime-(samples/SAMPLE_RATE)
+                transcript = self.root/f'{identity}.txt'
+                transcript_available = transcript.is_file()
+                transcript_lines = 0
+                if transcript_available:
+                    try:
+                        transcript_lines = len(transcript.read_text(
+                            encoding='utf-8', errors='replace').splitlines())
+                    except OSError:
+                        transcript_available, transcript_lines = False, 0
                 metadata = {
                     'id': identity,
                     'session_id': None,
@@ -331,6 +430,10 @@ class Recordings:
                     'sample_rate': SAMPLE_RATE,
                     'channels': CHANNELS,
                     'download_url': f'/api/recordings/{identity}/audio',
+                    'transcript_available': transcript_available,
+                    'transcript_url': (f'/api/recordings/{identity}/transcript'
+                                       if transcript_available else None),
+                    'transcript_lines': transcript_lines,
                     'available': True,
                 }
                 self.write_metadata(metadata)

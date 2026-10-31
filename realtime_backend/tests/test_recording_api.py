@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import wave
 
+import numpy as np
 from aiohttp.test_utils import TestClient, TestServer
 
 from tests.test_sessions import Pipeline
@@ -56,12 +57,21 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app[HUB].store.messages(self.sid), [])
 
         self.session.recording.write(b'\x01\x00'*16000)
+        self.session.recording.append_transcript('第一段话')
+        self.session.recording.append_transcript('第二段话')
+        active_transcript = await (await self.client.get(
+            f'/api/recordings/{recording["id"]}/transcript')).json()
+        self.assertEqual(active_transcript['text'], '第一段话\n第二段话')
+        self.assertEqual(active_transcript['count'], 2)
+        self.assertEqual(active_transcript['status'], 'active')
         response = await self.client.post(f'/api/recordings/{recording["id"]}/stop')
         self.assertEqual(response.status, 200)
         stopped = (await response.json())['recording']
         self.assertEqual(stopped['status'], 'stopped')
         self.assertEqual(stopped['samples'], 16000)
         self.assertEqual(stopped['duration_ms'], 1000)
+        self.assertTrue(stopped['transcript_available'])
+        self.assertEqual(stopped['transcript_lines'], 2)
         await wait_message(self.ws, 'recording.stopped')
         self.assertEqual(self.session.state, 'listening')
 
@@ -76,11 +86,40 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(wav.getframerate(), 16000)
             self.assertEqual(wav.getnframes(), 16000)
             self.assertEqual(wav.readframes(16000), b'\x01\x00'*16000)
+        transcript = await (await self.client.get(
+            f'/api/recordings/{recording["id"]}/transcript')).json()
+        self.assertEqual(transcript['text'], '第一段话\n第二段话')
+        self.assertEqual(transcript['status'], 'stopped')
 
         deleted = await self.client.delete(f'/api/recordings/{recording["id"]}')
         self.assertEqual(deleted.status, 200)
         self.assertEqual((await self.client.get(f'/api/recordings/{recording["id"]}/audio')).status, 404)
+        self.assertEqual((await self.client.get(
+            f'/api/recordings/{recording["id"]}/transcript')).status, 404)
         self.assertEqual((await self.client.delete(f'/api/recordings/{recording["id"]}')).status, 404)
+
+    async def test_live_transcript_events_insert_line_breaks_on_pauses(self):
+        recording = await self.start()
+        self.session.recording_listen_after = 0
+        self.transcripts = ['第一段。', '第二段。']
+
+        async def transcribe(pcm):
+            return self.transcripts.pop(0)
+
+        self.session.pipeline.transcribe = transcribe
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32))
+        first = await wait_message(self.ws, 'recording.transcript')
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32))
+        second = await wait_message(self.ws, 'recording.transcript')
+        self.assertEqual([first['line'], second['line']], [1, 2])
+        self.assertEqual([first['text'], second['text']], ['第一段。', '第二段。'])
+        self.assertEqual(second['recording_id'], recording['id'])
+        self.assertEqual(second['lines'], 2)
+        transcript = await (await self.client.get(
+            f'/api/recordings/{recording["id"]}/transcript')).json()
+        self.assertEqual(transcript['text'], '第一段。\n第二段。')
+        self.assertEqual(transcript['count'], 2)
+        await self.client.post(f'/api/recordings/{recording["id"]}/stop')
 
     async def test_active_recording_cannot_be_downloaded_or_started_twice(self):
         recording = await self.start()

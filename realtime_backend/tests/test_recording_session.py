@@ -118,17 +118,61 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.session.state, 'listening')
         self.assertTrue(any(event['type'] == 'recording.stopped' for event in self.events))
         self.assertTrue(any('录音已停止' in text for text in self.pipeline.spoken))
+        transcript = self.manager.transcript(self.manager.list()[0]['id'])
+        self.assertEqual(transcript['count'], 0)  # control phrases are not dictation
 
     async def test_ordinary_speech_during_recording_is_not_transcribed_into_a_turn(self):
         await self.session.start_recording('web')
         self.session.recording_listen_after = 0
         self.pipeline.transcripts = ['把会议室灯关一下']
         self.session.recording_heard(np.zeros(1600, dtype=np.float32))
-        await asyncio.sleep(.15)
+        await wait_for(lambda: any(event['type'] == 'recording.transcript'
+                                   for event in self.events))
         self.assertIsNotNone(self.session.recording)
         self.assertIsNone(self.session.turn)
         self.assertFalse(self.pipeline.chat_called)
         self.assertFalse(any(event['type'] == 'message.user' for event in self.events))
+        event = next(event for event in self.events if event['type'] == 'recording.transcript')
+        self.assertEqual(event['line'], 1)
+        self.assertEqual(event['text'], '把会议室灯关一下')
+        transcript = self.manager.transcript(self.session.recording.id)
+        self.assertEqual(transcript['text'], '把会议室灯关一下')
+        self.assertEqual(transcript['count'], 1)
+
+    async def test_each_pause_becomes_one_transcript_line(self):
+        recording = await self.session.start_recording('web')
+        self.session.recording_listen_after = 0
+        self.pipeline.transcripts = ['第一段话。', '第二段话。']
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32))
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32))
+        await wait_for(lambda: self.manager.transcript(recording.id)['count'] >= 2)
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual(transcript['text'], '第一段话。\n第二段话。')
+        self.assertEqual(transcript['count'], 2)
+        events = [event for event in self.events if event['type'] == 'recording.transcript']
+        self.assertEqual([event['line'] for event in events], [1, 2])
+        self.assertEqual([event['text'] for event in events], ['第一段话。', '第二段话。'])
+        metadata = await self.session.stop_recording('web')
+        self.assertTrue(metadata['transcript_available'])
+        self.assertEqual(metadata['transcript_lines'], 2)
+        self.assertEqual(self.manager.transcript(recording.id)['status'], 'stopped')
+
+    async def test_stop_waits_for_the_last_transcript_line(self):
+        recording = await self.session.start_recording('web')
+        self.session.recording_listen_after = 0
+
+        async def transcribe(pcm):
+            await asyncio.sleep(.2)
+            return '最后一句'
+
+        self.pipeline.transcribe = transcribe
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32))
+        await asyncio.sleep(.05)
+        metadata = await self.session.stop_recording('web')
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual(transcript['text'], '最后一句')
+        self.assertEqual(transcript['count'], 1)
+        self.assertEqual(metadata['transcript_lines'], 1)
 
     async def test_idle_timeout_never_ends_recording_mode(self):
         await self.session.start_recording('web')
@@ -159,18 +203,18 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
                     ingress.put(b'\x01\x00'*640)
                 await wait_for(lambda: self.session.recording.samples >= 3200)
                 await wait_for(lambda: any(
-                    event['type'] == 'recording.voice_stop_unavailable'
+                    event['type'] == 'recording.transcription_unavailable'
                     for event in self.events))
             finally:
                 await ingress.close()
         metadata = await self.session.stop_recording('web')
         self.assertEqual(metadata['samples'], 3200)
-        self.assertTrue(any(event['type'] == 'recording.voice_stop_unavailable'
+        self.assertTrue(any(event['type'] == 'recording.transcription_unavailable'
                             for event in self.events))
 
     async def test_http_asr_never_receives_recording_audio_for_stop_detection(self):
         self.pipeline.config = {'asr': {'provider': 'http'}}
-        self.assertFalse(self.session.recording_voice_stop_allowed())
+        self.assertFalse(self.session.recording_local_asr_allowed())
         await self.session.start_recording('web')
         config = {'speech_threshold': .65, 'onset_ms': 160, 'silence_ms': 640,
                   'max_utterance_seconds': 15, 'vad_model': '', 'barge_in': True}
@@ -180,7 +224,7 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
             await wait_for(lambda: self.session.recording.samples >= 640)
             await ingress.close()
             vad.assert_not_called()
-        self.assertTrue(any(event['type'] == 'recording.voice_stop_unavailable'
+        self.assertTrue(any(event['type'] == 'recording.transcription_unavailable'
                             and '不会上传' in event.get('message', '')
                             for event in self.events))
         await self.session.stop_recording('web')

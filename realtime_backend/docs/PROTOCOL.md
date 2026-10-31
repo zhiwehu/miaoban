@@ -71,17 +71,21 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 | playback.clear | interrupted_turn_id, reason |
 | playback.unconfirmed | — |
 | turn.completed | delivery: generated/played, elapsed_ms |
-| recording.started | recording: {id, session_id, device_id, started_at, duration_ms, format, sample_rate, channels, download_url:null, ...} |
+| recording.started | recording: {id, session_id, device_id, started_at, duration_ms, format, sample_rate, channels, transcript_available, download_url:null, ...} |
 | recording.confirming | recording, expires_in=20；先说了一次“停止录音模式”，等待“确认停止” |
 | recording.confirm_expired | recording；20 秒内没有确认，继续录音 |
 | recording.stopped | recording；此时 download_url 可用 |
-| recording.voice_stop_unavailable | message；VAD/ASR 不可用，录音仍在继续 |
+| recording.transcript | recording_id, line（1 起）, text, lines, elapsed_ms；每段 VAD 停顿后的实时转写行 |
+| recording.transcription_unavailable | message；VAD/ASR 不可用或使用 HTTP ASR，录音仍在继续 |
 | recording.input_ignored | message；录音模式下收到的文字消息被忽略 |
 | error | code, message, 可选 error_class |
 
 `session.state=recording` 表示音频正在写入 WAV，此时普通语音不产生
-`transcript.final`、`message.user`、`reply.*` 或工具调用。录音提示（开始确认、
-停止二次确认、最终保存提示）使用普通 `audio.start/chunk/end` 播放，但不写对话历史。
+`transcript.final`、`message.user`、`reply.*` 或工具调用。每个 VAD 停顿后的语音段
+只产生一条 `recording.transcript`，客户端按 `line` 去重后换行显示。录音提示（开始
+确认、停止二次确认、最终保存提示）使用普通 `audio.start/chunk/end` 播放，但不写
+对话历史或录音转写。实时转写和语音停止只在 ASR 为本机服务时启用；HTTP ASR 会收到
+`recording.transcription_unavailable`，录音音频不会为此上传。
 
 收到 `playback.clear` 时立即停止正在播放的音源、清空所有排队音频、使旧 turn_id
 失效；此后任何迟到的旧轮次片段必须丢弃。新 `audio.start` 建立新轮次播放所有权。
@@ -101,7 +105,9 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 - `POST /api/recordings`：`{"session_id":"<32 hex>"}` 开始录音；会话必须在线，重复开始返回 409。
 - `POST /api/recordings/{id}/stop`：停止并保存；会话已断线时直接完成文件。
 - `GET /api/recordings/{id}/audio`：下载已完成的 WAV；活动中的文件返回 404。
-- `DELETE /api/recordings/{id}`：删除 WAV 与元数据；活动中的录音返回 409。
+- `GET /api/recordings/{id}/transcript`：读取逐行转写（活动录音也可读）；返回
+  `{id,status,available,text,count}`，没有文字时 `available=false`。
+- `DELETE /api/recordings/{id}`：删除 WAV、txt 与元数据；活动中的录音返回 409。
 
 管理事件流积压超过 256 条时发 `events.resync`，应重新请求会话/日志快照。
 它不是持久消息队列。记录存储失败不伪装成持久化成功。

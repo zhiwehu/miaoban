@@ -71,6 +71,28 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.manager.list()), 1)
         self.assertFalse(self.manager.active)
 
+    def test_transcript_uses_one_line_per_pause_and_is_deleted_with_audio(self):
+        recording = self.manager.start('session-t', 'browser', 'voice')
+        self.assertEqual(recording.append_transcript('第一句话'), (1, '第一句话'))
+        self.assertEqual(recording.append_transcript('第二句话。'), (2, '第二句话。'))
+        self.assertIsNone(recording.append_transcript('  \n  '))
+        active = self.manager.get(recording.id)
+        self.assertTrue(active['transcript_available'])
+        self.assertEqual(active['transcript_lines'], 2)
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual(transcript['text'], '第一句话\n第二句话。')
+        self.assertEqual(transcript['count'], 2)
+        transcript_path = recording.transcript_path
+        self.assertTrue(transcript_path.is_file())
+        metadata = self.manager.stop(recording.id, 'web')
+        self.assertTrue(metadata['transcript_available'])
+        self.assertEqual(metadata['transcript_url'],
+                         f'/api/recordings/{recording.id}/transcript')
+        self.assertEqual(self.manager.transcript(recording.id)['status'], 'stopped')
+        self.manager.delete(recording.id)
+        self.assertFalse(transcript_path.exists())
+        self.assertIsNone(self.manager.transcript(recording.id))
+
     def test_duration_cap_writes_no_more_than_configured_seconds(self):
         manager = Recordings(self.root, max_seconds=1)
         recording = manager.start('session-b', 'device', 'voice')
@@ -108,12 +130,16 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         identity = uuid.uuid4().hex
         path = self.manager.root/f'{identity}.wav'
         path.write_bytes(_wav_header()+b'\0\0'*3200)
+        (self.manager.root/f'{identity}.txt').write_text('崩溃前的一行\n', encoding='utf-8')
         recovered = Recordings(self.root)
         self.addCleanup(recovered.close)
         metadata = recovered.get(identity)
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata['status'], 'recovered')
         self.assertEqual(metadata['samples'], 3200)
+        self.assertTrue(metadata['transcript_available'])
+        self.assertEqual(metadata['transcript_lines'], 1)
+        self.assertEqual(recovered.transcript(identity)['text'], '崩溃前的一行')
         with wave.open(str(path), 'rb') as wav:
             self.assertEqual(wav.getnframes(), 3200)
 

@@ -30,6 +30,7 @@
           <button data-view="models"><span>≋</span>模型与语音</button>
           <button data-view="mcp"><span>◇</span>MCP 工具</button>
           <button data-view="logs"><span>⌘</span>事件日志</button>
+          <button data-view="recordings"><span>●</span>录音</button>
           <button data-view="lab"><span>↗</span>网页聊天</button>
         </nav>
         <div class="rail-bottom">
@@ -411,12 +412,12 @@
                 </div>
                 <h3 id="client-phase">准备好，就开始聊</h3>
                 <p id="client-detail">可先用文字检查模型，再开启麦克风。</p>
-                <div id="recording-strip" class="recording-strip" role="status" hidden>
-                  <span class="recording-dot" aria-hidden="true"></span>
-                  <strong>录音中</strong>
-                  <span id="recording-clock" class="recording-clock">00:00</span>
-                  <span id="recording-note" class="recording-note">只录音，不回答</span>
-                </div>
+                <p class="hint recording-link" id="lab-recording-hint" hidden>
+                  录音模式进行中，对话已暂停。
+                  <button type="button" class="text-button" id="lab-open-recordings">
+                    查看实时转写 →
+                  </button>
+                </p>
               </div>
               <label
                 >此客户端的唤醒方式<select id="client-wake">
@@ -431,18 +432,6 @@
               </select></label>
               <label>麦克风音量<meter id="microphone-level" min="0" max="1" value="0"></meter></label>
               <p class="hint" id="microphone-status" role="status">麦克风未开启</p>
-              <div class="button-row recording-row">
-                <button id="start-recording" class="secondary" disabled>
-                  开始录音</button
-                ><button id="stop-recording" class="danger" disabled>
-                  停止并保存</button
-                ><a id="recording-download" class="secondary recording-download" hidden>
-                  下载最近录音</a>
-              </div>
-              <p class="hint">
-                对着麦克风说“开始录音模式”也会开始。录音时只保存声音、不回答；
-                说“停止录音模式”后还要再说一次“确认停止”，或者点“停止并保存”、按喵伴开关键结束。
-              </p>
               <div class="button-row">
                 <button id="connect-text" class="secondary">连接文字</button
                 ><button id="connect-mic" class="primary">开启麦克风</button>
@@ -486,19 +475,96 @@
               </form>
             </article>
           </div>
+        </section>
+        <section data-panel="recordings" hidden>
+          <div class="section-intro">
+            <p>录音、实时转写和本机文件都集中在这里。录音时只保存声音，不回答。</p>
+            <span class="tag">WAV + 实时文字</span>
+          </div>
+          <div class="recording-grid">
+            <article class="panel recording-console">
+              <div class="section-heading">
+                <h2>当前录音</h2>
+                <span class="tag" id="recordings-state">未录音</span>
+              </div>
+              <div class="recording-hero">
+                <div id="recordings-orb" class="recording-orb">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <rect x="9" y="3" width="6" height="12" rx="3" />
+                    <path d="M5 10v2a7 7 0 0014 0v-2M12 19v3M8 22h8" />
+                  </svg>
+                </div>
+                <div class="recording-hero-copy">
+                  <h3 id="recordings-title">还没有开始录音</h3>
+                  <p id="recordings-subtitle">
+                    说“开始录音模式”，或者连接网页麦克风后开始。
+                  </p>
+                </div>
+              </div>
+              <dl class="recording-stats">
+                <div><dt>时长</dt><dd id="recordings-duration">00:00</dd></div>
+                <div><dt>来源</dt><dd id="recordings-source">—</dd></div>
+                <div><dt>转写</dt><dd id="recordings-lines">0 行</dd></div>
+              </dl>
+              <div class="button-row">
+                <button id="recordings-start" class="primary">开始网页录音</button>
+                <button id="recordings-stop" class="danger" disabled>
+                  停止并保存
+                </button>
+                <button id="recordings-connect" class="secondary">
+                  连接网页麦克风
+                </button>
+              </div>
+              <div class="button-row">
+                <a id="recordings-download" class="secondary recording-download" hidden>
+                  下载当前录音
+                </a>
+                <button id="recordings-refresh" class="text-button" type="button">
+                  刷新列表
+                </button>
+              </div>
+              <p class="hint">
+                录音中不会回答，也不会写入对话记录。停止方式：网页停止、喵伴开关键，
+                或说“停止录音模式”后再说“确认停止”。
+              </p>
+            </article>
+            <article class="panel recording-live">
+              <div class="section-heading">
+                <h2>实时转写</h2>
+                <span class="tag" id="transcript-status">等待录音</span>
+              </div>
+              <div id="transcript-lines" class="transcript-lines" aria-live="polite">
+                <div class="empty">
+                  <span>◎</span>
+                  <h3>还没有文字</h3>
+                  <p>每段话停顿后会显示一行；录音中会实时出现。</p>
+                </div>
+              </div>
+              <p class="hint" id="transcript-hint">
+                停顿后自动换行。转写只使用本机 ASR，文字保存在本机。
+              </p>
+            </article>
+          </div>
           <article class="panel recordings-panel">
             <div class="section-heading">
               <h2>录音文件</h2>
               <span class="tag" id="recordings-count">0 个</span>
             </div>
             <p class="hint">
-              录音只保存在后端电脑的数据目录里，不会进入对话记录。列表中可以停止任何在线会话的录音，也可以下载或删除已完成的录音。
+              点击“转写”查看文字；点击“停止”可结束任意在线会话的录音。
+              录音保存在后端电脑的数据目录，不会进入对话记录。
             </p>
             <div id="recordings-list">
               <div class="empty">
                 <span>◎</span>
                 <h3>还没有录音</h3>
-                <p>开启麦克风后说“开始录音模式”，或点“开始录音”。</p>
+                <p>说“开始录音模式”，或点“开始网页录音”。</p>
               </div>
             </div>
           </article>
