@@ -784,7 +784,7 @@ let minutesTemplates = null, minutesJobs = [], minutesJob = null;
 let minutesPollTimer = null, minutesModelId = "", minutesRecordingId = null;
 let speechMap = null;
 let allowRecordingPlayback = false;
-let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0, activeTranscriptTimer = null;
+let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
 let recordingsRefreshTimer = null;
 let identity;
 try {
@@ -1155,13 +1155,6 @@ function renderTranscript() {
     hint += " 说话人由本机声纹自动分组，可能受短句或重叠说话影响。";
   $("transcript-status").textContent = status;
   $("transcript-hint").textContent = hint;
-  clearTimeout(activeTranscriptTimer);
-  if (displayedRecording?.status === "active") {
-    activeTranscriptTimer = setTimeout(() => {
-      if (displayedRecording?.status === "active")
-        loadDisplayedTranscript(displayedRecording).catch(() => {});
-    }, 5000);
-  }
   const audio = $("recording-audio");
   if (displayedRecording?.status !== "active") {
     const atStart = !audio.getAttribute("src") || audio.currentTime < .5;
@@ -1406,6 +1399,29 @@ async function loadRecordings() {
   syncRecordingControls();
   scheduleRecordingsRefresh();
 }
+let recordingAutoPollBusy = false;
+async function pollDisplayedRecording() {
+  if (recordingAutoPollBusy || !displayedRecording) return;
+  const id = displayedRecording.id;
+  if (displayedRecording.status !== "active" && !displayedRecording.finalizing)
+    return;
+  recordingAutoPollBusy = true;
+  try {
+    await loadRecordings();
+    const fresh = recordings.find((item) => item.id === id);
+    if (!fresh || displayedRecording?.id !== id) return;
+    displayedRecording = {...displayedRecording, ...fresh};
+    renderRecordingDetail();
+    if (fresh.status === "active" || fresh.finalizing)
+      await loadDisplayedTranscript(fresh);
+  } catch (error) {
+    // Keep polling; the event stream may still recover.
+  } finally {
+    recordingAutoPollBusy = false;
+  }
+}
+setInterval(() => pollDisplayedRecording(), 4000);
+
 async function displayStoppedRecording(recording) {
   if (!displayedRecording || displayedRecording.id !== recording.id) {
     await selectDisplayedRecording(recording);
