@@ -40,12 +40,12 @@ class BackgroundSessionTests(unittest.IsolatedAsyncioTestCase):
  async def test_interrupted_announcement_is_replayed_after_new_answer(self):
   announcing=asyncio.Event();allow=asyncio.Event()
   async def speech(text):
-   if text.startswith('后台任务结果') and not allow.is_set():announcing.set();await allow.wait()
+   if '慢查询真实结果' in text and not allow.is_set():announcing.set();await allow.wait()
    yield b'\0\0'*320
   self.pipeline.speech=speech
   await self.session.submit('慢查询');await self.started.wait();self.release.set();await announcing.wait()
   await self.session.submit('插话');allow.set()
-  await self.wait_for(lambda:any(e['type']=='reply.final' and '后台任务结果' in e.get('text','') for e in self.events))
+  await self.wait_for(lambda:any(e['type']=='reply.final' and '慢查询真实结果' in e.get('text','') for e in self.events))
   self.assertTrue(any(e['type']=='reply.final' and '新一轮' in e.get('text','') for e in self.events));self.assertFalse(self.ops.tasks)
  async def test_explicit_cancel_is_distinct_from_interruption(self):
   await self.session.submit('慢查询');await self.started.wait();await self.session.submit('取消任务')

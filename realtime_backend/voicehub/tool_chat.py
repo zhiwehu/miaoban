@@ -4,6 +4,7 @@ import contextlib
 import json
 import re
 import time
+from . import phrasing
 from .mcp_client import CommonToolsClient, MCPError
 from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMENTS
 from .tools import validate_arguments
@@ -68,7 +69,7 @@ async def chat(pipeline, history):
         if cached_rex['status']=='clarify':
             yield cached_rex['message'];return
     if cached_rex is None and workflow is None and music_plan(latest) is None and files is None and not music_refusal(latest) and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
-        if re.search(r'购物|采购|清单|计时|倒数|倒计时|放哪|位置|记住|物品|存放',latest):yield ToolNotice('tool_planning','收到，我来处理。')
+        if re.search(r'购物|采购|清单|计时|倒数|倒计时|放哪|位置|记住|物品|存放',latest):yield ToolNotice('tool_planning','')
         try:cached_rex=await rex_plan(pipeline,history,cfg)
         except (PlannerError,ValueError,TimeoutError):
             yield '本地工具规划器暂时不可用，请稍后重试。';return
@@ -128,7 +129,9 @@ async def chat(pipeline, history):
         return
     # 口语天气已经在上面的快速通道里给过静默反馈，这里不再追加语音确认。
     if cached_rex is None and getattr(local,'operations',None) and (files is not None or music_candidate(latest) or re.search(r'天气|气温|降雨|下雨|新闻|资讯|CPU|内存|磁盘|系统信息',latest,re.IGNORECASE) or (extra and re.search(r'调用|使用工具|执行工具',latest))):
-        yield ToolNotice('tool_planning','收到，我来处理。')
+        # 这里只负责把本轮切到后台，具体说的是哪句话交给 phrasing：
+        # 有后台进度就用进度里的口语，没有就用下面的工具确认。
+        yield ToolNotice('tool_planning','')
     mode=cfg.get('planner','llm')
     music=music_plan(latest) if cfg.get('music') else None
     candidates=extra+[t for t in available if (t['name']=='music' and music_candidate(latest)) or (t['name']=='file_organizer' and file_candidate(latest))]
@@ -201,7 +204,7 @@ async def chat(pipeline, history):
     if name == 'news':
         arguments = {'source':cfg['news_source'], 'limit':cfg['news_limit'], **arguments}
     # The session drains this acknowledgement through TTS before resuming this generator.
-    yield ToolNotice(name, ACKNOWLEDGEMENTS.get(name,'我来处理，请稍等。'))
+    yield ToolNotice(name, phrasing.acknowledge(name))
     started = time.monotonic()
     yield ToolStatus(name, 'started', arguments=arguments, planner=mode)
     try:

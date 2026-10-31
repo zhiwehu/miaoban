@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from . import phrasing
 from .tools import ToolNotice, ToolStatus
 
 
@@ -187,8 +188,7 @@ class Session:
                                     try:
                                         feedback=None
                                         if not turn.text.strip():
-                                            feedback=('我查一下天气。' if re.search(r'天气|气温|下雨|降雨',text) else
-                                                      '我看看最新消息。' if re.search(r'新闻|资讯',text) else '我来处理一下。')
+                                            feedback=phrasing.progress(text)
                                         operation=self.operations.start(self.id,turn.id,text,source,gate,self.emit_operation,progress_text=feedback)
                                         manager=getattr(getattr(self.pipeline,'local',None),'workflows',None)
                                         if manager:manager.transfer_owner(asyncio.current_task(),self.operations.tasks[operation['id']])
@@ -351,7 +351,14 @@ class Session:
                     fresh=self.operations.get(record['id']);fresh['delivery']='cancelled';self.operations.save(fresh)
                 if self.operations.get(record['id'])['delivery']!='pending':
                     self.notification_ids.discard(record['id']);continue
-                text=('' if record.get('kind') in ('calendar','timer') else '后台任务结果：')+record['text'][:120]+('。完整结果可在 MCP 页查看。' if len(record['text'])>120 else '')
+                kind=record.get('kind')
+                if kind=='progress':
+                    # 进度提示本身就是一句话，不能再套一层前缀。
+                    text=record['text']
+                elif kind in ('calendar','timer'):
+                    text=record['text'] if len(record['text'])<=120 else record['text'][:120]+'。完整结果可在 MCP 页查看。'
+                else:
+                    text=phrasing.announcement(record['text'],record.get('status','completed'))
                 turn=self.turn=Turn(notification_id=record['id'])
                 turn.task=asyncio.create_task(self._run(turn,None,None,announcement=text))
                 self.tasks.add(turn.task);turn.task.add_done_callback(self.tasks.discard)
