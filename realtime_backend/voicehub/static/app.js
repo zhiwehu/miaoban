@@ -814,7 +814,13 @@ function pageRecording() {
 function recordingSource(recording) {
   if (!recording) return "—";
   if (recording.session_id === identity?.session_id) return "网页麦克风";
-  return recording.device_id || "未知设备";
+  if (recording.device_id?.startsWith("web-")) return "网页麦克风";
+  return recording.device_id ? "喵伴 " + recording.device_id : "未知设备";
+}
+function recordingOrigin(recording) {
+  if (!recording) return "unknown";
+  if (recording.session_id === identity?.session_id) return "web";
+  return recording.device_id?.startsWith("web-") ? "web" : "device";
 }
 function syncRecordingControls() {
   const recording = !!pageRecording();
@@ -829,11 +835,15 @@ function syncRecordingControls() {
 function renderRecordingConsole() {
   const recording = displayedRecording;
   const active = recording?.status === "active";
+  const origin = recordingOrigin(recording);
+  const isWeb = origin === "web";
   const duration = active
     ? performance.now() - recordingLocalStart
     : recording?.duration_ms || 0;
   $("recordings-state").textContent = active
-    ? "录音中"
+    ? isWeb
+      ? "网页录音中"
+      : "喵伴录音中"
     : recording
       ? "已停止"
       : "未录音";
@@ -845,7 +855,9 @@ function renderRecordingConsole() {
   $("recordings-subtitle").textContent = active
     ? displayedConfirming
       ? "等待确认：请说“确认停止”，或点停止按钮。"
-      : "只保存声音，不回答；停顿后实时换行。"
+      : isWeb
+        ? "网页麦克风正在录音；只保存声音，不回答。"
+        : "喵伴设备正在录音；网页麦克风未参与。"
     : recording
       ? recordingSource(recording) + " · " + dateTime(recording.started_at)
       : "说“开始录音模式”，或者连接网页麦克风后开始。";
@@ -857,7 +869,11 @@ function renderRecordingConsole() {
   $("recordings-lines").textContent = lines + " 行";
   $("recordings-orb").classList.toggle("active", !!active);
   $("recordings-orb").classList.toggle("confirming", !!displayedConfirming);
-  $("recordings-start").disabled = activeRecordings().length > 0;
+  const hasActive =
+    activeRecordings().length > 0 || displayedRecording?.status === "active";
+  $("recordings-start").hidden = hasActive;
+  $("recordings-start").disabled = hasActive;
+  $("recordings-connect").hidden = hasActive;
   $("recordings-stop").disabled = !active;
   const connected = !!(socket && clientReady && stream);
   $("recordings-connect").disabled = connected;
