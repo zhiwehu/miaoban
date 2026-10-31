@@ -3,7 +3,7 @@ import asyncio
 import contextlib
 import time
 import numpy as np
-from .audio import AudioCodec, Segmenter, Silero, vad_path
+from .audio import AudioCodec, Segmenter, Silero, to_pcm16, vad_path
 
 
 class AudioInput:
@@ -112,6 +112,14 @@ class AudioInput:
                         if segment is not None:
                             if (recording_onset and session.recording is recording
                                     and session.recording_listen_allowed()):
+                                lead = self.segmenter.last_pre_trim_frames*512
+                                tail = self.segmenter.last_trailing_silence*512
+                                end = len(segment)-tail
+                                if end > lead:
+                                    speech = segment[lead:end]
+                                    if speech.size:
+                                        recording.write_speech(
+                                            to_pcm16(speech, 16000))
                                 start_ms = max(0, round(
                                     (recording.samples-len(segment))/16000*1000))
                                 session.recording_heard(segment, start_ms, pending_pause_ms)

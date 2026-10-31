@@ -61,6 +61,10 @@ class Segmenter:
     def __init__(self, threshold=.65, onset_ms=160, silence_ms=640, max_seconds=15):
         self.threshold, self.onset_frames = threshold, math.ceil(onset_ms/32)
         self.silence_frames, self.max_samples = math.ceil(silence_ms/32), max_seconds*16000
+        self.last_pre_trim_frames = 0
+        self.last_trailing_silence = 0
+        self.last_ended_by_silence = False
+        self.segment_trim_frames = 0
         self.reset()
 
     def reset(self):
@@ -68,6 +72,7 @@ class Segmenter:
         self.frames = []
         self.streak = self.silence = self.count = 0
         self.speaking = False
+        self.segment_trim_frames = 0
 
     def feed(self, frame, probability):
         onset, segment = False, None
@@ -79,12 +84,17 @@ class Segmenter:
                 onset = self.speaking = True
                 self.frames = list(self.pre)
                 self.count = sum(len(f) for f in self.frames)
+                # Keep the onset frames; drop only the silence before them.
+                self.segment_trim_frames = max(0, len(self.pre)-self.onset_frames)
         else:
             self.frames.append(frame.copy())
             self.count += len(frame)
             self.silence = 0 if voice else self.silence+1
             if self.silence >= self.silence_frames or self.count >= self.max_samples:
                 segment = np.concatenate(self.frames)
+                self.last_pre_trim_frames = self.segment_trim_frames
+                self.last_trailing_silence = self.silence
+                self.last_ended_by_silence = self.silence >= self.silence_frames
                 self.reset()
         return onset, segment
 

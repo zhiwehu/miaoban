@@ -86,7 +86,16 @@ cd /Users/huzhiwei/ai/miaoban/realtime_backend
 - `<id>.txt`：逐行转写，UTF-8，每行格式为 `[mm:ss] 文字`
 - `<id>.json`：会话、时间、时长、设备等元数据
 
-「录音」页可播放/下载音频、查看和导出转写、删除整条录音（同时删除 txt/json）。
+「录音」页的播放器使用完整音频同步转写，并分别提供“下载完整音频”和
+“下载精简音频”。精简音频只有在 VAD 检测到人声时才会生成；没有可用 VAD 时
+只保留完整音频。旧录音可以这样补生成精简版（不修改完整音频）：
+
+```sh
+cd realtime_backend
+python scripts/build_speech_only.py --all
+# 或只处理一条：python scripts/build_speech_only.py --id <32-hex-id>
+```
+
 会议纪要使用本地模型的生成接口尚未接入，界面先保留入口。录音和文字
 都不会进入对话历史，也不会自动上传。断线、服务正常关闭、达到 4 小时上限或写入
 失败也会结束并保存；异常重启后，没有元数据的 WAV 会根据文件长度修复头部并标记为

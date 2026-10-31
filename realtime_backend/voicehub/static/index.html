@@ -547,14 +547,18 @@
                     导出文字
                   </button>
                   <a id="recording-download" class="secondary recording-download" hidden>
-                    下载录音
+                    下载完整音频
+                  </a>
+                  <a id="recording-speech-download" class="secondary recording-download" hidden>
+                    下载精简音频
                   </a>
                   <button id="recording-minutes-button" class="secondary" type="button" disabled>
                     生成会议纪要
                   </button>
                 </div>
                 <p class="hint recording-action-hint" id="recording-action-hint">
-                  导出为 txt；下载为 WAV；会议纪要使用本地模型，尚未接入。
+                  完整音频保留全部静音；精简音频只保留检测到人声的片段，时间轴与转写不对应。
+                  会议纪要使用本地模型，尚未接入。
                 </p>
                 <section class="recording-transcript-panel">
                   <div class="section-heading">

@@ -140,6 +140,25 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
                          '[00:00] 说话人1：甲说话\n[00:01] 说话人2：乙说话')
         await self.client.post(f'/api/recordings/{recording["id"]}/stop')
 
+    async def test_speech_only_audio_can_be_downloaded_and_is_removed_with_recording(self):
+        recording = await self.start()
+        self.session.recording.write(b'\0\0'*16000)
+        self.session.recording.write_speech(b'\x02\x00'*4000)
+        response = await self.client.post(f'/api/recordings/{recording["id"]}/stop')
+        self.assertEqual(response.status, 200)
+        stopped = (await response.json())['recording']
+        self.assertTrue(stopped['speech_available'])
+        speech = await self.client.get(f'/api/recordings/{recording["id"]}/speech')
+        self.assertEqual(speech.status, 200)
+        self.assertEqual(speech.headers['Content-Type'], 'audio/wav')
+        data = await speech.read()
+        with wave.open(io.BytesIO(data), 'rb') as wav:
+            self.assertEqual(wav.getnframes(), 4000)
+            self.assertEqual(wav.readframes(4000), b'\x02\x00'*4000)
+        await self.client.delete(f'/api/recordings/{recording["id"]}')
+        self.assertEqual((await self.client.get(
+            f'/api/recordings/{recording["id"]}/speech')).status, 404)
+
     async def test_active_recording_cannot_be_downloaded_or_started_twice(self):
         recording = await self.start()
         self.assertEqual((await self.client.get(f'/api/recordings/{recording["id"]}/audio')).status, 404)

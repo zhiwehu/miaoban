@@ -140,6 +140,32 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
             recording.transcript_path.read_text(encoding='utf-8'),
             '[00:00] 第一句话。第二句话。第三句话。\n[00:05] 第四句话。第五句话\n')
 
+    def test_speech_only_file_keeps_vad_trimmed_audio_and_is_deleted(self):
+        recording = self.manager.start('session-speech-audio', 'device', 'voice')
+        recording.write(b'\0\0'*16000)
+        recording.write_speech(b'\x01\x00'*8000)
+        metadata = self.manager.stop(recording.id, 'web')
+        self.assertTrue(metadata['speech_available'])
+        self.assertEqual(metadata['speech_duration_ms'], 500)
+        self.assertEqual(metadata['speech_audio_url'],
+                         f'/api/recordings/{recording.id}/speech')
+        path = self.manager.speech_path(recording.id)
+        self.assertTrue(path.is_file())
+        with wave.open(str(path), 'rb') as wav:
+            self.assertEqual(wav.getframerate(), 16000)
+            self.assertEqual(wav.getnframes(), 8000)
+            self.assertEqual(wav.readframes(8000), b'\x01\x00'*8000)
+        self.manager.delete(recording.id)
+        self.assertFalse(path.exists())
+
+    def test_recording_without_speech_has_no_speech_only_file(self):
+        recording = self.manager.start('session-silent', 'device', 'voice')
+        recording.write(b'\0\0'*16000)
+        metadata = self.manager.stop(recording.id, 'web')
+        self.assertFalse(metadata['speech_available'])
+        self.assertIsNone(metadata['speech_audio_url'])
+        self.assertIsNone(self.manager.speech_path(recording.id))
+
     def test_duration_cap_writes_no_more_than_configured_seconds(self):
         manager = Recordings(self.root, max_seconds=1)
         recording = manager.start('session-b', 'device', 'voice')

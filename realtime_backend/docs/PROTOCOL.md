@@ -113,7 +113,8 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
   `{stamp:"mm:ss", elapsed_ms, speaker:"说话人1"|null, speaker_id, text}`，
   `stamp` 是录音内相对时间；没有文字时 `available=false`。保存到磁盘的
   `<id>.txt` 每行同样带 `[mm:ss]` 和可选的 `说话人N：` 前缀。
-- `DELETE /api/recordings/{id}`：删除 WAV、txt 与元数据；活动中的录音返回 409。
+- `GET /api/recordings/{id}/speech`：返回精简 WAV（只含 VAD 人声片段），支持 Range；没有精简音频时 404。
+- `DELETE /api/recordings/{id}`：删除完整/精简 WAV、txt 与元数据；活动中的录音返回 409。
 
 管理事件流积压超过 256 条时发 `events.resync`，应重新请求会话/日志快照。
 它不是持久消息队列。记录存储失败不伪装成持久化成功。

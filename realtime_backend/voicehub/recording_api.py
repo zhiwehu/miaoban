@@ -74,6 +74,16 @@ async def recording_api(request):
                 'Content-Type': 'audio/wav',
                 'Cache-Control': 'no-store',
             })
+        if request.path.endswith('/speech'):
+            if metadata is None or metadata.get('status') == 'active':
+                raise web.HTTPNotFound()
+            path = manager.speech_path(identity)
+            if path is None:
+                raise web.HTTPNotFound()
+            return web.FileResponse(path, headers={
+                'Content-Type': 'audio/wav',
+                'Cache-Control': 'no-store',
+            })
         if request.path.endswith('/stop'):
             if metadata is None:
                 raise web.HTTPNotFound()

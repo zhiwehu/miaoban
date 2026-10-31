@@ -946,21 +946,29 @@ function renderRecordingDetail() {
   const download = $("recording-download");
   const downloadable = !active && !!recording.download_url;
   download.hidden = !downloadable;
+  const when = new Date(recording.started_at * 1000);
+  const stamp =
+    when.getFullYear() +
+    String(when.getMonth() + 1).padStart(2, "0") +
+    String(when.getDate()).padStart(2, "0") + "-" +
+    String(when.getHours()).padStart(2, "0") +
+    String(when.getMinutes()).padStart(2, "0");
   if (downloadable) {
     download.href = recording.download_url;
-    const when = new Date(recording.started_at * 1000);
-    const stamp =
-      when.getFullYear() +
-      String(when.getMonth() + 1).padStart(2, "0") +
-      String(when.getDate()).padStart(2, "0") + "-" +
-      String(when.getHours()).padStart(2, "0") +
-      String(when.getMinutes()).padStart(2, "0");
     download.download =
       "voicehub-" + stamp + "-" + recording.id.slice(0, 8) + ".wav";
   }
+  const speech = $("recording-speech-download");
+  const speechAvailable = !active && !!recording.speech_audio_url;
+  speech.hidden = !speechAvailable;
+  if (speechAvailable) {
+    speech.href = recording.speech_audio_url;
+    speech.download =
+      "voicehub-" + stamp + "-" + recording.id.slice(0, 8) + "-speech.wav";
+  }
   $("recording-action-hint").textContent = active
     ? "录音结束后可以播放、下载和点击文字跳转；当前文字可以先行导出。"
-    : "导出为 txt；下载为 WAV；会议纪要使用本地模型，尚未接入。";
+    : "完整音频保留全部静音；精简音频只保留人声片段，时间轴与转写不对应。会议纪要使用本地模型，尚未接入。";
   syncAudio(recording);
 }
 function lineSeconds(line) {
