@@ -769,6 +769,7 @@ let displayedTranscript = [], displayedTranscriptState = "idle";
 let minutesTemplates = null, minutesJobs = [], minutesJob = null;
 let minutesPollTimer = null, minutesModelId = "", minutesRecordingId = null;
 let speechMap = null;
+let allowRecordingPlayback = false;
 let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
 let recordingsRefreshTimer = null;
 let identity;
@@ -1094,7 +1095,7 @@ function renderTranscript() {
           $("recording-seek").value = readySeconds;
           $("recording-current").textContent = formatClock(readySeconds * 1000);
           highlightAt(seconds, {scroll: true, force: true});
-          audio.play().catch(() => {});
+          playRecordingAudio();
         };
       }
       target.append(row);
@@ -1517,7 +1518,7 @@ function minutesEvidenceButton(evidence) {
       const audio = $("recording-audio");
       if (!audio.getAttribute("src")) return;
       audio.currentTime = fullToReady(evidence.elapsed_ms) / 1000;
-      audio.play().catch(() => {});
+      playRecordingAudio();
     };
   } else {
     button.disabled = true;
@@ -1931,6 +1932,15 @@ async function saveMinutesEdit() {
 
 
 const recordingAudio = $("recording-audio");
+recordingAudio.autoplay = false;
+recordingAudio.pause();
+function playRecordingAudio() {
+  allowRecordingPlayback = true;
+  return recordingAudio.play().catch(() => {
+    allowRecordingPlayback = false;
+    notice("无法播放录音。", true);
+  });
+}
 const recordingSeek = $("recording-seek");
 recordingAudio.addEventListener("loadedmetadata", () => {
   const duration = Number.isFinite(recordingAudio.duration)
@@ -1949,13 +1959,22 @@ recordingAudio.addEventListener("timeupdate", () => {
                 {scroll: !recordingAudio.paused});
 });
 recordingAudio.addEventListener("play", () => {
+  if (!allowRecordingPlayback) {
+    recordingAudio.pause();
+    return;
+  }
   $("recording-play").textContent = "⏸";
 });
 recordingAudio.addEventListener("pause", () => {
+  allowRecordingPlayback = false;
   $("recording-play").textContent = "▶";
 });
 recordingAudio.addEventListener("ended", () => {
+  allowRecordingPlayback = false;
   $("recording-play").textContent = "▶";
+});
+window.addEventListener("pagehide", () => {
+  recordingAudio.pause();
 });
 recordingAudio.addEventListener("error", () => {
   if (!recordingAudio.getAttribute("src")) return;
@@ -1982,8 +2001,7 @@ recordingSeek.addEventListener("change", () => {
 });
 $("recording-play").onclick = () => {
   if (!recordingAudio.getAttribute("src")) return;
-  if (recordingAudio.paused)
-    recordingAudio.play().catch(() => notice("无法播放录音。", true));
+  if (recordingAudio.paused) playRecordingAudio();
   else recordingAudio.pause();
 };
 $("recording-export").onclick = () => exportTranscript();
