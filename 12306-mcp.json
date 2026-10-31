@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "rail12306": {
+      "command": "/Users/huzhiwei/.nvm/versions/node/v24.14.1/bin/npx",
+      "args": [
+        "-y",
+        "12306-mcp@0.3.10"
+      ],
+      "env": {
+        "PATH": "/Users/huzhiwei/.nvm/versions/node/v24.14.1/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    }
+  }
+}

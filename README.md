@@ -50,10 +50,14 @@ firmware/base_controller/  底座ESP32-C3控制器源码
 firmware/shared/           串口协议解析
 firmware/head/             EchoEar 猫头源码工程、依赖锁和构建配置
 firmware/README.md         上游、布局、构建与硬件边界
- tests/                   9个可在主机运行的C++逻辑测试
- docs/                    文章、协议、验证与发布记录
+*.py                       逆向与实机调试工具（旧后端、JTAG、NVS、串口、表情资源）
+native/                    流式语音播放器源码（Swift）
+ tests/                   9个C++逻辑测试 + 14个Python工具测试
+ docs/                    文章、协议、工具链说明、验证与发布记录
  media/                   架构图（非实拍）
 ```
+
+根目录脚本是逆向阶段的工具，不是运行入口；用途见[工具链说明](docs/TOOLKIT.md)。
 
 ## 1. 准备Mac环境
 

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "/Users/huzhiwei/.nvm/versions/node/v24.14.1/bin/npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/huzhiwei/ai/miaoban/filesystem-test"
+      ],
+      "env": {
+        "PATH": "/Users/huzhiwei/.nvm/versions/node/v24.14.1/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    }
+  }
+}

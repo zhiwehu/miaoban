@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "amap": {
+      "command": "/Users/huzhiwei/.local/bin/npx",
+      "args": [
+        "-y",
+        "@mcp_hub_org/cli@latest",
+        "run",
+        "@amap/amap-maps-mcp-server"
+      ]
+    }
+  }
+}

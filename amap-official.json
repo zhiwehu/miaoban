@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "amap_official": {
+      "command": "/Users/huzhiwei/.local/bin/npx",
+      "args": [
+        "-y",
+        "@amap/amap-maps-mcp-server"
+      ],
+      "env": {
+        "AMAP_MAPS_API_KEY": "请替换为你的高德地图Key"
+      }
+    }
+  }
+}
