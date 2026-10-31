@@ -14,9 +14,10 @@ def main():
     parser.add_argument('--data', default=str(Path(__file__).resolve().parents[1]/'data'))
     parser.add_argument('--speakers', type=int, default=2)
     parser.add_argument('--wait', action='store_true')
+    parser.add_argument('--mode', choices=('text', 'asr'), default='text')
     args = parser.parse_args()
     try:
-        result = asyncio.run(rediarize(args.id, args.data, args.speakers, args.wait))
+        result = asyncio.run(rediarize(args.id, args.data, args.speakers, args.wait, args.mode))
         print(result)
     except Exception as exc:
         print(type(exc).__name__, str(exc), file=sys.stderr)

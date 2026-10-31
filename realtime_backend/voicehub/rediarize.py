@@ -18,7 +18,7 @@ import numpy as np
 from .audio import to_pcm16
 from .config import ConfigFile
 from .models import LocalModels, Pipeline
-from .recording import stamp_text
+from .recording import stamp_ms, stamp_text
 from .services import ServiceManager
 from .speaker import SpeakerEngine
 
@@ -137,6 +137,69 @@ def _split_for_asr(pcm, sample_rate=16000, max_seconds=16):
     return chunks
 
 
+_STAMP = re.compile(r'^\[(\d{1,3}:\d{2}(?::\d{2})?)\]\s?(?:说话人\s*\d+[：:]\s?)?(.*)$')
+
+
+def _sentences(text, limit=160):
+    parts = [part.strip() for part in re.split(r'(?<=[。！？!?；;])', text) if part.strip()]
+    output = []
+    for part in parts:
+        while len(part) > limit:
+            cut = max(part.rfind('，', 0, limit), part.rfind(',', 0, limit),
+                      part.rfind('、', 0, limit))
+            if cut < 20:
+                cut = limit
+            else:
+                cut += 1
+            output.append(part[:cut].strip())
+            part = part[cut:].strip()
+        if part:
+            output.append(part)
+    return output
+
+
+def _speaker_at(groups, seconds):
+    for start, end, speaker in groups:
+        if start*.8 <= seconds < end*.8:
+            return speaker
+    if not groups:
+        return 1
+    return min(groups, key=lambda group: abs(group[0]*.8-seconds))[2]
+
+
+def label_existing_text(text, groups, duration, hop=.8):
+    source = []
+    for raw in (text or '').splitlines():
+        match = _STAMP.match(raw.strip())
+        if match:
+            source.append({'ms': stamp_ms(match.group(1)), 'text': match.group(2).strip()})
+    if not source:
+        raise ValueError('transcript_empty')
+    output = []
+    for index, line in enumerate(source):
+        end = source[index+1]['ms'] if index+1 < len(source) else duration*1000
+        end = max(line['ms']+500, end)
+        sentences = _sentences(line['text'])
+        total = sum(max(1, len(sentence)) for sentence in sentences) or 1
+        cursor = line['ms']
+        span = end-line['ms']
+        for sentence in sentences:
+            share = max(1, len(sentence))/total
+            sentence_end = min(end, cursor+span*share)
+            midpoint = (cursor+sentence_end)/2/1000
+            speaker = _speaker_at(groups, min(max(midpoint, 0), duration))
+            if (output and output[-1]['speaker'] == speaker
+                    and cursor/1000-output[-1]['end'] <= .9):
+                output[-1]['text'] += sentence
+                output[-1]['end'] = sentence_end
+            else:
+                output.append({'ms': round(cursor), 'end': sentence_end,
+                               'speaker': f'说话人{speaker}', 'speaker_id': speaker,
+                               'text': sentence})
+            cursor = sentence_end
+    return output
+
+
 async def _transcribe_turns(pcm, groups, data_root, hop=.8):
     config = ConfigFile(data_root/'settings.json')
     services = ServiceManager(data_root, config.get)
@@ -177,7 +240,7 @@ async def _transcribe_turns(pcm, groups, data_root, hop=.8):
     return lines
 
 
-async def rediarize(recording_id, data_root, speakers=2, wait=False):
+async def rediarize(recording_id, data_root, speakers=2, wait=False, mode='text'):
     root = Path(data_root)
     audio = root/'recordings'/f'{recording_id}.wav'
     metadata_path = root/'recordings'/f'{recording_id}.json'
@@ -205,7 +268,15 @@ async def rediarize(recording_id, data_root, speakers=2, wait=False):
     embeddings = [engine.embed(frame) for _, frame in rows]
     labels = smooth_labels(cluster(embeddings, speakers))
     groups = turns_from_windows(labels, duration=len(pcm)/16000)
-    lines = await _transcribe_turns(pcm, groups, root)
+    if mode == 'text':
+        source = transcript_path
+        backup = root/'recordings'/f'{recording_id}.txt.before-diarization'
+        if not source.is_file() and backup.is_file():
+            source = backup
+        lines = label_existing_text(source.read_text(encoding='utf-8', errors='replace'),
+                                    groups, len(pcm)/16000)
+    else:
+        lines = await _transcribe_turns(pcm, groups, root)
     if not lines:
         raise ValueError('transcript_empty')
     if transcript_path.is_file():
@@ -214,15 +285,22 @@ async def rediarize(recording_id, data_root, speakers=2, wait=False):
             os.replace(transcript_path, backup)
             os.chmod(backup, 0o600)
     temporary = transcript_path.with_suffix('.txt.tmp')
-    text = ''.join(f"[{line['stamp']}] {line['speaker']}：{line['text']}\n" for line in lines)
+    rendered = []
+    for line in lines:
+        stamp = line.get('stamp') or stamp_text(round(line.get('ms', 0)))
+        speaker = line.get('speaker') or f"说话人{line.get('speaker_id', 1)}"
+        rendered.append(f"[{stamp}] {speaker}：{line['text']}")
+    text = '\n'.join(rendered)+'\n'
     temporary.write_text(text, encoding='utf-8')
     os.chmod(temporary, 0o600)
     os.replace(temporary, transcript_path)
     metadata.update({
         'transcript_lines': len(lines),
-        'speaker_count': len({line['speaker_id'] for line in lines}),
+        'speaker_count': len({line.get('speaker_id') or int(re.search(r'说话人(\d+)', line.get('speaker','说话人1')).group(1))
+                              for line in lines}),
         'diarization_revision': int(metadata.get('diarization_revision') or 0)+1,
-        'diarization_method': 'ecapa-window-kmeans',
+        'diarization_method': ('ecapa-window-text-align' if mode == 'text'
+                               else 'ecapa-window-kmeans-asr'),
         'diarization_speakers': speakers,
         'transcription_error': None,
     })

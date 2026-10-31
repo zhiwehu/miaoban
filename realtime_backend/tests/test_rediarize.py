@@ -2,7 +2,8 @@ import unittest
 
 import numpy as np
 
-from voicehub.rediarize import cluster, smooth_labels, turns_from_windows
+from voicehub.rediarize import (cluster, label_existing_text, smooth_labels,
+                                turns_from_windows)
 
 
 class RediarizeTests(unittest.TestCase):
@@ -18,6 +19,12 @@ class RediarizeTests(unittest.TestCase):
         self.assertEqual(turns[-1][2], 2)
         self.assertTrue(all((end-start)*.8 >= 1.2 or len(turns) == 1
                             for start, end, _ in turns))
+
+    def test_text_relabel_preserves_words_and_assigns_speakers(self):
+        lines = label_existing_text('[00:00] 说话人1：甲。乙。',
+                                    [(0, 5, 1), (5, 10, 2)], 10)
+        self.assertEqual(''.join(line['text'] for line in lines), '甲。乙。')
+        self.assertEqual([line['speaker_id'] for line in lines], [1, 2])
 
     def test_cluster_separates_orthogonal_embeddings(self):
         embeddings = [np.array([1., 0.]), np.array([.9, .1]),
