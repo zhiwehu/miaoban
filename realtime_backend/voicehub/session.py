@@ -24,6 +24,11 @@ class Turn:
     started: float = field(default_factory=time.monotonic)
 
 
+# 单轮播报的硬上限（秒）。它只用来拦住失控的合成，正常的长故事不能被截断：
+# 30 秒和 90 秒都曾把正常播报拦腰砍断。
+MAX_REPLY_AUDIO_SECONDS = 180
+
+
 class Session:
     def __init__(self, sid, device_id, store, pipeline, send, *, publish=None, wake_mode='manual',
                  wake_phrase='小宝同学', playback_ack=True, idle_seconds=30):
@@ -39,6 +44,7 @@ class Session:
         self.last_activity = time.monotonic()
         self.store.session(sid, device_id)
         self.input_active=False
+        self.streaming=False  # audio.start 到 audio.end 之间为 True，播报期间不算空闲
         self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
         self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
         self.notification_callback=self.queue_notification
@@ -236,7 +242,7 @@ class Session:
                                     if len(block) % 2:
                                         raise ValueError('TTS returned unaligned PCM')
                                     audio_samples += len(block)//2
-                                    if audio_samples > 16000 * 90:
+                                    if audio_samples > 16000 * MAX_REPLY_AUDIO_SECONDS:
                                         raise TimeoutError('reply_audio_limit')
                                     await audio.put(block)
                     await audio.put(None)
@@ -268,6 +274,7 @@ class Session:
                             continue
                         if deadline is None:
                             turn.audio_started = True
+                            self.streaming = True
                             await self.transition('speaking', turn)
                             await self.emit('audio.start', turn, sample_rate=16000,
                                             format='pcm_s16le', channels=1,
@@ -277,6 +284,7 @@ class Session:
                             await self.transition('speaking', turn)
                         deadline = max(deadline, time.monotonic() - lead)
                         await asyncio.sleep(max(0, deadline-time.monotonic()))
+                        self.last_activity = time.monotonic()  # 播报本身就是活动
                         await self.emit('audio.chunk', turn, data=base64.b64encode(block).decode())
                         audio_samples += len(block)//2
                         deadline += len(block)/32000
@@ -286,6 +294,8 @@ class Session:
                     drain_ms = max(0, round((finish-time.monotonic())*1000))
                     await self.emit('audio.end', turn, samples=audio_samples, drain_ms=drain_ms)
                     await asyncio.sleep(max(0, finish-time.monotonic()))
+                    self.streaming = False
+                    self.last_activity = time.monotonic()
 
                 async with asyncio.TaskGroup() as group:
                     group.create_task(produce())
@@ -375,7 +385,13 @@ class Session:
         if timers and timers.enabled() and timers.store.running(self.device_id):return
         if self.operations and (self.notification_ids or any(self.operations.get(identity)['session_id']==self.id for identity in self.operations.tasks)):
             return  # Keep the voice channel available for long-running completion announcements.
-        if not self.turn and self.state == 'listening' and time.monotonic()-self.last_activity > self.idle_seconds:
+        # 30 秒只针对「双方都没有任何动静」。正在说话、正在播报、正在收音都不算空闲，
+        # 否则一段超过 30 秒的播报或一段很长的话会被误判成待机而中断。
+        if self.turn or self.input_active or self.streaming:
+            return
+        if self.state != 'listening':
+            return
+        if time.monotonic()-self.last_activity > self.idle_seconds:
             await self.transition('standby')
 
     async def close(self):

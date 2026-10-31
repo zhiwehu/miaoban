@@ -253,7 +253,7 @@ class Pipeline:
                 async for raw in response.content.iter_chunked(8192):
                     pending += raw
                     total += len(raw)
-                    if total > rate*2*30:
+                    if total > rate*2*120:
                         raise ProviderError('tts_audio_limit')
                     size = len(pending)//2*2
                     if size:
@@ -277,7 +277,7 @@ class Pipeline:
                         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL,
                         stderr=asyncio.subprocess.DEVNULL)
                 processes.append(say)
-                await asyncio.wait_for(say.communicate(text.encode()), 30)
+                await asyncio.wait_for(say.communicate(text.encode()), 120)
                 if say.returncode:
                     raise ProviderError('native_voice_failed')
                 ffmpeg = await asyncio.create_subprocess_exec('ffmpeg', '-v', 'error', '-i', destination,

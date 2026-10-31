@@ -48,12 +48,14 @@ class QwenVoice:
                     raise ProviderError('tts_sample_rate_mismatch')
                 audio = np.asarray(result.audio, dtype=np.float32).reshape(-1)
                 samples += len(audio)
-                if samples > RATE*30 or not np.all(np.isfinite(audio)):
+                # 只用来拦住失控的合成，不能把正常的长句子截断：一段 70 字的中文
+                # 就可能接近 30 秒，原来的 30 秒上限会让播报在中途直接失败。
+                if samples > RATE*120 or not np.all(np.isfinite(audio)):
                     raise ProviderError('tts_audio_limit_or_invalid')
                 pcm = (np.clip(audio,-1,1)*32767).astype('<i2').tobytes()
                 if buffered is None:
                     # If synthesis starts slower than playback, avoid knowingly starving
-                    # the receiver. Bound the retained sentence by the 30-second limit.
+                    # the receiver. Bound the retained sentence by the hard ceiling above.
                     buffered = time.monotonic()-started > len(audio)/RATE * .9
                     log.info('tts.delivery mode=%s', 'sentence' if buffered else 'stream')
                 if buffered:
