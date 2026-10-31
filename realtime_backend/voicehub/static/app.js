@@ -44,6 +44,7 @@ const eventLabels = {
   "recording.transcription_unavailable": "实时转写不可用",
   "recording.speaker_unavailable": "发言人区分不可用",
   "recording.diarized": "发言人重分析完成",
+  "recording.minutes_started": "正在自动生成会议纪要",
   "recording.input_ignored": "录音中忽略文字",
   "tool.started": "工具查询中",
   "tool.completed": "工具查询完成",
@@ -436,6 +437,8 @@ function observe() {
         loadRecordings().catch(() => {});
         loadDisplayedTranscript(displayedRecording).catch(() => {});
         notice("发言人重分析完成，逐字稿已更新。");
+      } else if (e.type === "recording.minutes_started") {
+        notice("逐字稿已更新，正在自动生成默认会议纪要。");
       }
       else if (e.type === "recording.confirming" &&
                displayedRecording?.id === e.recording?.id) {
@@ -2341,6 +2344,10 @@ function openClient() {
           loadDisplayedTranscript(displayedRecording).catch(() => {});
           notice("发言人重分析完成，逐字稿已更新。");
         }
+        return;
+      }
+      if (e.type === "recording.minutes_started") {
+        notice("逐字稿已更新，正在自动生成默认会议纪要。");
         return;
       }
       if (e.type === "recording.deleted") {

@@ -209,6 +209,34 @@ class SpeakerEngine:
             self._model = model
             return model
 
+    def embed_batch(self, frames):
+        """Embed equal-length 16 kHz frames in one model call."""
+        if not isinstance(frames, (list, tuple)) or not frames:
+            return np.zeros((0, 192), dtype=np.float32)
+        lengths = {len(frame) for frame in frames}
+        if len(lengths) != 1:
+            raise SpeakerUnavailable('speaker_batch_invalid')
+        audio = np.stack([np.asarray(frame, dtype=np.float32).reshape(-1)
+                          for frame in frames])
+        if audio.shape[1] < 800:
+            raise SpeakerUnavailable('speaker_segment_too_short')
+        model = self._load()
+        with self._lock:
+            try:
+                import torch
+                with torch.no_grad():
+                    tensor = torch.from_numpy(audio)
+                    embeddings = model.encode_batch(tensor).reshape(len(frames), -1)
+                    embeddings = embeddings.cpu().numpy()
+            except SpeakerUnavailable:
+                raise
+            except Exception:
+                raise SpeakerUnavailable('speaker_embedding_failed') from None
+        output = []
+        for embedding in embeddings:
+            output.append(_normalize(embedding))
+        return np.stack(output)
+
     def embed(self, pcm):
         """Return one normalized 192-d embedding for 16 kHz mono PCM."""
         audio = np.asarray(pcm)

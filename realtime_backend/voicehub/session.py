@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import contextlib
+import os
 import re
 import time
 import uuid
@@ -61,6 +62,7 @@ class Session:
         self.recording_speaker_notified=False
         self.rediarize_tasks=set()
         self.speaker_engine=getattr(getattr(pipeline,'local',None),'speakers',None)
+        self.minutes=getattr(getattr(pipeline,'local',None),'minutes',None)
         self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
         self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
         self.notification_callback=self.queue_notification
@@ -136,7 +138,13 @@ class Session:
         self.recording_queue = asyncio.Queue(maxsize=8)
         self.recording_listen_after = time.monotonic()+.2
         self.recording_asr_notified = False
-        self.recording_speakers = SpeakerTracker() if self.speaker_engine else None
+        try:
+            live_threshold = float(os.environ.get('VOICEHUB_LIVE_SPEAKER_THRESHOLD', '.42'))
+        except ValueError:
+            live_threshold = .42
+        self.recording_speakers = (SpeakerTracker(threshold=live_threshold,
+                                                  min_seconds=.8)
+                                   if self.speaker_engine else None)
         self.recording_speaker_failed = False
         self.recording_speaker_notified = False
         recording.speaker_count = 0
@@ -302,59 +310,163 @@ class Session:
                 if not handled and self.recording is recording:
                     elapsed_ms = (started_ms if started_ms is not None
                                   else round(recording.duration*1000))
-                    speaker, speaker_id = None, None
+                    speaker_runs = None
                     if (self.speaker_engine and self.recording_speakers
                             and not self.recording_speaker_failed):
                         try:
-                            embedding = await asyncio.wait_for(
-                                asyncio.to_thread(self.speaker_engine.embed, pcm), 6)
-                            speaker_id, speaker = self.recording_speakers.assign(
-                                embedding, len(pcm)/16000)
-                            recording.speaker_count = self.recording_speakers.count
+                            speaker_runs = await self._live_speaker_runs(
+                                pcm, text, elapsed_ms)
                         except asyncio.CancelledError:
                             raise
                         except Exception:
-                            self.recording_speaker_failed = True
-                            if not self.recording_speaker_notified:
-                                self.recording_speaker_notified = True
-                                with contextlib.suppress(Exception):
-                                    await self.emit(
-                                        'recording.speaker_unavailable',
-                                        recording_id=recording.id,
-                                        message='发言人区分暂时不可用，转写继续；请检查本机声纹模型。')
+                            speaker_runs = None
+                        if speaker_runs is None:
+                            try:
+                                embedding = await asyncio.wait_for(
+                                    asyncio.to_thread(self.speaker_engine.embed, pcm), 6)
+                                speaker_id, speaker = self.recording_speakers.assign(
+                                    embedding, len(pcm)/16000)
+                                speaker_runs = [{
+                                    'start_ms': 0, 'end_ms': len(pcm)/16000*1000,
+                                    'speaker_id': speaker_id, 'speaker': speaker,
+                                    'text': text}]
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception:
+                                self.recording_speaker_failed = True
+                                if not self.recording_speaker_notified:
+                                    self.recording_speaker_notified = True
+                                    with contextlib.suppress(Exception):
+                                        await self.emit(
+                                            'recording.speaker_unavailable',
+                                            recording_id=recording.id,
+                                            message='发言人区分暂时不可用，转写继续；请检查本机声纹模型。')
+                        recording.speaker_count = self.recording_speakers.count
+                    if speaker_runs is None:
+                        speaker_runs = [{
+                            'start_ms': 0, 'end_ms': len(pcm)/16000*1000,
+                            'speaker_id': None, 'speaker': None, 'text': text}]
                     try:
-                        same_speaker = (speaker_id ==
-                                        recording.transcript_last_speaker_id)
-                        if (pause_ms is not None
-                                and pause_ms < TRANSCRIPT_JOIN_PAUSE_MS
-                                and recording.transcript_lines > 0
-                                and same_speaker):
-                            merged = recording.merge_transcript(
-                                text, speaker, speaker_id)
-                        else:
-                            merged = None
-                        appended = (None if merged else
-                                    recording.append_transcript(
-                                        text, elapsed_ms, speaker, speaker_id))
+                        for run_index, run in enumerate(speaker_runs):
+                            run_text = run.get('text', '').strip()
+                            if not run_text:
+                                continue
+                            speaker = run.get('speaker')
+                            speaker_id = run.get('speaker_id')
+                            run_elapsed = elapsed_ms+run.get('start_ms', 0)
+                            same_speaker = (speaker_id ==
+                                            recording.transcript_last_speaker_id)
+                            can_merge = (run_index == 0 and pause_ms is not None
+                                         and pause_ms < TRANSCRIPT_JOIN_PAUSE_MS
+                                         and recording.transcript_lines > 0
+                                         and same_speaker)
+                            merged = (recording.merge_transcript(run_text, speaker,
+                                                                 speaker_id)
+                                      if can_merge else None)
+                            appended = (None if merged else
+                                        recording.append_transcript(
+                                            run_text, round(run_elapsed), speaker,
+                                            speaker_id))
+                            result = merged or appended
+                            if not result:
+                                continue
+                            line, stamp, clean = result
+                            await self.emit('recording.transcript',
+                                            recording_id=recording.id, line=line,
+                                            text=clean, stamp=stamp,
+                                            lines=recording.transcript_lines,
+                                            elapsed_ms=round(run_elapsed),
+                                            speaker=speaker, speaker_id=speaker_id,
+                                            merged=bool(merged))
                     except OSError:
                         await self.recording_transcription_unavailable(
                             '转写写入失败，录音仍在继续；请检查磁盘空间。')
                         continue
-                    result = merged or appended
-                    if result:
-                        line, stamp, clean = result
-                        await self.emit('recording.transcript',
-                                        recording_id=recording.id, line=line,
-                                        text=clean, stamp=stamp,
-                                        lines=recording.transcript_lines,
-                                        elapsed_ms=elapsed_ms,
-                                        speaker=speaker, speaker_id=speaker_id,
-                                        merged=bool(merged))
         except asyncio.CancelledError:
             pass
 
+    @staticmethod
+    def _sentence_parts(text):
+        parts = [part.strip() for part in re.split(r'(?<=[。！？!?；;])', text or '')
+                 if part.strip()]
+        output = []
+        for part in parts:
+            while len(part) > 140:
+                cut = max(part.rfind('，', 0, 140), part.rfind(',', 0, 140),
+                          part.rfind('、', 0, 140))
+                cut = cut+1 if cut > 20 else 140
+                output.append(part[:cut].strip())
+                part = part[cut:].strip()
+            if part:
+                output.append(part)
+        return output or [text]
+
+    async def _live_speaker_runs(self, pcm, text, elapsed_ms):
+        """Split one ASR segment into speaker runs using short windows."""
+        if (not self.speaker_engine or not self.recording_speakers
+                or len(pcm) < 16000):
+            return None
+        win, hop = int(1.6*16000), int(.8*16000)
+        rows = []
+        for start in range(0, len(pcm)-win+1, hop):
+            frame = pcm[start:start+win]
+            if float((frame*frame).mean()) >= .006**2:
+                rows.append((start, frame))
+        if len(rows) < 2:
+            return None
+        try:
+            embeddings = await asyncio.wait_for(
+                asyncio.to_thread(self.speaker_engine.embed_batch,
+                                  [frame for _, frame in rows]), 12)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
+        labels = []
+        for embedding in embeddings:
+            speaker_id, _ = self.recording_speakers.assign(embedding, 1.6)
+            labels.append(speaker_id)
+        # Median smooth then merge sub-second flips.
+        smooth = list(labels)
+        for index in range(len(labels)):
+            window = labels[max(0, index-1):index+2]
+            smooth[index] = max(set(window), key=window.count)
+        runs = []
+        start_index = 0
+        for index in range(1, len(smooth)+1):
+            if index == len(smooth) or smooth[index] != smooth[start_index]:
+                run_start = rows[start_index][0]/16000*1000
+                run_end = ((rows[index-1][0]+win)/16000*1000
+                           if index <= len(rows) else len(pcm)/16000*1000)
+                if runs and run_end-run_start < 900:
+                    runs[-1][1] = run_end
+                else:
+                    runs.append([run_start, run_end, smooth[start_index]])
+                start_index = index
+        if len(runs) <= 1:
+            return None
+        duration_ms = len(pcm)/16000*1000
+        sentences = self._sentence_parts(text)
+        total = sum(max(1, len(item)) for item in sentences) or 1
+        cursor = 0.0
+        grouped = []
+        for sentence in sentences:
+            span = duration_ms*max(1, len(sentence))/total
+            midpoint = min(duration_ms-.001, cursor+span/2)
+            speaker = next((run[2] for run in runs
+                            if run[0] <= midpoint < run[1]), runs[-1][2])
+            if grouped and grouped[-1]['speaker_id'] == speaker:
+                grouped[-1]['text'] += sentence
+                grouped[-1]['end_ms'] = cursor+span
+            else:
+                grouped.append({'start_ms': round(cursor), 'end_ms': cursor+span,
+                                'speaker_id': speaker,
+                                'speaker': f'说话人{speaker}', 'text': sentence})
+            cursor += span
+        return grouped or None
+
     def _maybe_rediarize(self, recording, metadata):
-        if self.closed or metadata.get('speaker_count', 0) > 1:
+        if self.closed:
             return
         entries = list(getattr(recording, 'transcript_entries', []) or [])
         if len(entries) < 2:
@@ -384,6 +496,18 @@ class Session:
                 await rediarize(recording_id, data_root, speakers=2, mode='text')
                 if not self.closed:
                     await self.emit('recording.diarized', recording_id=recording_id)
+                minutes = self.minutes or getattr(
+                    getattr(self.pipeline, 'local', None), 'minutes', None)
+                if minutes is not None and not self.closed:
+                    try:
+                        existing = minutes.list_jobs(recording_id)
+                        if not any(job.get('template_id') == 'general'
+                                   for job in existing):
+                            await minutes.start_job(recording_id, 'general')
+                            await self.emit('recording.minutes_started',
+                                            recording_id=recording_id)
+                    except Exception:
+                        pass
             except Exception:
                 pass
         task = asyncio.create_task(run())

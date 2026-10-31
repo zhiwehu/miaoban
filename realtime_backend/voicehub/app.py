@@ -150,6 +150,7 @@ class Hub:
         self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90, connect=10, sock_read=30))
         self.local = LocalModels()
         self.local.speakers = SpeakerEngine(self.root/'speaker-cache')
+        self.local.minutes = self.minutes
         self.local.services = self.services
         self.local.planner = self.planner
         self.local.extensions = self.extensions
