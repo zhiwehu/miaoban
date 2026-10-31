@@ -31,8 +31,26 @@ class PhrasingTests(unittest.TestCase):
 
     def test_long_result_is_capped_and_points_at_the_page(self):
         spoken=phrasing.announcement('长'*300)
-        self.assertLessEqual(len(spoken),120+len(max(phrasing._LEADS,key=len))+len(max(phrasing._TAILS,key=len)))
+        self.assertLessEqual(len(spoken),122+len(max(phrasing._LEADS,key=len))+len(max(phrasing._TAILS,key=len)))
         self.assertTrue(any(spoken.endswith(tail) for tail in phrasing._TAILS),spoken)
+
+    def test_truncation_never_leaves_a_half_clause(self):
+        # 真实案例：按字符硬切会切出「还有一。」这种半句。
+        text='新闻摘要是这样的，内容比较长。'*10+'还有一条很重要的消息没有说完，后面还有内容'
+        body,truncated=phrasing.shorten(text,120)
+        self.assertTrue(truncated)
+        self.assertTrue(body.endswith('。'),body)
+        self.assertNotIn('还有一条很重要的消息没有说完。',body)
+        self.assertLessEqual(len(body),121)
+
+    def test_cut_prefers_a_sentence_boundary(self):
+        body,_=phrasing.shorten('第一句。第二句。'+'第三句'*80,20)
+        self.assertEqual(body,'第一句。第二句。')
+
+    def test_without_sentence_marks_the_body_still_ends_with_a_full_stop(self):
+        body,truncated=phrasing.shorten('没有任何标点的长文本'*40,50)
+        self.assertTrue(truncated)
+        self.assertTrue(body.endswith('。'),body)
 
     def test_failures_are_spoken_as_written(self):
         text='后台任务未能完成，请在 MCP 页查看状态并检查工具配置。'

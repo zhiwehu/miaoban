@@ -28,7 +28,7 @@ _ACKS = {
 _DEFAULT = ('我处理一下。', '稍等，我看下。', '好，我看看。', '这个我来查。')
 
 _LEADS = ('刚查到，', '对了，', '我查到了，', '有结果了，', '顺便说一下，')
-_TAILS = ('更长的在 MCP 页。', '细节在 MCP 页。', '完整内容在 MCP 页。')
+_TAILS = ('详情我放在 MCP 页了。', '完整的在 MCP 页。', '剩下的在 MCP 页。')
 
 _counter = {}
 
@@ -53,12 +53,29 @@ def progress(text=''):
     return _pick('progress', _DEFAULT)
 
 
+_SENTENCE_END = '。！？!?；;\n'
+_CLAUSE_END = '，,、'
+
+
+def shorten(body, limit):
+    """Cut at a sentence boundary; never leave a half clause such as「还有一」."""
+    if len(body) <= limit:
+        return body, False
+    window = body[:limit]
+    cut = max(window.rfind(mark) for mark in _SENTENCE_END)
+    if cut >= 0:
+        return window[:cut + 1], True
+    # No full sentence fits: drop the unfinished clause instead of completing it
+    # with a full stop, which would read as a truncated word.
+    cut = max(window.rfind(mark) for mark in _CLAUSE_END)
+    if cut > 0:
+        return window[:cut].rstrip() + '。', True
+    return window.rstrip() + '。', True
+
+
 def announcement(text, status='completed', limit=120):
     """Introduce a finished background result the way a person would."""
-    body = (text or '').strip()
-    truncated = len(body) > limit
-    if truncated:
-        body = body[:limit].rstrip('，,。.;；、') + '。'
+    body, truncated = shorten((text or '').strip(), limit)
     # Failures and interruptions already read as complete sentences; a cheerful
     # lead-in would make them worse, so speak them unchanged.
     if status != 'completed':
