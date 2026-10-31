@@ -67,9 +67,11 @@ async def recording_api(request):
             path = manager.audio_path(identity)
             if path is None:
                 raise web.HTTPNotFound()
+            # No Content-Disposition: the same URL backs the inline <audio>
+            # player and the explicit download link. Range requests are handled
+            # by aiohttp's FileResponse so seeking works.
             return web.FileResponse(path, headers={
                 'Content-Type': 'audio/wav',
-                'Content-Disposition': f'attachment; filename="voicehub-recording-{identity[:8]}.wav"',
                 'Cache-Control': 'no-store',
             })
         if request.path.endswith('/stop'):

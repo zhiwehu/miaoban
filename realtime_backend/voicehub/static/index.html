@@ -478,96 +478,114 @@
         </section>
         <section data-panel="recordings" hidden>
           <div class="section-intro">
-            <p>录音、实时转写和本机文件都集中在这里。录音时只保存声音，不回答。</p>
-            <span class="tag">WAV + 实时文字</span>
+            <p>选择左侧录音，右侧查看文字、播放音频并导出；录音从网页客户端或喵伴开始。</p>
+            <span class="tag">录音工作台</span>
           </div>
-          <div class="recording-grid">
-            <article class="panel recording-console">
+          <div class="recording-workspace">
+            <aside class="panel recording-history">
               <div class="section-heading">
-                <h2>当前录音</h2>
-                <span class="tag" id="recordings-state">未录音</span>
+                <h2>录音历史</h2>
+                <span class="tag" id="recordings-count">0 个</span>
               </div>
-              <div class="recording-hero">
-                <div id="recordings-orb" class="recording-orb">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    aria-hidden="true"
-                  >
-                    <rect x="9" y="3" width="6" height="12" rx="3" />
-                    <path d="M5 10v2a7 7 0 0014 0v-2M12 19v3M8 22h8" />
-                  </svg>
-                </div>
-                <div class="recording-hero-copy">
-                  <h3 id="recordings-title">还没有开始录音</h3>
-                  <p id="recordings-subtitle">
-                    在网页客户端或喵伴说“开始录音模式”后开始。
-                  </p>
-                </div>
-              </div>
-              <dl class="recording-stats">
-                <div><dt>时长</dt><dd id="recordings-duration">00:00</dd></div>
-                <div><dt>来源</dt><dd id="recordings-source">—</dd></div>
-                <div><dt>转写</dt><dd id="recordings-lines">0 行</dd></div>
-              </dl>
-              <div class="button-row">
-                <button id="recordings-stop" class="danger" hidden disabled>
-                  停止并保存
-                </button>
-              </div>
-              <div class="button-row">
-                <a id="recordings-download" class="secondary recording-download" hidden>
-                  下载当前录音
-                </a>
-                <button id="recordings-refresh" class="text-button" type="button">
-                  刷新列表
-                </button>
-                <button id="recording-jump" class="text-button" type="button" hidden>
-                  查看实时转写 ↓
-                </button>
-              </div>
-              <p class="hint">
-                这里是服务端的录音管理页：开始录音请到网页客户端或对喵伴说
-                “开始录音模式”。录音中不会回答，也不会写入对话记录。停止方式：
-                网页客户端或本页停止、喵伴开关键，或说“停止录音模式”后再说“确认停止”。
-              </p>
-            </article>
-            <article class="panel recording-live">
-              <div class="section-heading">
-                <h2>实时转写</h2>
-                <span class="tag" id="transcript-status">等待录音</span>
-              </div>
-              <div id="transcript-lines" class="transcript-lines" aria-live="polite">
+              <button id="recordings-refresh" class="text-button recording-refresh" type="button">
+                刷新列表
+              </button>
+              <div id="recordings-list" class="recording-history-list">
                 <div class="empty">
                   <span>◎</span>
-                  <h3>还没有文字</h3>
-                  <p>每段话停顿后会显示一行；录音中会实时出现。</p>
+                  <h3>还没有录音</h3>
+                  <p>在网页客户端或喵伴说“开始录音模式”。</p>
                 </div>
               </div>
-              <p class="hint" id="transcript-hint">
-                时间戳是录音内时间；停顿后自动换行。转写只使用本机 ASR，文字保存在本机。
-              </p>
+            </aside>
+            <article class="panel recording-detail">
+              <div id="recording-empty" class="recording-detail-empty">
+                <div class="empty">
+                  <span>◎</span>
+                  <h3>选择一条录音</h3>
+                  <p>左侧历史记录可以查看文字、播放音频和导出。</p>
+                </div>
+              </div>
+              <div id="recording-detail" hidden>
+                <header class="recording-detail-head">
+                  <div class="recording-detail-heading">
+                    <p class="eyebrow" id="recording-detail-date">—</p>
+                    <h2 id="recording-detail-title">录音详情</h2>
+                    <p class="hint" id="recording-detail-meta">—</p>
+                  </div>
+                  <span class="tag" id="recording-detail-state">已保存</span>
+                </header>
+                <div id="recording-player" class="recording-player" hidden>
+                  <button id="recording-play" class="player-play" type="button" aria-label="播放">
+                    ▶
+                  </button>
+                  <div class="player-track">
+                    <input
+                      id="recording-seek"
+                      type="range"
+                      min="0"
+                      max="0"
+                      value="0"
+                      step="0.01"
+                      aria-label="播放进度"
+                    />
+                    <div class="player-times">
+                      <span id="recording-current">00:00</span>
+                      <span id="recording-total">00:00</span>
+                    </div>
+                  </div>
+                  <audio id="recording-audio" preload="metadata"></audio>
+                </div>
+                <div id="recording-player-placeholder" class="recording-player-placeholder" hidden>
+                  录音仍在进行，停止后可以播放、下载和跳转文字。
+                </div>
+                <div class="recording-detail-actions">
+                  <button id="recording-stop" class="danger" type="button" hidden>
+                    停止并保存
+                  </button>
+                  <button id="recording-export" class="secondary" type="button" disabled>
+                    导出文字
+                  </button>
+                  <a id="recording-download" class="secondary recording-download" hidden>
+                    下载录音
+                  </a>
+                  <button id="recording-minutes-button" class="secondary" type="button" disabled>
+                    生成会议纪要
+                  </button>
+                </div>
+                <p class="hint recording-action-hint" id="recording-action-hint">
+                  导出为 txt；下载为 WAV；会议纪要使用本地模型，尚未接入。
+                </p>
+                <section class="recording-transcript-panel">
+                  <div class="section-heading">
+                    <h2>转写文字</h2>
+                    <span class="tag" id="transcript-status">—</span>
+                  </div>
+                  <div id="transcript-lines" class="transcript-lines" aria-live="polite">
+                    <div class="empty">
+                      <span>◎</span>
+                      <h3>还没有文字</h3>
+                      <p>录音停顿后会实时出现一行文字。</p>
+                    </div>
+                  </div>
+                  <p class="hint" id="transcript-hint">
+                    点击一行跳到对应录音位置；拖动播放进度条时，当前段落会同步高亮。
+                    时间戳是录音内时间。
+                  </p>
+                </section>
+                <section id="minutes-panel" class="minutes-panel" hidden>
+                  <div class="section-heading">
+                    <h2>会议纪要</h2>
+                    <span class="tag">本地模型 · 待接入</span>
+                  </div>
+                  <div id="minutes-content" class="minutes-content">
+                    会议纪要生成接口已预留。接入本地模型后，会在这里根据当前转写生成
+                    摘要、决议和待办。
+                  </div>
+                </section>
+              </div>
             </article>
           </div>
-          <article class="panel recordings-panel">
-            <div class="section-heading">
-              <h2>录音文件</h2>
-              <span class="tag" id="recordings-count">0 个</span>
-            </div>
-            <p class="hint">
-              点击“转写”查看文字；点击“停止”可结束任意在线会话的录音。
-              录音保存在后端电脑的数据目录，不会进入对话记录。
-            </p>
-            <div id="recordings-list">
-              <div class="empty">
-                <span>◎</span>
-                <h3>还没有录音</h3>
-                <p>在网页客户端或喵伴说“开始录音模式”。</p>
-              </div>
-            </div>
-          </article>
         </section>
         <footer>
           <span>声桥 / VOICEHUB</span><span>一个后端，多种声音入口。</span>

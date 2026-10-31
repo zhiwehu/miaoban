@@ -767,101 +767,214 @@ select {
   padding: 0;
   font-size: 11px;
 }
-.recording-grid {
+.recording-workspace {
   display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 20px;
+  align-items: start;
 }
-.recording-console,
-.recording-live {
-  min-width: 0;
-}
-.recording-hero {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 18px 0 10px;
-}
-.recording-orb {
-  width: 76px;
-  height: 76px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: #e4ebdf;
-  border: 1px solid #c8d5c1;
-  display: grid;
-  place-items: center;
-  transition: box-shadow 0.3s, background 0.3s;
-}
-.recording-orb svg {
-  width: 30px;
-  height: 30px;
-  color: var(--teal);
-}
-.recording-orb.active {
-  background: #f1d6cd;
-  border-color: #dca48f;
-  box-shadow:
-    0 0 0 10px #f8e8e1,
-    0 0 0 11px #efd4c9;
-}
-.recording-orb.confirming {
-  background: #f6e3c9;
-  border-color: #d6a25c;
-}
-.recording-hero-copy {
-  min-width: 0;
-}
-.recording-hero-copy h3 {
-  font-family: "Songti SC", serif;
-  font-size: 21px;
-  margin: 0 0 8px;
-}
-.recording-hero-copy p {
-  font-size: 11px;
-  color: var(--muted);
-  margin: 0;
-}
-.recording-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 18px 0 4px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.recording-stats dt {
-  font-size: 9px;
-  color: var(--muted);
-  letter-spacing: 0.5px;
-}
-.recording-stats dd {
-  margin: 4px 0 0;
-  font-family: "Songti SC", serif;
-  font-size: 15px;
-  overflow-wrap: anywhere;
-}
-.recording-live {
+.recording-history {
   display: flex;
   flex-direction: column;
-  min-height: 520px;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100dvh - 80px);
+  padding: 18px;
 }
-.recording-live .hint {
-  margin-top: auto;
+.recording-refresh {
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+.recording-history-list {
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  scrollbar-width: thin;
+  scrollbar-color: #c8d5c1 transparent;
+}
+.recording-history-list::-webkit-scrollbar {
+  width: 8px;
+}
+.recording-history-list::-webkit-scrollbar-thumb {
+  background: #c8d5c1;
+  border-radius: 4px;
+}
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 13px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.history-item:hover {
+  background: #f4f6ef;
+}
+.history-item.selected {
+  background: #eef3e8;
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+.history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.history-top strong {
+  font-family: "Songti SC", serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+.history-badge {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #eaf0e5;
+  color: #5d7263;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.history-badge.active {
+  background: #f7e4dc;
+  color: #843f2b;
+}
+.history-sub {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.recording-detail {
+  min-width: 0;
+  min-height: 520px;
+  padding: 22px 24px;
+}
+.recording-detail-empty {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+}
+.recording-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.recording-detail-heading {
+  min-width: 0;
+}
+.recording-detail-heading .eyebrow {
+  margin-bottom: 6px;
+}
+.recording-detail-heading h2 {
+  margin: 0 0 7px;
+  font-family: "Songti SC", serif;
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+.recording-detail-heading .hint {
+  margin: 0;
+}
+#recording-detail-state.active {
+  background: #f7e4dc;
+  color: #843f2b;
+}
+.recording-player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.player-play {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--teal);
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fffefa;
+  font-size: 16px;
+  line-height: 1;
+}
+.player-play:hover {
+  background: #1d5143;
+}
+.player-track {
+  flex: 1;
+  min-width: 0;
+}
+#recording-seek {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+.player-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: Menlo, monospace;
+  font-size: 10px;
+}
+#recording-audio {
+  display: none;
+}
+.recording-player-placeholder {
+  margin-top: 16px;
+  padding: 13px 15px;
+  border: 1px dashed #c8d5c1;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.recording-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.recording-detail-actions .secondary,
+.recording-detail-actions .danger {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 13px;
+  font-size: 11px;
+  text-decoration: none;
+}
+.recording-detail-actions .danger {
+  flex: 0 0 auto;
+}
+.recording-action-hint {
+  margin-top: 10px;
+}
+.recording-transcript-panel {
+  margin-top: 20px;
+}
+.recording-transcript-panel .section-heading {
+  margin-bottom: 10px;
 }
 .transcript-lines {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 620px;
-  max-height: min(620px, calc(100dvh - 260px));
+  min-height: 260px;
+  max-height: clamp(260px, calc(100dvh - 430px), 620px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #c8d5c1 transparent;
-  padding: 12px 2px;
+  padding: 10px 2px;
   border-top: 1px solid var(--line);
 }
 .transcript-lines::-webkit-scrollbar {
@@ -871,16 +984,13 @@ select {
   background: #c8d5c1;
   border-radius: 4px;
 }
-.recording-live {
-  scroll-margin-top: 20px;
-}
 .transcript-line {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 7px;
+  margin-bottom: 6px;
   padding: 7px 12px;
-  border-left: 2px solid #c8d5c1;
+  border-left: 2px solid #dbe4d3;
   border-radius: 0 5px 5px 0;
   background: #f7f8f2;
   color: #364039;
@@ -888,33 +998,62 @@ select {
   line-height: 1.9;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.transcript-line:hover {
+  background: #eef3e8;
+}
+.transcript-line.current {
+  border-left-color: var(--teal);
+  background: #e6efe2;
+}
+.transcript-line.unseekable {
+  cursor: default;
 }
 .transcript-line time {
   flex: 0 0 auto;
+  color: var(--muted);
   font-family: Menlo, monospace;
   font-size: 10px;
-  color: var(--muted);
 }
 .transcript-line span {
   min-width: 0;
 }
-.recording-item.selected {
-  background: #f3f6ee;
+.minutes-panel {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
-.recording-item.selected .recording-main strong {
-  color: var(--teal);
+.minutes-content {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f8f2;
+  color: #435048;
+  font-size: 12px;
+  line-height: 1.9;
+  white-space: pre-wrap;
 }
 @media (max-width: 1150px) {
-  .recording-grid {
-    grid-template-columns: 320px minmax(0, 1fr);
+  .recording-workspace {
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 }
 @media (max-width: 850px) {
-  .recording-grid {
+  .recording-workspace {
     grid-template-columns: 1fr;
   }
-  .recording-live {
+  .recording-history {
+    position: static;
+    max-height: none;
+  }
+  .recording-history-list {
+    max-height: 300px;
+  }
+  .recording-detail {
     min-height: 0;
+    padding: 20px 16px;
   }
   .transcript-lines {
     max-height: none;

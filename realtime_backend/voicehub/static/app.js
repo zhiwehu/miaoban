@@ -429,12 +429,12 @@ function observe() {
       else if (e.type === "recording.confirming" &&
                displayedRecording?.id === e.recording?.id) {
         displayedConfirming = true;
-        renderRecordingConsole();
+        renderRecordingDetail();
         renderTranscript();
       } else if (e.type === "recording.confirm_expired" &&
                  displayedRecording?.id === e.recording?.id) {
         displayedConfirming = false;
-        renderRecordingConsole();
+        renderRecordingDetail();
         renderTranscript();
       } else if (e.type === "recording.started") {
         handleRecordingStarted(e.recording).catch(() => {});
@@ -756,7 +756,6 @@ let activeWakeMode = "manual", activeWakePhrase = "";
 let recordings = [], displayedRecording = null;
 let displayedTranscript = [], displayedTranscriptState = "idle";
 let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
-let recordingClockTimer = null, recordingLocalStart = 0;
 let recordingsRefreshTimer = null;
 let identity;
 try {
@@ -813,6 +812,9 @@ function recordingReason(reason) {
     server_restart: "异常重启恢复",
   }[reason] || reason || "未知";
 }
+let currentLineIndex = -1;
+let seekDragging = false;
+
 function activeRecordings() {
   return recordings.filter((item) => item.status === "active");
 }
@@ -821,16 +823,26 @@ function pageRecording() {
     (item) => item.session_id === identity?.session_id,
   ) || null;
 }
+function recordingOrigin(recording) {
+  if (!recording) return "unknown";
+  if (recording.session_id === identity?.session_id) return "web";
+  return recording.device_id?.startsWith("web-") ? "web" : "device";
+}
 function recordingSource(recording) {
   if (!recording) return "—";
   if (recording.session_id === identity?.session_id) return "网页麦克风";
   if (recording.device_id?.startsWith("web-")) return "网页麦克风";
   return recording.device_id ? "喵伴 " + recording.device_id : "未知设备";
 }
-function recordingOrigin(recording) {
-  if (!recording) return "unknown";
-  if (recording.session_id === identity?.session_id) return "web";
-  return recording.device_id?.startsWith("web-") ? "web" : "device";
+function detailDate(seconds) {
+  if (!seconds) return "—";
+  return new Date(seconds * 1000).toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 function syncRecordingControls() {
   const recording = !!pageRecording();
@@ -840,63 +852,158 @@ function syncRecordingControls() {
   $("stop-client").disabled = !clientReady || recording;
   $("disconnect-client").disabled = !socket;
   $("lab-recording-hint").hidden = !recording;
-  renderRecordingConsole();
+  renderRecordingDetail();
 }
-function renderRecordingConsole() {
-  const recording = displayedRecording;
+function resetAudio() {
+  const audio = $("recording-audio");
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  $("recording-seek").max = 0;
+  $("recording-seek").value = 0;
+  $("recording-current").textContent = "00:00";
+  $("recording-total").textContent = "00:00";
+  $("recording-play").textContent = "▶";
+  currentLineIndex = -1;
+}
+function syncAudio(recording) {
+  const audio = $("recording-audio");
   const active = recording?.status === "active";
-  const origin = recordingOrigin(recording);
-  const isWeb = origin === "web";
-  const duration = active
-    ? performance.now() - recordingLocalStart
-    : recording?.duration_ms || 0;
-  $("recordings-state").textContent = active
-    ? isWeb
-      ? "网页录音中"
-      : "喵伴录音中"
-    : recording
-      ? "已停止"
-      : "未录音";
-  $("recordings-title").textContent = active
-    ? "正在录音"
-    : recording
-      ? "录音已保存"
-      : "还没有开始录音";
-  $("recordings-subtitle").textContent = active
-    ? displayedConfirming
-      ? "等待确认：请说“确认停止”，或点停止按钮。"
-      : isWeb
-        ? "网页麦克风正在录音；只保存声音，不回答。"
-        : "喵伴设备正在录音；网页麦克风未参与。"
-    : recording
-      ? recordingSource(recording) + " · " + dateTime(recording.started_at)
-      : "在网页客户端或喵伴说“开始录音模式”后开始。";
-  $("recordings-duration").textContent = active
-    ? formatClock(duration)
-    : formatClock(recording?.duration_ms || 0);
-  $("recordings-source").textContent = recordingSource(recording);
-  const lines = displayedTranscript.length || recording?.transcript_lines || 0;
-  $("recordings-lines").textContent = lines + " 行";
-  $("recordings-orb").classList.toggle("active", !!active);
-  $("recordings-orb").classList.toggle("confirming", !!displayedConfirming);
-  $("recordings-stop").hidden = !active;
-  $("recordings-stop").disabled = !active;
-  const download = $("recordings-download");
-  const downloadable = !!(recording && !active && recording.download_url);
-  download.hidden = !downloadable;
-  if (downloadable) download.href = recording.download_url;
-  $("recording-jump").hidden = !recording;
-  if (active && !recordingClockTimer) {
-    recordingClockTimer = setInterval(() => {
-      if (displayedRecording?.status === "active")
-        $("recordings-duration").textContent = formatClock(
-          performance.now() - recordingLocalStart,
-        );
-    }, 500);
-  } else if (!active && recordingClockTimer) {
-    clearInterval(recordingClockTimer);
-    recordingClockTimer = null;
+  const url = (!active && recording?.download_url) || "";
+  const key = recording ? recording.id + ":" + recording.status : "";
+  if (audio.dataset.key !== key) {
+    audio.dataset.key = key;
+    resetAudio();
+    if (url) {
+      audio.src = url;
+      audio.load();
+    }
   }
+  const player = $("recording-player");
+  const placeholder = $("recording-player-placeholder");
+  if (!recording) {
+    player.hidden = true;
+    placeholder.hidden = true;
+    return;
+  }
+  if (active) {
+    player.hidden = true;
+    placeholder.hidden = false;
+    placeholder.textContent = "录音仍在进行，停止后可以播放、下载和跳转文字。";
+  } else if (url) {
+    player.hidden = false;
+    placeholder.hidden = true;
+  } else {
+    player.hidden = true;
+    placeholder.hidden = false;
+    placeholder.textContent = "音频文件暂不可用。";
+  }
+}
+function renderRecordingDetail() {
+  const recording = displayedRecording;
+  const empty = $("recording-empty");
+  const detail = $("recording-detail");
+  if (!recording) {
+    empty.hidden = false;
+    detail.hidden = true;
+    $("minutes-panel").hidden = true;
+    syncAudio(null);
+    return;
+  }
+  empty.hidden = true;
+  detail.hidden = false;
+  const active = recording.status === "active";
+  const isWeb = recordingOrigin(recording) === "web";
+  const lines = displayedTranscript.length || recording.transcript_lines || 0;
+  $("recording-detail-date").textContent = detailDate(recording.started_at);
+  $("recording-detail-title").textContent = active
+    ? isWeb ? "网页录音" : "喵伴录音"
+    : "录音详情";
+  const meta = [
+    recordingSource(recording),
+    formatClock(recording.duration_ms),
+    lines + " 行",
+    formatBytes(recording.bytes || 0),
+    recording.reason ? recordingReason(recording.reason) : "",
+  ].filter(Boolean);
+  $("recording-detail-meta").textContent = meta.join(" · ");
+  const state = $("recording-detail-state");
+  state.textContent = active
+    ? displayedConfirming
+      ? "等待停止确认"
+      : isWeb ? "网页录音中" : "喵伴录音中"
+    : "已保存";
+  state.classList.toggle("active", active);
+  $("recording-stop").hidden = !active;
+  $("recording-stop").disabled = !active;
+  const hasText = displayedTranscript.length > 0;
+  $("recording-export").disabled = !hasText;
+  $("recording-minutes-button").disabled = !hasText;
+  const download = $("recording-download");
+  const downloadable = !active && !!recording.download_url;
+  download.hidden = !downloadable;
+  if (downloadable) {
+    download.href = recording.download_url;
+    const when = new Date(recording.started_at * 1000);
+    const stamp =
+      when.getFullYear() +
+      String(when.getMonth() + 1).padStart(2, "0") +
+      String(when.getDate()).padStart(2, "0") + "-" +
+      String(when.getHours()).padStart(2, "0") +
+      String(when.getMinutes()).padStart(2, "0");
+    download.download =
+      "voicehub-" + stamp + "-" + recording.id.slice(0, 8) + ".wav";
+  }
+  $("recording-action-hint").textContent = active
+    ? "录音结束后可以播放、下载和点击文字跳转；当前文字可以先行导出。"
+    : "导出为 txt；下载为 WAV；会议纪要使用本地模型，尚未接入。";
+  syncAudio(recording);
+}
+function lineSeconds(line) {
+  if (Number.isFinite(line?.elapsed_ms)) return line.elapsed_ms / 1000;
+  if (line?.stamp) {
+    const parts = line.stamp.split(":").map(Number);
+    if (parts.length === 2 && parts.every(Number.isFinite))
+      return parts[0] * 60 + parts[1];
+    if (parts.length === 3 && parts.every(Number.isFinite))
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return null;
+}
+function highlightAt(seconds, {scroll = false, force = false} = {}) {
+  const target = $("transcript-lines");
+  const rows = [...target.querySelectorAll(".transcript-line")];
+  let index = -1;
+  displayedTranscript.forEach((line, position) => {
+    const start = lineSeconds(line);
+    if (start !== null && start <= seconds + 0.08) index = position;
+  });
+  if (index === currentLineIndex && !force) return;
+  currentLineIndex = index;
+  for (const row of rows) row.classList.remove("current");
+  if (index < 0) return;
+  const row = rows[index];
+  if (!row) return;
+  row.classList.add("current");
+  if (scroll) {
+    const box = target.getBoundingClientRect();
+    const rect = row.getBoundingClientRect();
+    if (rect.top < box.top || rect.bottom > box.bottom)
+      row.scrollIntoView({block: "center", behavior: "smooth"});
+  }
+}
+function transcriptLine(value) {
+  if (typeof value === "string")
+    return {stamp: "", text: value, elapsed_ms: null};
+  const stamp = String(value?.stamp || "");
+  let elapsed = Number.isFinite(value?.elapsed_ms)
+    ? value.elapsed_ms
+    : null;
+  if (elapsed === null && stamp) {
+    const seconds = lineSeconds({stamp});
+    if (seconds !== null) elapsed = seconds * 1000;
+  }
+  return {stamp, text: String(value?.text || ""), elapsed_ms: elapsed};
 }
 function renderTranscript() {
   const target = $("transcript-lines");
@@ -904,31 +1011,52 @@ function renderTranscript() {
     target.scrollHeight - target.scrollTop - target.clientHeight < 80;
   const previousTop = target.scrollTop;
   target.replaceChildren();
+  currentLineIndex = -1;
   let status = "等待录音";
   let hint = "时间戳是录音内时间；停顿后自动换行。转写只使用本机 ASR。";
   if (!displayedRecording) {
-    empty(target, "还没有文字", "每段话停顿后会显示一行；录音中会实时出现。");
+    empty(target, "还没有文字", "选择一条录音或开始录音后，这里会显示文字。");
   } else if (displayedTranscript.length) {
-    for (const value of displayedTranscript) {
-      const line = typeof value === "string" ? {stamp: "", text: value} : value;
+    displayedTranscript.forEach((value, index) => {
+      const line = transcriptLine(value);
       const row = node("div", "transcript-line");
+      row.dataset.index = index;
       if (line.stamp) row.append(node("time", "", line.stamp));
       row.append(node("span", "", line.text));
+      if (displayedRecording.status === "active" || lineSeconds(line) === null) {
+        row.classList.add("unseekable");
+      } else {
+        row.onclick = () => {
+          const seconds = lineSeconds(line);
+          const audio = $("recording-audio");
+          if (seconds === null || !audio.getAttribute("src")) return;
+          audio.currentTime = seconds;
+          $("recording-seek").value = seconds;
+          $("recording-current").textContent = formatClock(seconds * 1000);
+          highlightAt(seconds, {scroll: true, force: true});
+          audio.play().catch(() => {});
+        };
+      }
       target.append(row);
-    }
+    });
     target.scrollTop = stick ? target.scrollHeight : previousTop;
-    status = displayedRecording.status === "active" ? "录音中 · 实时" : "已停止";
-  } else if (transcriptWarning || displayedRecording.transcription_error) {
-    const warning = transcriptWarning || displayedRecording.transcription_error;
-    empty(target, "没有转写", warning);
+    if (displayedRecording.status === "active") {
+      status = "录音中 · 实时";
+      hint = "录音中；停止后可以点击文字或拖动进度条跳转。";
+    } else {
+      status = "已保存";
+      hint = "点击一行跳到对应录音位置；拖动进度条会同步高亮当前段落。";
+    }
+  } else if (transcriptWarning) {
+    empty(target, "没有转写", transcriptWarning);
     status = "无转写";
-    hint = warning;
+    hint = transcriptWarning;
   } else if (displayedTranscriptState === "loading") {
     empty(target, "正在读取转写…", "稍等，正在从本机读取文字。");
     status = "读取中";
   } else if (displayedRecording.status === "active") {
     empty(target, "正在听…", "停顿后会实时出现一行文字。");
-    status = "录音中 · 等待第一行";
+    status = "录音中 · 等待第一段";
   } else {
     empty(target, "没有转写", "这条录音没有可用文字（旧录音或 ASR 不可用）。");
     status = "无转写";
@@ -937,13 +1065,9 @@ function renderTranscript() {
     hint = "等待确认停止：请说“确认停止”，或点停止按钮。";
   $("transcript-status").textContent = status;
   $("transcript-hint").textContent = hint;
-}
-function transcriptLine(value) {
-  if (typeof value === "string") return {stamp: "", text: value};
-  return {
-    stamp: String(value?.stamp || ""),
-    text: String(value?.text || ""),
-  };
+  const audio = $("recording-audio");
+  if (displayedRecording?.status !== "active" && audio.getAttribute("src"))
+    highlightAt(audio.currentTime, {scroll: true, force: true});
 }
 async function loadDisplayedTranscript(recording) {
   const token = ++transcriptFetchToken;
@@ -965,14 +1089,14 @@ async function loadDisplayedTranscript(recording) {
       displayedTranscriptState = "unavailable";
       transcriptWarning = "这条录音没有可用的转写（旧录音或 ASR 不可用）。";
     } else if (!displayedTranscript.length) {
-      displayedTranscriptState = "active";
+      displayedTranscriptState = data.status === "active" ? "active" : "stopped";
       if (recording.transcription_error) {
         transcriptWarning = recording.transcription_error;
         displayedTranscriptState = "unavailable";
       }
     }
     renderTranscript();
-    renderRecordingConsole();
+    renderRecordingDetail();
   } catch (error) {
     if (token !== transcriptFetchToken) return;
     if (!displayedTranscript.length) {
@@ -986,8 +1110,8 @@ async function selectDisplayedRecording(recording, {load = true} = {}) {
   if (!recording) return;
   if (displayedRecording?.id === recording.id) {
     displayedRecording = {...displayedRecording, ...recording};
-    renderRecordingConsole();
-    renderTranscript();
+    renderRecordingDetail();
+    renderRecordings();
     if (load && !displayedTranscript.length)
       await loadDisplayedTranscript(recording);
     return;
@@ -998,8 +1122,10 @@ async function selectDisplayedRecording(recording, {load = true} = {}) {
   displayedConfirming = false;
   transcriptWarning = recording.transcription_error || "";
   transcriptFetchToken++;
-  recordingLocalStart = performance.now() - (recording.duration_ms || 0);
-  renderRecordingConsole();
+  currentLineIndex = -1;
+  $("minutes-panel").hidden = true;
+  renderRecordings();
+  renderRecordingDetail();
   renderTranscript();
   if (load) await loadDisplayedTranscript(recording);
 }
@@ -1015,12 +1141,13 @@ function applyTranscriptEvent(event) {
     displayedTranscript[index] = {
       stamp: event.stamp || displayedTranscript[index].stamp,
       text: event.text,
+      elapsed_ms: displayedTranscript[index].elapsed_ms,
     };
     displayedTranscriptState = "active";
     transcriptWarning = "";
     displayedRecording.transcription_error = null;
     renderTranscript();
-    renderRecordingConsole();
+    renderRecordingDetail();
     return;
   }
   if (event.line <= displayedTranscript.length) return;
@@ -1029,22 +1156,15 @@ function applyTranscriptEvent(event) {
     return;
   }
   displayedTranscript.push({
-    stamp: event.stamp ||
-      (typeof event.elapsed_ms === "number"
-        ? transcriptStamp(event.elapsed_ms)
-        : ""),
+    stamp: event.stamp || "",
     text: event.text,
+    elapsed_ms: typeof event.elapsed_ms === "number" ? event.elapsed_ms : null,
   });
   displayedTranscriptState = "active";
   transcriptWarning = "";
   displayedRecording.transcription_error = null;
-  if (
-    typeof event.lines === "number" &&
-    event.lines > (displayedRecording.transcript_lines || 0)
-  )
-    displayedRecording.transcript_lines = event.lines;
   renderTranscript();
-  renderRecordingConsole();
+  renderRecordingDetail();
 }
 function applyTranscriptionUnavailable(event) {
   if (!displayedRecording || displayedRecording.id !== event.recording_id)
@@ -1066,7 +1186,8 @@ async function handleRecordingStarted(recording) {
   }
   if (displayedRecording.id === recording.id) {
     displayedRecording = {...displayedRecording, ...recording};
-    renderRecordingConsole();
+    renderRecordingDetail();
+    renderRecordings();
   }
 }
 async function handleRecordingStopped(recording) {
@@ -1076,13 +1197,13 @@ async function handleRecordingStopped(recording) {
     return;
   displayedRecording = {...displayedRecording, ...recording};
   displayedConfirming = false;
-  renderRecordingConsole();
-  await loadDisplayedTranscript(displayedRecording);
+  renderRecordingDetail();
   renderRecordings();
+  await loadDisplayedTranscript(displayedRecording);
   notice(
     "录音已保存，共 " +
       formatClock(recording.duration_ms) +
-      "。文字和音频都在下方。",
+      "。音频和文字已可查看。",
   );
 }
 function handleRecordingDeleted(recordingId) {
@@ -1093,8 +1214,12 @@ function handleRecordingDeleted(recordingId) {
   displayedConfirming = false;
   transcriptWarning = "";
   transcriptFetchToken++;
-  renderRecordingConsole();
+  currentLineIndex = -1;
+  $("recording-audio").dataset.key = "";
+  resetAudio();
+  renderRecordingDetail();
   renderTranscript();
+  renderRecordings();
 }
 function scheduleRecordingsRefresh() {
   clearTimeout(recordingsRefreshTimer);
@@ -1116,70 +1241,32 @@ function renderRecordings() {
     scheduleRecordingsRefresh();
     return;
   }
-  for (const recording of recordings.slice(0, 30)) {
+  for (const recording of recordings.slice(0, 60)) {
     const active = recording.status === "active";
-    const row = node(
-      "div",
-      "recording-item" +
+    const item = node(
+      "button",
+      "history-item" +
         (displayedRecording?.id === recording.id ? " selected" : ""),
     );
-    const main = node("div", "recording-main");
-    const title = node(
-      "strong",
-      "",
-      (active ? "录音中 · " : "录音 · ") + formatClock(recording.duration_ms),
-    );
-    const meta = node(
-      "div",
-      "recording-meta",
+    item.type = "button";
+    const top = node("span", "history-top");
+    top.append(node("strong", "", dateTime(recording.started_at)));
+    top.append(node("span", "history-badge" + (active ? " active" : ""),
+                    active ? "录音中" : "已保存"));
+    const sub = node(
+      "span",
+      "history-sub",
       [
-        dateTime(recording.started_at),
-        recordingSource(recording),
-        formatBytes(recording.bytes),
-        recording.transcript_available
-          ? (recording.transcript_lines || 0) + " 行文字"
-          : "无转写",
-        recordingReason(recording.reason),
+        recordingOrigin(recording) === "web" ? "网页" : "喵伴",
+        formatClock(recording.duration_ms),
+        (recording.transcript_lines || 0) + " 行",
       ].join(" · "),
     );
-    main.append(title, meta);
-    if (recording.session_id === identity?.session_id)
-      main.append(node("span", "recording-tag", "本会话"));
-    const actions = node("div", "recording-actions");
-    const transcript = node(
-      "button",
-      "secondary",
-      active ? "查看转写" : "转写",
-    );
-    transcript.onclick = () => {
-      selectDisplayedRecording(recording).catch(() => {});
-      $("transcript-lines").scrollIntoView({behavior: "smooth", block: "center"});
-    };
-    actions.append(transcript);
-    if (active) {
-      const stop = node("button", "danger", "停止");
-      stop.onclick = () => stopRecordingFromList(recording);
-      actions.append(stop);
-    } else {
-      const download = node("a", "secondary", "下载");
-      download.href = recording.download_url;
-      download.download = "";
-      actions.append(download);
-      const remove = node("button", "text-button", "删除");
-      remove.onclick = async () => {
-        if (!confirm("删除这条录音和对应文字？删除后无法恢复。")) return;
-        try {
-          await api("recordings/" + recording.id, {method: "DELETE"});
-          handleRecordingDeleted(recording.id);
-          await loadRecordings();
-        } catch (error) {
-          notice("删除失败：" + error.message, true);
-        }
-      };
-      actions.append(remove);
-    }
-    row.append(main, actions);
-    target.append(row);
+    item.append(top, sub);
+    item.onclick = () =>
+      selectDisplayedRecording(recording).catch((error) =>
+        notice("读取录音失败：" + error.message, true));
+    target.append(item);
   }
   scheduleRecordingsRefresh();
 }
@@ -1197,19 +1284,16 @@ async function loadRecordings() {
     }
   }
   if (!displayedRecording) {
-    const preferred = pageRecording() || activeRecordings()[0] || null;
+    const preferred =
+      pageRecording() || activeRecordings()[0] || recordings[0] || null;
     if (preferred) await selectDisplayedRecording(preferred);
   }
   renderRecordings();
-  renderRecordingConsole();
+  renderRecordingDetail();
   renderTranscript();
   syncRecordingControls();
   scheduleRecordingsRefresh();
 }
-window.addEventListener("voicehub:view", (event) => {
-  if (event.detail === "recordings")
-    loadRecordings().catch((error) => notice("读取录音失败：" + error.message, true));
-});
 async function displayStoppedRecording(recording) {
   if (!displayedRecording || displayedRecording.id !== recording.id) {
     await selectDisplayedRecording(recording);
@@ -1220,19 +1304,14 @@ async function displayStoppedRecording(recording) {
     return;
   displayedRecording = {...displayedRecording, ...recording};
   displayedConfirming = false;
-  renderRecordingConsole();
-  await loadDisplayedTranscript(displayedRecording);
+  renderRecordingDetail();
   renderRecordings();
-  notice(
-    "录音已保存，共 " +
-      formatClock(recording.duration_ms) +
-      "。文字和音频都在下方。",
-  );
+  await loadDisplayedTranscript(displayedRecording);
 }
 async function stopDisplayedRecording() {
   const recording = displayedRecording;
   if (!recording || recording.status !== "active") return;
-  $("recordings-stop").disabled = true;
+  $("recording-stop").disabled = true;
   try {
     const data = await api("recordings/" + recording.id + "/stop", {
       method: "POST",
@@ -1241,7 +1320,7 @@ async function stopDisplayedRecording() {
     await loadRecordings();
   } catch (error) {
     notice("停止录音失败：" + error.message, true);
-    renderRecordingConsole();
+    renderRecordingDetail();
   }
 }
 async function stopRecordingFromList(recording) {
@@ -1249,6 +1328,106 @@ async function stopRecordingFromList(recording) {
     await selectDisplayedRecording(recording, {load: false});
   await stopDisplayedRecording();
 }
+async function exportTranscript() {
+  if (!displayedRecording) return;
+  try {
+    const data = await api("recordings/" + displayedRecording.id + "/transcript");
+    if (!data.available || !data.text) {
+      notice("还没有可导出的文字。", true);
+      return;
+    }
+    const blob = new Blob([data.text + "\n"], {type: "text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const when = new Date(displayedRecording.started_at * 1000);
+    const stamp =
+      when.getFullYear() +
+      String(when.getMonth() + 1).padStart(2, "0") +
+      String(when.getDate()).padStart(2, "0") + "-" +
+      String(when.getHours()).padStart(2, "0") +
+      String(when.getMinutes()).padStart(2, "0");
+    link.href = url;
+    link.download =
+      "voicehub-" + stamp + "-" + displayedRecording.id.slice(0, 8) + ".txt";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    notice("导出文字失败：" + error.message, true);
+  }
+}
+function showMinutesPlaceholder() {
+  if (!displayedRecording) return;
+  const panel = $("minutes-panel");
+  panel.hidden = false;
+  panel.scrollIntoView({behavior: "smooth", block: "start"});
+  notice("会议纪要本地模型尚未接入；这里先保留生成结果的位置。");
+}
+
+const recordingAudio = $("recording-audio");
+const recordingSeek = $("recording-seek");
+recordingAudio.addEventListener("loadedmetadata", () => {
+  const duration = Number.isFinite(recordingAudio.duration)
+    ? recordingAudio.duration
+    : 0;
+  recordingSeek.max = duration;
+  $("recording-total").textContent = formatClock(duration * 1000);
+});
+recordingAudio.addEventListener("timeupdate", () => {
+  $("recording-current").textContent = formatClock(
+    recordingAudio.currentTime * 1000,
+  );
+  if (!seekDragging) recordingSeek.value = recordingAudio.currentTime;
+  if (displayedRecording?.status !== "active")
+    highlightAt(recordingAudio.currentTime, {scroll: !recordingAudio.paused});
+});
+recordingAudio.addEventListener("play", () => {
+  $("recording-play").textContent = "⏸";
+});
+recordingAudio.addEventListener("pause", () => {
+  $("recording-play").textContent = "▶";
+});
+recordingAudio.addEventListener("ended", () => {
+  $("recording-play").textContent = "▶";
+});
+recordingAudio.addEventListener("error", () => {
+  if (!recordingAudio.getAttribute("src")) return;
+  notice("录音音频加载失败，请稍后重试。", true);
+});
+recordingSeek.addEventListener("pointerdown", () => {
+  seekDragging = true;
+});
+recordingSeek.addEventListener("pointerup", () => {
+  seekDragging = false;
+});
+recordingSeek.addEventListener("input", () => {
+  if (!recordingAudio.getAttribute("src")) return;
+  seekDragging = true;
+  recordingAudio.currentTime = Number(recordingSeek.value);
+  $("recording-current").textContent = formatClock(
+    recordingAudio.currentTime * 1000,
+  );
+  highlightAt(recordingAudio.currentTime, {scroll: true, force: true});
+});
+recordingSeek.addEventListener("change", () => {
+  seekDragging = false;
+});
+$("recording-play").onclick = () => {
+  if (!recordingAudio.getAttribute("src")) return;
+  if (recordingAudio.paused)
+    recordingAudio.play().catch(() => notice("无法播放录音。", true));
+  else recordingAudio.pause();
+};
+$("recording-export").onclick = () => exportTranscript();
+$("recording-minutes-button").onclick = () => showMinutesPlaceholder();
+window.addEventListener("voicehub:view", (event) => {
+  if (event.detail === "recordings")
+    loadRecordings().catch((error) =>
+      notice("读取录音失败：" + error.message, true));
+  else
+    recordingAudio.pause();
+});
 
 function clearPlayback() {
   clearTimeout(endTimer);
@@ -1523,7 +1702,7 @@ function openClient() {
       if (e.type === "recording.confirming") {
         if (displayedRecording?.id === e.recording?.id) {
           displayedConfirming = true;
-          renderRecordingConsole();
+          renderRecordingDetail();
           renderTranscript();
         }
         return;
@@ -1531,7 +1710,7 @@ function openClient() {
       if (e.type === "recording.confirm_expired") {
         if (displayedRecording?.id === e.recording?.id) {
           displayedConfirming = false;
-          renderRecordingConsole();
+          renderRecordingDetail();
           renderTranscript();
         }
         return;
@@ -1653,11 +1832,9 @@ function disconnect() {
 $("connect-text").onclick = () => connect(false);
 $("connect-mic").onclick = () => connect(true);
 $("disconnect-client").onclick = disconnect;
-$("recordings-stop").onclick = () => stopDisplayedRecording();
+$("recording-stop").onclick = () => stopDisplayedRecording();
 $("recordings-refresh").onclick = () =>
   loadRecordings().catch((error) => notice("刷新录音失败：" + error.message, true));
-$("recording-jump").onclick = () =>
-  $("transcript-lines").scrollIntoView({behavior: "smooth", block: "start"});
 $("lab-open-recordings").onclick = () => view("recordings");
 $("activate-client").onclick = () => {
   context?.resume().catch(() => {});

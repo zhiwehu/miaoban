@@ -106,7 +106,7 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 - `GET /api/recordings?session_id=<sid>`：列出录音及活动状态；不返回文件路径。
 - `POST /api/recordings`：`{"session_id":"<32 hex>"}` 开始录音；会话必须在线，重复开始返回 409。
 - `POST /api/recordings/{id}/stop`：停止并保存；会话已断线时直接完成文件。
-- `GET /api/recordings/{id}/audio`：下载已完成的 WAV；活动中的文件返回 404。
+- `GET /api/recordings/{id}/audio`：返回已完成 WAV，支持 Range；不带 Content-Disposition，页面内 `<audio>` 与下载链接共用；活动中的文件返回 404。
 - `GET /api/recordings/{id}/transcript`：读取逐行转写（活动录音也可读）；返回
   `{id,status,available,text,lines,count}`。`lines` 每项为
   `{stamp:"mm:ss", elapsed_ms, text}`，`stamp` 是录音内相对时间；没有文字时
