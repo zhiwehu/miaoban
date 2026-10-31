@@ -73,14 +73,17 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
 
     def test_transcript_uses_one_line_per_pause_and_is_deleted_with_audio(self):
         recording = self.manager.start('session-t', 'browser', 'voice')
-        self.assertEqual(recording.append_transcript('第一句话'), (1, '第一句话'))
-        self.assertEqual(recording.append_transcript('第二句话。'), (2, '第二句话。'))
+        self.assertEqual(recording.append_transcript('第一句话', 0), (1, '00:00', '第一句话'))
+        self.assertEqual(recording.append_transcript('第二句话。', 125000),
+                         (2, '02:05', '第二句话。'))
         self.assertIsNone(recording.append_transcript('  \n  '))
         active = self.manager.get(recording.id)
         self.assertTrue(active['transcript_available'])
         self.assertEqual(active['transcript_lines'], 2)
         transcript = self.manager.transcript(recording.id)
-        self.assertEqual(transcript['text'], '第一句话\n第二句话。')
+        self.assertEqual(transcript['text'], '[00:00] 第一句话\n[02:05] 第二句话。')
+        self.assertEqual(transcript['lines'][0]['stamp'], '00:00')
+        self.assertEqual(transcript['lines'][1]['elapsed_ms'], 125000)
         self.assertEqual(transcript['count'], 2)
         transcript_path = recording.transcript_path
         self.assertTrue(transcript_path.is_file())
@@ -130,7 +133,7 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         identity = uuid.uuid4().hex
         path = self.manager.root/f'{identity}.wav'
         path.write_bytes(_wav_header()+b'\0\0'*3200)
-        (self.manager.root/f'{identity}.txt').write_text('崩溃前的一行\n', encoding='utf-8')
+        (self.manager.root/f'{identity}.txt').write_text('[00:03] 崩溃前的一行\n', encoding='utf-8')
         recovered = Recordings(self.root)
         self.addCleanup(recovered.close)
         metadata = recovered.get(identity)
@@ -139,7 +142,8 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metadata['samples'], 3200)
         self.assertTrue(metadata['transcript_available'])
         self.assertEqual(metadata['transcript_lines'], 1)
-        self.assertEqual(recovered.transcript(identity)['text'], '崩溃前的一行')
+        self.assertEqual(recovered.transcript(identity)['text'], '[00:03] 崩溃前的一行')
+        self.assertEqual(recovered.transcript(identity)['lines'][0]['stamp'], '00:03')
         with wave.open(str(path), 'rb') as wav:
             self.assertEqual(wav.getnframes(), 3200)
 

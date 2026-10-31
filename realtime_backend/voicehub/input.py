@@ -101,7 +101,9 @@ class AudioInput:
                         if segment is not None:
                             if (recording_onset and session.recording is recording
                                     and session.recording_listen_allowed()):
-                                session.recording_heard(segment)
+                                start_ms = max(0, round(
+                                    (recording.samples-len(segment))/16000*1000))
+                                session.recording_heard(segment, start_ms)
                             recording_onset = False
                     continue
                 if recording_seen is not None:

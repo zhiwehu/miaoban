@@ -57,11 +57,12 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app[HUB].store.messages(self.sid), [])
 
         self.session.recording.write(b'\x01\x00'*16000)
-        self.session.recording.append_transcript('第一段话')
-        self.session.recording.append_transcript('第二段话')
+        self.session.recording.append_transcript('第一段话', 0)
+        self.session.recording.append_transcript('第二段话', 125000)
         active_transcript = await (await self.client.get(
             f'/api/recordings/{recording["id"]}/transcript')).json()
-        self.assertEqual(active_transcript['text'], '第一段话\n第二段话')
+        self.assertEqual(active_transcript['text'], '[00:00] 第一段话\n[02:05] 第二段话')
+        self.assertEqual([line['stamp'] for line in active_transcript['lines']], ['00:00', '02:05'])
         self.assertEqual(active_transcript['count'], 2)
         self.assertEqual(active_transcript['status'], 'active')
         response = await self.client.post(f'/api/recordings/{recording["id"]}/stop')
@@ -88,7 +89,7 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(wav.readframes(16000), b'\x01\x00'*16000)
         transcript = await (await self.client.get(
             f'/api/recordings/{recording["id"]}/transcript')).json()
-        self.assertEqual(transcript['text'], '第一段话\n第二段话')
+        self.assertEqual(transcript['text'], '[00:00] 第一段话\n[02:05] 第二段话')
         self.assertEqual(transcript['status'], 'stopped')
 
         deleted = await self.client.delete(f'/api/recordings/{recording["id"]}')
@@ -113,11 +114,14 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         second = await wait_message(self.ws, 'recording.transcript')
         self.assertEqual([first['line'], second['line']], [1, 2])
         self.assertEqual([first['text'], second['text']], ['第一段。', '第二段。'])
+        self.assertEqual([first['stamp'], second['stamp']], ['00:00', '00:00'])
         self.assertEqual(second['recording_id'], recording['id'])
         self.assertEqual(second['lines'], 2)
         transcript = await (await self.client.get(
             f'/api/recordings/{recording["id"]}/transcript')).json()
-        self.assertEqual(transcript['text'], '第一段。\n第二段。')
+        self.assertEqual(transcript['text'], '[00:00] 第一段。\n[00:00] 第二段。')
+        self.assertEqual(transcript['count'], 2)
+        self.assertEqual(len(transcript['lines']), 2)
         self.assertEqual(transcript['count'], 2)
         await self.client.post(f'/api/recordings/{recording["id"]}/stop')
 

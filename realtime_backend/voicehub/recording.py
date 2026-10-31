@@ -77,6 +77,25 @@ def duration_text(seconds):
     return f'{hours}小时{minutes}分钟' if minutes else f'{hours}小时'
 
 
+_STAMP = re.compile(r'^\[(\d{1,3}:\d{2}(?::\d{2})?)\]\s?(.*)$')
+
+
+def stamp_text(elapsed_ms):
+    total = max(0, int(elapsed_ms))//1000
+    hours, rest = divmod(total, 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f'{hours}:{minutes:02d}:{seconds:02d}' if hours else f'{minutes:02d}:{seconds:02d}'
+
+
+def stamp_ms(value):
+    parts = [int(part) for part in value.split(':')]
+    if len(parts) == 2:
+        minutes, seconds = parts
+        return (minutes*60+seconds)*1000
+    hours, minutes, seconds = parts
+    return ((hours*60+minutes)*60+seconds)*1000
+
+
 def _wav_header(data_bytes=0):
     return struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 36+data_bytes, b'WAVE', b'fmt ',
                        16, 1, CHANNELS, SAMPLE_RATE, SAMPLE_RATE*CHANNELS*SAMPLE_WIDTH,
@@ -136,8 +155,8 @@ class ActiveRecording:
         self.samples += len(pcm)//SAMPLE_WIDTH
         return 'limit' if over or self.samples >= self.max_samples else None
 
-    def append_transcript(self, text):
-        """Append one VAD segment as one line; returns (line_number, clean_text)."""
+    def append_transcript(self, text, elapsed_ms=0):
+        """Append one VAD segment as one [mm:ss] line; returns (line, stamp, text)."""
         if self.status != 'active':
             return None
         clean = re.sub(r'\s+', ' ', text or '').strip()
@@ -145,13 +164,14 @@ class ActiveRecording:
             return None
         if len(clean) > 4000:
             clean = clean[:4000]
+        stamp = stamp_text(elapsed_ms)
         if self.transcript_file is None:
             self.transcript_file = open(self.transcript_path, 'a', encoding='utf-8')
             os.chmod(self.transcript_path, 0o600)
-        self.transcript_file.write(clean+'\n')
+        self.transcript_file.write(f'[{stamp}] {clean}\n')
         self.transcript_file.flush()
         self.transcript_lines += 1
-        return self.transcript_lines, clean
+        return self.transcript_lines, stamp, clean
 
     def close_transcript(self):
         if self.transcript_file is None:
@@ -292,9 +312,17 @@ class Recordings:
             # A reader can race the next append; drop only the incomplete tail.
             cut = data.rfind('\n')
             data = data[:cut+1] if cut >= 0 else ''
-        lines = data.splitlines()
+        raw_lines = data.splitlines()
+        lines = []
+        for raw in raw_lines:
+            match = _STAMP.match(raw)
+            if match:
+                stamp, text = match.group(1), match.group(2)
+                lines.append({'stamp': stamp, 'elapsed_ms': stamp_ms(stamp), 'text': text})
+            else:
+                lines.append({'stamp': '', 'elapsed_ms': None, 'text': raw})
         return {'id': identity, 'status': metadata.get('status'), 'available': True,
-                'text': '\n'.join(lines), 'count': len(lines)}
+                'text': '\n'.join(raw_lines), 'lines': lines, 'count': len(lines)}
 
     def decorate(self, metadata):
         """Keep older sidecars working without a schema migration."""

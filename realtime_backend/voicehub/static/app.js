@@ -900,12 +900,17 @@ function renderTranscript() {
   const target = $("transcript-lines");
   target.replaceChildren();
   let status = "等待录音";
-  let hint = "停顿后自动换行。转写只使用本机 ASR，文字保存在本机。";
+  let hint = "时间戳是录音内时间；停顿后自动换行。转写只使用本机 ASR。";
   if (!displayedRecording) {
     empty(target, "还没有文字", "每段话停顿后会显示一行；录音中会实时出现。");
   } else if (displayedTranscript.length) {
-    for (const line of displayedTranscript)
-      target.append(node("div", "transcript-line", line));
+    for (const value of displayedTranscript) {
+      const line = typeof value === "string" ? {stamp: "", text: value} : value;
+      const row = node("div", "transcript-line");
+      if (line.stamp) row.append(node("time", "", line.stamp));
+      row.append(node("span", "", line.text));
+      target.append(row);
+    }
     target.scrollTop = target.scrollHeight;
     status = displayedRecording.status === "active" ? "录音中 · 实时" : "已停止";
   } else if (transcriptWarning || displayedRecording.transcription_error) {
@@ -928,13 +933,22 @@ function renderTranscript() {
   $("transcript-status").textContent = status;
   $("transcript-hint").textContent = hint;
 }
+function transcriptLine(value) {
+  if (typeof value === "string") return {stamp: "", text: value};
+  return {
+    stamp: String(value?.stamp || ""),
+    text: String(value?.text || ""),
+  };
+}
 async function loadDisplayedTranscript(recording) {
   const token = ++transcriptFetchToken;
   try {
     const data = await api("recordings/" + recording.id + "/transcript");
     if (token !== transcriptFetchToken) return;
     if (displayedRecording?.id !== recording.id) return;
-    const lines = (data.text || "").split("\n").filter(Boolean);
+    const lines = Array.isArray(data.lines)
+      ? data.lines.map(transcriptLine)
+      : (data.text || "").split("\n").filter(Boolean).map(transcriptLine);
     if (data.available && lines.length >= displayedTranscript.length)
       displayedTranscript = lines;
     if (data.available && lines.length) {
@@ -992,7 +1006,7 @@ function applyTranscriptEvent(event) {
     loadDisplayedTranscript(displayedRecording).catch(() => {});
     return;
   }
-  displayedTranscript.push(event.text);
+  displayedTranscript.push({stamp: event.stamp || "", text: event.text});
   displayedTranscriptState = "active";
   transcriptWarning = "";
   displayedRecording.transcription_error = null;

@@ -125,7 +125,7 @@ class Session:
             await self.interrupt('recording')
         recording = self.recording_manager.start(self.id, self.device_id, trigger)
         self.recording = recording
-        self.recording_queue = asyncio.Queue(maxsize=3)
+        self.recording_queue = asyncio.Queue(maxsize=8)
         self.recording_listen_after = time.monotonic()+.2
         self.recording_asr_notified = False
         worker = self.recording_worker = asyncio.create_task(self._recording_worker())
@@ -177,7 +177,7 @@ class Session:
                     '。可以在网页下载。')
         return metadata
 
-    def recording_heard(self, pcm):
+    def recording_heard(self, pcm, elapsed_ms=None):
         """Queue one VAD segment for stop detection and live transcription."""
         if not self.recording or self.recording.stopping or self.recording_queue is None:
             return
@@ -185,7 +185,7 @@ class Session:
             with contextlib.suppress(asyncio.QueueEmpty):
                 self.recording_queue.get_nowait()
         with contextlib.suppress(asyncio.QueueFull):
-            self.recording_queue.put_nowait(pcm)
+            self.recording_queue.put_nowait((pcm, elapsed_ms))
 
     async def recording_transcription_unavailable(self, message):
         if not self.recording or self.recording_asr_notified:
@@ -249,9 +249,10 @@ class Session:
     async def _recording_worker(self):
         try:
             while self.recording is not None:
-                pcm = await self.recording_queue.get()
-                if pcm is None or self.recording is None:
+                item = await self.recording_queue.get()
+                if item is None or self.recording is None:
                     return
+                pcm, started_ms = item
                 if not self.recording_listen_allowed() and not self.recording.stopping:
                     continue
                 try:
@@ -281,18 +282,20 @@ class Session:
                     handled = True
                     await self.stop_recording('voice', speak=True)
                 if not handled and self.recording is recording:
+                    elapsed_ms = (started_ms if started_ms is not None
+                                  else round(recording.duration*1000))
                     try:
-                        appended = recording.append_transcript(text)
+                        appended = recording.append_transcript(text, elapsed_ms)
                     except OSError:
                         await self.recording_transcription_unavailable(
                             '转写写入失败，录音仍在继续；请检查磁盘空间。')
                         continue
                     if appended:
-                        line, clean = appended
+                        line, stamp, clean = appended
                         await self.emit('recording.transcript',
                                         recording_id=recording.id, line=line,
-                                        text=clean, lines=recording.transcript_lines,
-                                        elapsed_ms=round(recording.duration*1000))
+                                        text=clean, stamp=stamp, lines=recording.transcript_lines,
+                                        elapsed_ms=elapsed_ms)
         except asyncio.CancelledError:
             pass
 

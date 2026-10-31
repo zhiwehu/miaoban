@@ -135,8 +135,10 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         event = next(event for event in self.events if event['type'] == 'recording.transcript')
         self.assertEqual(event['line'], 1)
         self.assertEqual(event['text'], '把会议室灯关一下')
+        self.assertEqual(event['stamp'], '00:00')
         transcript = self.manager.transcript(self.session.recording.id)
-        self.assertEqual(transcript['text'], '把会议室灯关一下')
+        self.assertEqual(transcript['text'], '[00:00] 把会议室灯关一下')
+        self.assertEqual(transcript['lines'][0]['stamp'], '00:00')
         self.assertEqual(transcript['count'], 1)
 
     async def test_each_pause_becomes_one_transcript_line(self):
@@ -147,11 +149,13 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         self.session.recording_heard(np.zeros(1600, dtype=np.float32))
         await wait_for(lambda: self.manager.transcript(recording.id)['count'] >= 2)
         transcript = self.manager.transcript(recording.id)
-        self.assertEqual(transcript['text'], '第一段话。\n第二段话。')
+        self.assertEqual(transcript['text'], '[00:00] 第一段话。\n[00:00] 第二段话。')
+        self.assertEqual([line['stamp'] for line in transcript['lines']], ['00:00', '00:00'])
         self.assertEqual(transcript['count'], 2)
         events = [event for event in self.events if event['type'] == 'recording.transcript']
         self.assertEqual([event['line'] for event in events], [1, 2])
         self.assertEqual([event['text'] for event in events], ['第一段话。', '第二段话。'])
+        self.assertEqual([event['stamp'] for event in events], ['00:00', '00:00'])
         metadata = await self.session.stop_recording('web')
         self.assertTrue(metadata['transcript_available'])
         self.assertEqual(metadata['transcript_lines'], 2)
@@ -170,7 +174,7 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(.05)
         metadata = await self.session.stop_recording('web')
         transcript = self.manager.transcript(recording.id)
-        self.assertEqual(transcript['text'], '最后一句')
+        self.assertEqual(transcript['text'], '[00:00] 最后一句')
         self.assertEqual(transcript['count'], 1)
         self.assertEqual(metadata['transcript_lines'], 1)
 

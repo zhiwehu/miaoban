@@ -75,7 +75,7 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 | recording.confirming | recording, expires_in=20；先说了一次“停止录音模式”，等待“确认停止” |
 | recording.confirm_expired | recording；20 秒内没有确认，继续录音 |
 | recording.stopped | recording；此时 download_url 可用 |
-| recording.transcript | recording_id, line（1 起）, text, lines, elapsed_ms；每段 VAD 停顿后的实时转写行 |
+| recording.transcript | recording_id, line（1 起）, text, stamp（录音内 mm:ss）, lines, elapsed_ms；每段 VAD 停顿后的实时转写行 |
 | recording.transcription_unavailable | message；VAD/ASR 不可用或使用 HTTP ASR，录音仍在继续 |
 | recording.input_ignored | message；录音模式下收到的文字消息被忽略 |
 | error | code, message, 可选 error_class |
@@ -106,7 +106,9 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 - `POST /api/recordings/{id}/stop`：停止并保存；会话已断线时直接完成文件。
 - `GET /api/recordings/{id}/audio`：下载已完成的 WAV；活动中的文件返回 404。
 - `GET /api/recordings/{id}/transcript`：读取逐行转写（活动录音也可读）；返回
-  `{id,status,available,text,count}`，没有文字时 `available=false`。
+  `{id,status,available,text,lines,count}`。`lines` 每项为
+  `{stamp:"mm:ss", elapsed_ms, text}`，`stamp` 是录音内相对时间；没有文字时
+  `available=false`。保存到磁盘的 `<id>.txt` 每行同样带 `[mm:ss]`。
 - `DELETE /api/recordings/{id}`：删除 WAV、txt 与元数据；活动中的录音返回 409。
 
 管理事件流积压超过 256 条时发 `events.resync`，应重新请求会话/日志快照。

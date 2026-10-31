@@ -858,6 +858,9 @@ select {
   border-top: 1px solid var(--line);
 }
 .transcript-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   margin-bottom: 7px;
   padding: 7px 12px;
   border-left: 2px solid #c8d5c1;
@@ -868,6 +871,15 @@ select {
   line-height: 1.9;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.transcript-line time {
+  flex: 0 0 auto;
+  font-family: Menlo, monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+.transcript-line span {
+  min-width: 0;
 }
 .recording-item.selected {
   background: #f3f6ee;
