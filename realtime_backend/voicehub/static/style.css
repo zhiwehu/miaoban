@@ -770,22 +770,27 @@ select {
 .recording-workspace {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
+  gap: 18px;
+  align-items: stretch;
+  height: calc(100dvh - 193px);
+  min-height: 560px;
+}
+body[data-view="recordings"] footer {
+  display: none;
 }
 .recording-history {
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 20px;
-  max-height: calc(100dvh - 80px);
-  padding: 18px;
+  height: 100%;
+  min-height: 0;
+  padding: 15px 16px;
 }
 .recording-refresh {
   align-self: flex-start;
   margin-bottom: 8px;
 }
 .recording-history-list {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   border-top: 1px solid var(--line);
@@ -851,37 +856,53 @@ select {
   overflow-wrap: anywhere;
 }
 .recording-detail {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 520px;
-  padding: 22px 24px;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 15px 18px;
 }
 .recording-detail-empty {
-  min-height: 420px;
+  flex: 1;
+  min-height: 0;
   display: grid;
   place-items: center;
+}
+#recording-detail:not([hidden]) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 .recording-detail-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 16px;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  padding-bottom: 9px;
   border-bottom: 1px solid var(--line);
 }
 .recording-detail-heading {
   min-width: 0;
 }
 .recording-detail-heading .eyebrow {
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 .recording-detail-heading h2 {
-  margin: 0 0 7px;
+  margin: 0 0 3px;
   font-family: "Songti SC", serif;
-  font-size: 24px;
+  font-size: 21px;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 .recording-detail-heading .hint {
   margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
 }
 #recording-detail-state.active {
   background: #f7e4dc;
@@ -890,14 +911,15 @@ select {
 .recording-player {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 0;
+  gap: 11px;
+  flex: 0 0 auto;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
 .player-play {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--teal);
   border-radius: 50%;
   background: var(--teal);
@@ -930,44 +952,55 @@ select {
   display: none;
 }
 .recording-player-placeholder {
-  margin-top: 16px;
-  padding: 13px 15px;
+  flex: 0 0 auto;
+  margin-top: 9px;
+  padding: 8px 11px;
   border: 1px dashed #c8d5c1;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.8;
+  font-size: 10px;
+  line-height: 1.5;
 }
 .recording-detail-actions {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
+  flex: 0 0 auto;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: 9px;
 }
 .recording-detail-actions .secondary,
 .recording-detail-actions .danger {
   display: inline-flex;
   align-items: center;
-  padding: 8px 13px;
-  font-size: 11px;
+  padding: 6px 10px;
+  font-size: 10px;
   text-decoration: none;
 }
 .recording-detail-actions .danger {
   flex: 0 0 auto;
 }
 .recording-action-hint {
-  margin-top: 10px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 1.5;
 }
 .recording-transcript-panel {
-  margin-top: 20px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 9px;
 }
 .recording-transcript-panel .section-heading {
-  margin-bottom: 10px;
+  flex: 0 0 auto;
+  margin-bottom: 6px;
 }
 .transcript-lines {
-  min-height: 260px;
-  max-height: clamp(260px, calc(100dvh - 430px), 620px);
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -987,15 +1020,15 @@ select {
 .transcript-line {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 6px;
-  padding: 7px 12px;
+  gap: 9px;
+  margin-bottom: 5px;
+  padding: 6px 10px;
   border-left: 2px solid #dbe4d3;
   border-radius: 0 5px 5px 0;
   background: #f7f8f2;
   color: #364039;
-  font-size: 13px;
-  line-height: 1.9;
+  font-size: 12.5px;
+  line-height: 1.78;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   cursor: pointer;
@@ -1050,8 +1083,11 @@ select {
   min-width: 0;
 }
 .minutes-panel {
-  margin-top: 18px;
-  padding-top: 16px;
+  flex: 0 1 auto;
+  max-height: 44%;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
 }
 .minutes-toolbar {
@@ -1305,22 +1341,36 @@ select {
 @media (max-width: 850px) {
   .recording-workspace {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
   }
   .recording-history {
     position: static;
-    max-height: none;
-  }
-  .recording-history-list {
+    height: auto;
     max-height: 300px;
   }
+  .recording-history-list {
+    max-height: 250px;
+  }
   .recording-detail {
+    height: auto;
+    min-height: 560px;
+    overflow: visible;
+    padding: 16px;
+  }
+  #recording-detail:not([hidden]) {
+    flex: none;
+    height: auto;
     min-height: 0;
-    padding: 20px 16px;
   }
   .transcript-lines {
+    min-height: 260px;
+    max-height: 55vh;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  .minutes-panel {
     max-height: none;
-    overflow: visible;
-    scrollbar-gutter: auto;
   }
 }
 .danger {
@@ -1811,7 +1861,10 @@ footer {
   font-size: 10px;
 }
 .player-source {
+  display: inline-block;
   flex: 0 0 auto;
+  width: auto;
+  margin-top: 0;
   padding: 6px 7px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1822,19 +1875,28 @@ footer {
 }
 .cleanup-control {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   color: var(--muted);
   font-size: 10px;
+  white-space: nowrap;
+}
+.cleanup-control span {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .cleanup-control select {
-  padding: 5px 6px;
+  display: inline-block;
+  width: auto;
+  margin-top: 0;
+  padding: 4px 5px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: #fffdf8;
   color: #55645a;
   font: inherit;
-  font-size: 10px;
+  font-size: 9px;
 }
 #recording-clean.is-busy {
   opacity: .6;

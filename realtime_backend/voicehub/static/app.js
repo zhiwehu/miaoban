@@ -99,6 +99,7 @@ function view(name) {
   if (!["overview", "conversations", "connections", "models", "mcp", "logs", "recordings", "lab"].includes(name))
     name = "overview";
   state.view = name;
+  document.body.dataset.view = name;
   document
     .querySelectorAll("[data-panel]")
     .forEach((el) => (el.hidden = el.dataset.panel !== name));
@@ -1041,7 +1042,8 @@ function highlightAt(seconds, {scroll = false, force = false} = {}) {
     const box = target.getBoundingClientRect();
     const rect = row.getBoundingClientRect();
     if (rect.top < box.top || rect.bottom > box.bottom)
-      row.scrollIntoView({block: "center", behavior: "smooth"});
+      row.scrollIntoView({block: index === 0 ? "start" : "center",
+                          behavior: "smooth"});
   }
 }
 function transcriptLine(value) {
@@ -1128,8 +1130,12 @@ function renderTranscript() {
   $("transcript-status").textContent = status;
   $("transcript-hint").textContent = hint;
   const audio = $("recording-audio");
-  if (displayedRecording?.status !== "active" && audio.getAttribute("src"))
-    highlightAt(audio.currentTime, {scroll: true, force: true});
+  if (displayedRecording?.status !== "active") {
+    const atStart = !audio.getAttribute("src") || audio.currentTime < .5;
+    if (atStart) target.scrollTop = 0;
+    if (audio.getAttribute("src"))
+      highlightAt(audio.currentTime, {scroll: !atStart, force: true});
+  }
 }
 async function loadDisplayedTranscript(recording) {
   const token = ++transcriptFetchToken;
