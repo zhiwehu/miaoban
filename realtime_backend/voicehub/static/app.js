@@ -784,7 +784,7 @@ let minutesTemplates = null, minutesJobs = [], minutesJob = null;
 let minutesPollTimer = null, minutesModelId = "", minutesRecordingId = null;
 let speechMap = null;
 let allowRecordingPlayback = false;
-let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
+let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0, activeTranscriptTimer = null;
 let recordingsRefreshTimer = null;
 let identity;
 try {
@@ -1086,11 +1086,11 @@ function renderTranscript() {
   let hint = "时间戳是录音内时间；停顿后自动换行。转写只使用本机 ASR。";
   if (!displayedRecording) {
     empty(target, "还没有文字", "选择一条录音或开始录音后，这里会显示文字。");
-  } else if (displayedRecording.status === "active") {
-    empty(target, "正在录音…", "声音正在保存；停止后自动做完整精转写和纪要。");
-    status = "录音中 · 正在保存";
-    hint = "录音时在后台转写，但不在页面实时显示；停止后会做一次更准确的完整转写和说话人分析。";
-  } else if (displayedRecording.finalizing) {
+  } else if (displayedRecording.status === "active" && !displayedTranscript.length) {
+    empty(target, "正在录音…", "声音正在保存；文字会按自然停顿陆续出现。");
+    status = "录音中 · 后台转写";
+    hint = "录音时后台转写，不做实时说话人；停止后统一精转写并生成纪要。";
+  } else if (displayedRecording.finalizing && !displayedTranscript.length) {
     empty(target, "正在精转写…", "录音已保存；完整转写、说话人分析和模板纪要完成后会自动显示。");
     status = "精转写中";
     hint = "不需要保持页面打开；录音和后台文字已经保存。";
@@ -1124,8 +1124,16 @@ function renderTranscript() {
       target.append(row);
     });
     target.scrollTop = stick ? target.scrollHeight : previousTop;
-    status = "已保存";
-    hint = "点击一行跳到对应录音位置；拖动进度条会同步高亮当前段落。";
+    if (displayedRecording.status === "active") {
+      status = "录音中 · 后台转写";
+      hint = "文字按自然停顿陆续出现；说话人标签会在停止后统一分析。";
+    } else if (displayedRecording.finalizing) {
+      status = "精转写中";
+      hint = "正在做完整转写、说话人分析和纪要；完成后会自动刷新。";
+    } else {
+      status = "已保存";
+      hint = "点击一行跳到对应录音位置；拖动进度条会同步高亮当前段落。";
+    }
   } else if (transcriptWarning) {
     empty(target, "没有转写", transcriptWarning);
     status = "无转写";
@@ -1133,6 +1141,10 @@ function renderTranscript() {
   } else if (displayedTranscriptState === "loading") {
     empty(target, "正在读取转写…", "稍等，正在从本机读取文字。");
     status = "读取中";
+  } else if (displayedRecording.status === "active") {
+    empty(target, "正在录音…", "声音正在保存；文字会按自然停顿陆续出现。");
+    status = "录音中 · 后台转写";
+    hint = "录音时后台转写，不做实时说话人；停止后统一精转写并生成纪要。";
   } else {
     empty(target, "没有转写", "这条录音没有可用文字（旧录音或 ASR 不可用）。");
     status = "无转写";
@@ -1143,6 +1155,13 @@ function renderTranscript() {
     hint += " 说话人由本机声纹自动分组，可能受短句或重叠说话影响。";
   $("transcript-status").textContent = status;
   $("transcript-hint").textContent = hint;
+  clearTimeout(activeTranscriptTimer);
+  if (displayedRecording?.status === "active") {
+    activeTranscriptTimer = setTimeout(() => {
+      if (displayedRecording?.status === "active")
+        loadDisplayedTranscript(displayedRecording).catch(() => {});
+    }, 5000);
+  }
   const audio = $("recording-audio");
   if (displayedRecording?.status !== "active") {
     const atStart = !audio.getAttribute("src") || audio.currentTime < .5;

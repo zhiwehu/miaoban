@@ -415,14 +415,13 @@ class Session:
                             if not result:
                                 continue
                             line, stamp, clean = result
-                            if self.recording_live_display:
-                                await self.emit('recording.transcript',
-                                                recording_id=recording.id, line=line,
-                                                text=clean, stamp=stamp,
-                                                lines=recording.transcript_lines,
-                                                elapsed_ms=round(run_elapsed),
-                                                speaker=speaker, speaker_id=speaker_id,
-                                                merged=bool(merged))
+                            await self.emit('recording.transcript',
+                                            recording_id=recording.id, line=line,
+                                            text=clean, stamp=stamp,
+                                            lines=recording.transcript_lines,
+                                            elapsed_ms=round(run_elapsed),
+                                            speaker=speaker, speaker_id=speaker_id,
+                                            merged=bool(merged))
                     except OSError:
                         await self.recording_transcription_unavailable(
                             '转写写入失败，录音仍在继续；请检查磁盘空间。')
