@@ -411,6 +411,12 @@
                 </div>
                 <h3 id="client-phase">准备好，就开始聊</h3>
                 <p id="client-detail">可先用文字检查模型，再开启麦克风。</p>
+                <div id="recording-strip" class="recording-strip" role="status" hidden>
+                  <span class="recording-dot" aria-hidden="true"></span>
+                  <strong>录音中</strong>
+                  <span id="recording-clock" class="recording-clock">00:00</span>
+                  <span id="recording-note" class="recording-note">只录音，不回答</span>
+                </div>
               </div>
               <label
                 >此客户端的唤醒方式<select id="client-wake">
@@ -425,6 +431,18 @@
               </select></label>
               <label>麦克风音量<meter id="microphone-level" min="0" max="1" value="0"></meter></label>
               <p class="hint" id="microphone-status" role="status">麦克风未开启</p>
+              <div class="button-row recording-row">
+                <button id="start-recording" class="secondary" disabled>
+                  开始录音</button
+                ><button id="stop-recording" class="danger" disabled>
+                  停止并保存</button
+                ><a id="recording-download" class="secondary recording-download" hidden>
+                  下载最近录音</a>
+              </div>
+              <p class="hint">
+                对着麦克风说“开始录音模式”也会开始。录音时只保存声音、不回答；
+                说“停止录音模式”后还要再说一次“确认停止”，或者点“停止并保存”、按喵伴开关键结束。
+              </p>
               <div class="button-row">
                 <button id="connect-text" class="secondary">连接文字</button
                 ><button id="connect-mic" class="primary">开启麦克风</button>
@@ -440,7 +458,7 @@
               </div>
               <p class="hint">
                 浏览器需要麦克风授权。手机访问需 HTTPS；本机 localhost
-                可直接使用。后端唤醒会持续上传音频。
+                可直接使用。后端唤醒会持续上传音频。断开连接会先保存正在进行的录音。
               </p>
             </article>
             <article class="panel lab-dialogue">
@@ -468,6 +486,22 @@
               </form>
             </article>
           </div>
+          <article class="panel recordings-panel">
+            <div class="section-heading">
+              <h2>录音文件</h2>
+              <span class="tag" id="recordings-count">0 个</span>
+            </div>
+            <p class="hint">
+              录音只保存在后端电脑的数据目录里，不会进入对话记录。列表中可以停止任何在线会话的录音，也可以下载或删除已完成的录音。
+            </p>
+            <div id="recordings-list">
+              <div class="empty">
+                <span>◎</span>
+                <h3>还没有录音</h3>
+                <p>开启麦克风后说“开始录音模式”，或点“开始录音”。</p>
+              </div>
+            </div>
+          </article>
         </section>
         <footer>
           <span>声桥 / VOICEHUB</span><span>一个后端，多种声音入口。</span>

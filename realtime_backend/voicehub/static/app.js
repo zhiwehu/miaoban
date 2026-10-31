@@ -18,6 +18,7 @@ const labels = {
   listening: "聆听中",
   thinking: "思考中",
   speaking: "播报中",
+  recording: "录音中",
   disconnected: "已断开",
 };
 const eventLabels = {
@@ -35,6 +36,12 @@ const eventLabels = {
   "config.saved": "配置已保存",
   "transcript.final": "识别完成",
   "reply.final": "回复生成完成",
+  "recording.started": "开始录音",
+  "recording.confirming": "等待停止确认",
+  "recording.confirm_expired": "停止确认超时",
+  "recording.stopped": "录音已保存",
+  "recording.input_ignored": "录音中忽略文字",
+  "recording.voice_stop_unavailable": "语音停止不可用",
   "tool.started": "工具查询中",
   "tool.completed": "工具查询完成",
   "tool.failed": "工具查询失败",
@@ -412,6 +419,13 @@ function observe() {
       if (state.selected === e.session_id) renderMessages($('messages'),state.messages,state.selected);
       if (identity?.session_id === e.session_id) renderLab();
     }
+    if (e.type.startsWith("recording.")) {
+      if (e.type === "recording.stopped" && e.session_id === identity?.session_id)
+        applyRecordingStopped(e.recording);
+      if (["recording.started", "recording.stopped", "recording.deleted"].includes(e.type))
+        loadRecordings().catch(() => {});
+      return;
+    }
     if (e.type === "reply.delta") {
       const item = state.live.get(e.turn_id) || {
         sid: e.session_id,
@@ -437,6 +451,8 @@ function observe() {
       if (e.type === "session.disconnected")
         for (const [key, value] of state.live)
           if (value.sid === e.session_id) state.live.delete(key);
+      if (e.type === "session.disconnected")
+        setTimeout(() => loadRecordings().catch(() => {}), 300);
     }
     scheduleRefresh();
   };
@@ -715,6 +731,9 @@ let manualDisconnect = false,
   partial = "",
   clientReady = false;
 let activeWakeMode = "manual", activeWakePhrase = "";
+let activeRecording = null, recordings = [], lastRecording = null;
+let recordingClockTimer = null, recordingLocalStart = 0, lastRecordingSavedAt = 0;
+let recordingsRefreshTimer = null;
 let identity;
 try {
   identity = JSON.parse(sessionStorage.getItem("voicehub-client") || "null");
@@ -731,6 +750,224 @@ function setClientReady(ready) {
   $("activate-client").disabled = !ready;
   $("stop-client").disabled = !ready;
   $("disconnect-client").disabled = !socket;
+  syncRecordingControls();
+}
+function formatClock(milliseconds) {
+  const total = Math.max(0, Math.floor((milliseconds || 0) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const clock = hours
+    ? hours + ":" + String(minutes).padStart(2, "0")
+    : String(minutes);
+  return clock + ":" + String(seconds).padStart(2, "0");
+}
+function formatBytes(bytes) {
+  if (!bytes) return "0 KB";
+  if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+}
+function recordingReason(reason) {
+  return {
+    web: "网页停止",
+    voice: "语音确认停止",
+    client: "客户端按键",
+    disconnect: "连接断开",
+    limit: "达到时长上限",
+    storage_error: "写入失败",
+    server_shutdown: "服务关闭",
+    server_restart: "异常重启恢复",
+  }[reason] || reason || "未知";
+}
+function syncRecordingControls() {
+  const recording = !!activeRecording;
+  $("start-recording").disabled = !(clientReady && stream && !recording);
+  $("stop-recording").disabled = !recording;
+  $("send-text").disabled = !clientReady || recording;
+  $("client-text").disabled = recording;
+  $("activate-client").disabled = !clientReady || recording;
+  $("stop-client").disabled = !clientReady || recording;
+  $("disconnect-client").disabled = !socket;
+}
+function updateRecordingClock() {
+  if (!activeRecording) return;
+  $("recording-clock").textContent = formatClock(
+    performance.now() - recordingLocalStart,
+  );
+}
+function clearRecordingUi() {
+  activeRecording = null;
+  clearInterval(recordingClockTimer);
+  recordingClockTimer = null;
+  const strip = $("recording-strip");
+  if (strip) {
+    strip.hidden = true;
+    strip.classList.remove("confirming");
+  }
+  $("mic-orb").classList.remove("recording");
+  syncRecordingControls();
+}
+function adoptRecording(recording) {
+  if (!recording || recording.status !== "active") return;
+  if (activeRecording?.id === recording.id) {
+    activeRecording = {...activeRecording, ...recording};
+    return;
+  }
+  activeRecording = recording;
+  recordingLocalStart =
+    performance.now() - Math.max(0, recording.duration_ms || 0);
+  const strip = $("recording-strip");
+  strip.hidden = false;
+  strip.classList.remove("confirming");
+  $("recording-clock").textContent = formatClock(recording.duration_ms || 0);
+  $("recording-note").textContent = "只录音，不回答";
+  $("mic-orb").classList.add("recording");
+  clearInterval(recordingClockTimer);
+  recordingClockTimer = setInterval(updateRecordingClock, 500);
+  syncRecordingControls();
+  phase(
+    "recording",
+    "录音中，只保存声音，不回答。点“停止并保存”结束，设备上按开关键也可以。",
+  );
+}
+function applyRecordingStopped(recording) {
+  if (!recording) return;
+  const owned = activeRecording?.id === recording.id;
+  lastRecording = recording;
+  lastRecordingSavedAt = Date.now();
+  $("recording-download").href =
+    recording.download_url || "/api/recordings/" + recording.id + "/audio";
+  $("recording-download").hidden = false;
+  if (owned) {
+    clearRecordingUi();
+    phase(
+      "listening",
+      "录音已保存，共 " + formatClock(recording.duration_ms) + "。可在下方“录音文件”下载。",
+    );
+  }
+  notice(
+    "录音已保存，共 " + formatClock(recording.duration_ms) +
+      "。可在下方“录音文件”下载。",
+  );
+}
+async function loadRecordings() {
+  const data = await api("recordings");
+  recordings = data.recordings || [];
+  const current = recordings.find(
+    (item) => item.status === "active" && item.session_id === identity?.session_id,
+  );
+  if (current) adoptRecording(current);
+  else if (activeRecording) {
+    const known = recordings.find((item) => item.id === activeRecording.id);
+    if (known && known.status !== "active") applyRecordingStopped(known);
+    else clearRecordingUi();
+  }
+  renderRecordings();
+}
+function scheduleRecordingsRefresh() {
+  clearTimeout(recordingsRefreshTimer);
+  recordingsRefreshTimer = recordings.some((item) => item.status === "active")
+    ? setTimeout(() => loadRecordings().catch(() => {}), 5000)
+    : null;
+}
+function renderRecordings() {
+  const target = $("recordings-list");
+  if (!target) return;
+  $("recordings-count").textContent = recordings.length + " 个";
+  target.replaceChildren();
+  if (!recordings.length) {
+    empty(
+      target,
+      "还没有录音",
+      "开启麦克风后说“开始录音模式”，或点“开始录音”。",
+    );
+    scheduleRecordingsRefresh();
+    return;
+  }
+  for (const recording of recordings.slice(0, 30)) {
+    const row = node("div", "recording-item");
+    const main = node("div", "recording-main");
+    const title = node(
+      "strong",
+      "",
+      recording.status === "active"
+        ? "录音中 · " + formatClock(recording.duration_ms)
+        : "录音 · " + formatClock(recording.duration_ms),
+    );
+    const meta = node(
+      "div",
+      "recording-meta",
+      [
+        dateTime(recording.started_at),
+        recording.device_id || "未知设备",
+        formatBytes(recording.bytes),
+        recordingReason(recording.reason),
+      ].join(" · "),
+    );
+    main.append(title, meta);
+    if (recording.session_id === identity?.session_id)
+      main.append(node("span", "recording-tag", "本会话"));
+    const actions = node("div", "recording-actions");
+    if (recording.status === "active") {
+      const stop = node("button", "danger", "停止");
+      stop.onclick = () => stopRecording(recording);
+      actions.append(stop);
+    } else {
+      const download = node("a", "secondary", "下载");
+      download.href =
+        recording.download_url ||
+        "/api/recordings/" + recording.id + "/audio";
+      download.download = "";
+      actions.append(download);
+      const remove = node("button", "text-button", "删除");
+      remove.onclick = async () => {
+        if (!confirm("删除这条录音？删除后无法恢复。")) return;
+        try {
+          await api("recordings/" + recording.id, {method: "DELETE"});
+          await loadRecordings();
+        } catch (error) {
+          notice("删除失败：" + error.message, true);
+        }
+      };
+      actions.append(remove);
+    }
+    row.append(main, actions);
+    target.append(row);
+  }
+  scheduleRecordingsRefresh();
+}
+async function startRecording() {
+  if (!clientReady || !stream || !identity?.session_id) {
+    notice("请先开启麦克风，再开始录音。", true);
+    return;
+  }
+  $("start-recording").disabled = true;
+  try {
+    const data = await api("recordings", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: identity.session_id}),
+    });
+    adoptRecording(data.recording);
+    await loadRecordings();
+  } catch (error) {
+    notice("无法开始录音：" + error.message, true);
+    syncRecordingControls();
+  }
+}
+async function stopRecording(recording = activeRecording) {
+  if (!recording) return;
+  $("stop-recording").disabled = true;
+  try {
+    const data = await api("recordings/" + recording.id + "/stop", {
+      method: "POST",
+    });
+    applyRecordingStopped(data.recording);
+    await loadRecordings();
+  } catch (error) {
+    notice("停止录音失败：" + error.message, true);
+    syncRecordingControls();
+  }
 }
 function clearPlayback() {
   clearTimeout(endTimer);
@@ -825,6 +1062,7 @@ async function microphone() {
     capture.onprocessorerror = () => notice("音频采集已停止，请重新开启麦克风。", true);
     renderMicrophone();
     await refreshMicrophones().catch(() => {});
+    syncRecordingControls();
   } catch (e) {
     stopMicrophone();
     throw e;
@@ -840,6 +1078,7 @@ function stopMicrophone() {
   micSource?.disconnect(); capture?.disconnect(); mute?.disconnect();
   capture = null; micSource = null; mute = null;
   renderMicrophone();
+  syncRecordingControls();
 }
 setInterval(() => { if (stream) renderMicrophone(); }, 1000);
 navigator.mediaDevices?.addEventListener("devicechange", () => refreshMicrophones().catch(() => {}));
@@ -886,6 +1125,7 @@ async function connect(useMic = false) {
       socket = null;
       setClientReady(false);
       old.close();
+      clearRecordingUi();
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     clearPlayback();
@@ -956,6 +1196,7 @@ function openClient() {
           "已连接" + (wantsMic ? " · 麦克风开启" : "");
         $("lab-session").textContent = e.session_id.slice(0, 12);
         await loadLabMessages();
+        await loadRecordings().catch(() => {});
         if (e.wake_mode !== "backend") send({ type: "session.activate" });
         else phase("standby", "请说“" + activeWakePhrase + "”唤醒；无需点击激活聆听。");
         if (wantsMic && !e.capabilities.barge_in)
@@ -980,11 +1221,61 @@ function openClient() {
         }
         return;
       }
-      if (e.type === "session.state")
-        phase(
-          e.state,
-          e.state === "standby" ? (activeWakeMode === "backend" ? "请说“" + activeWakePhrase + "”唤醒。" : "等待唤醒或手动激活。") : undefined,
-        );
+      if (e.type === "session.state") {
+        let detail;
+        if (e.state === "recording") {
+          detail = "录音中，只保存声音，不回答。点“停止并保存”结束，设备上按开关键也可以。";
+          if (!activeRecording) loadRecordings().catch(() => {});
+        } else if (
+          e.state === "listening" &&
+          lastRecordingSavedAt &&
+          Date.now() - lastRecordingSavedAt < 4000
+        ) {
+          detail = "录音已保存，共 " +
+            formatClock(lastRecording?.duration_ms) +
+            "。可在下方“录音文件”下载。";
+        } else if (e.state === "standby") {
+          detail = activeWakeMode === "backend"
+            ? "请说“" + activeWakePhrase + "”唤醒。"
+            : "等待唤醒或手动激活。";
+        }
+        phase(e.state, detail);
+      }
+      if (e.type === "recording.started") {
+        adoptRecording(e.recording);
+        loadRecordings().catch(() => {});
+        return;
+      }
+      if (e.type === "recording.confirming") {
+        if (activeRecording && e.recording?.id === activeRecording.id) {
+          activeRecording = {...activeRecording, ...e.recording};
+          $("recording-note").textContent = "等待确认：再说一次“确认停止”";
+          $("recording-strip").classList.add("confirming");
+        }
+        return;
+      }
+      if (e.type === "recording.confirm_expired") {
+        if (activeRecording && e.recording?.id === activeRecording.id) {
+          activeRecording = {...activeRecording, ...e.recording};
+          $("recording-note").textContent = "确认超时，继续录音";
+          $("recording-strip").classList.remove("confirming");
+        }
+        return;
+      }
+      if (e.type === "recording.stopped") {
+        applyRecordingStopped(e.recording);
+        loadRecordings().catch(() => {});
+        return;
+      }
+      if (e.type === "recording.voice_stop_unavailable") {
+        if (activeRecording)
+          $("recording-note").textContent = e.message || "语音停止暂时不可用";
+        return;
+      }
+      if (e.type === "recording.input_ignored") {
+        notice(e.message, true);
+        return;
+      }
       if (e.type === "reply.delta") {
         partial += e.text;
         renderLab();
@@ -1050,6 +1341,7 @@ function openClient() {
     clearInterval(pingTimer);
     clearPlayback();
     partial = "";
+    clearRecordingUi();
     $("client-status").textContent = "已断开";
     $("connect-text").disabled = $("connect-mic").disabled = false;
     if (!manualDisconnect && retries < 8) {
@@ -1072,12 +1364,15 @@ function disconnect() {
   clearInterval(pingTimer);
   clearPlayback();
   stopMicrophone();
+  clearRecordingUi();
   socket?.close();
   setClientReady(false);
 }
 $("connect-text").onclick = () => connect(false);
 $("connect-mic").onclick = () => connect(true);
 $("disconnect-client").onclick = disconnect;
+$("start-recording").onclick = () => startRecording();
+$("stop-recording").onclick = () => stopRecording();
 $("activate-client").onclick = () => {
   context?.resume().catch(() => {});
   send({ type: "session.activate" });
@@ -1088,11 +1383,19 @@ $("client-wake").onchange = () => {
   if (socket) connect(wantsMic);
 };
 $("stop-client").onclick = () => {
+  if (activeRecording) {
+    stopRecording();
+    return;
+  }
   clearPlayback();
   send({ type: "interrupt" });
 };
 $("text-form").onsubmit = (event) => {
   event.preventDefault();
+  if (activeRecording) {
+    notice("录音模式中不处理文字对话；请先停止录音。", true);
+    return;
+  }
   const text = $("client-text").value.trim();
   if (text && clientReady) {
     send({ type: "input.text", text });
@@ -1110,6 +1413,7 @@ async function boot() {
     populateConfig((await api("config/models")).config);
     await refresh();
     await refreshServices();
+    await loadRecordings().catch(() => {});
     if (state.view === 'mcp') await mcp.refreshCatalogue();
     observe();
   } catch (e) {

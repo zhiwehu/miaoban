@@ -7,6 +7,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from . import phrasing
+from .recording import CONFIRM_SECONDS, command as recording_command, duration_text
 from .tools import ToolNotice, ToolStatus
 
 
@@ -21,6 +22,7 @@ class Turn:
     delivery: str = ''
     notification_id: str = ''
     audio_started: bool = False
+    system: bool = False  # recording prompts are never journalled as a reply
     started: float = field(default_factory=time.monotonic)
 
 
@@ -31,7 +33,7 @@ MAX_REPLY_AUDIO_SECONDS = 180
 
 class Session:
     def __init__(self, sid, device_id, store, pipeline, send, *, publish=None, wake_mode='manual',
-                 wake_phrase='小宝同学', playback_ack=True, idle_seconds=30):
+                 wake_phrase='小宝同学', playback_ack=True, idle_seconds=30, recording_manager=None):
         self.id, self.device_id = sid, device_id
         self.store, self.pipeline, self.send = store, pipeline, send
         self.pipeline.session_id=sid
@@ -45,6 +47,13 @@ class Session:
         self.store.session(sid, device_id)
         self.input_active=False
         self.streaming=False  # audio.start 到 audio.end 之间为 True，播报期间不算空闲
+        self.recording_manager=recording_manager
+        self.recording=None  # active WAV capture; while set, ordinary speech is never answered
+        self.recording_queue=None
+        self.recording_worker=None
+        self.recording_confirm_timer=None
+        self.recording_listen_after=0.0
+        self.recording_voice_notified=False
         self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
         self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
         self.notification_callback=self.queue_notification
@@ -74,6 +83,8 @@ class Session:
         await self.emit('session.state', turn, state=state)
 
     async def activate(self):
+        if self.recording is not None:
+            return
         await self.transition('listening')
         await self.emit('session.activated', mode=self.wake_mode)
 
@@ -82,11 +93,199 @@ class Session:
             self.turn.played.set()
 
     def record_reply(self, turn, status):
+        if turn.system:
+            return
         if not turn.recorded:
             turn.recorded = True
             turn.delivery = status
             if turn.text:
                 self.store.message(self.id, turn.id, 'assistant', turn.text, status)
+
+    def recording_listen_allowed(self):
+        """Voice-stop detection is muted while a recording prompt is audible."""
+        return bool(self.recording) and self.turn is None and time.monotonic() >= self.recording_listen_after
+
+    def recording_voice_stop_allowed(self):
+        """Only local ASR may hear a recording; never stream it to an HTTP provider."""
+        config = getattr(self.pipeline, 'config', None)
+        asr = config.get('asr') if isinstance(config, dict) else None
+        return not isinstance(asr, dict) or asr.get('provider', 'builtin') == 'builtin'
+
+    async def start_recording(self, trigger='voice'):
+        if self.closed:
+            raise ValueError('session_closed')
+        if self.recording is not None:
+            return self.recording
+        if self.recording_manager is None:
+            raise ValueError('recording_unavailable')
+        if trigger in ('web', 'client') and self.turn is not None:
+            # A button start must not capture an in-flight assistant reply.
+            await self.interrupt('recording')
+        recording = self.recording_manager.start(self.id, self.device_id, trigger)
+        self.recording = recording
+        self.recording_queue = asyncio.Queue(maxsize=3)
+        self.recording_listen_after = time.monotonic()+.2
+        self.recording_voice_notified = False
+        worker = self.recording_worker = asyncio.create_task(self._recording_worker())
+        self.tasks.add(worker)
+        worker.add_done_callback(self.tasks.discard)
+        await self.transition('recording')
+        await self.emit('recording.started', recording=recording.metadata())
+        return recording
+
+    async def stop_recording(self, reason='manual', *, speak=False, notify=True):
+        """Finalize the WAV once; safe when a disconnect races a web stop."""
+        recording = self.recording
+        if recording is None:
+            return None
+        self.recording = None
+        self.recording_listen_after = 0
+        timer = self.recording_confirm_timer
+        self.recording_confirm_timer = None
+        if timer and timer is not asyncio.current_task():
+            timer.cancel()
+            await asyncio.gather(timer, return_exceptions=True)
+        worker = self.recording_worker
+        self.recording_worker = None
+        if worker and worker is not asyncio.current_task():
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+        if self.turn and self.turn.system:
+            with contextlib.suppress(Exception):
+                await self.interrupt('recording_stop')
+        metadata = self.recording_manager.stop(recording.id, reason) if self.recording_manager else None
+        metadata = metadata or recording.metadata()
+        if notify and not self.closed:
+            with contextlib.suppress(Exception):
+                await self.emit('recording.stopped', recording=metadata)
+                if self.state != 'standby':
+                    await self.transition('listening')
+        if speak and not self.closed:
+            with contextlib.suppress(Exception):
+                await self._speak_system(
+                    '录音已停止，共'+duration_text(metadata.get('duration_ms', 0)/1000)+
+                    '。可以在网页下载。')
+        return metadata
+
+    def recording_heard(self, pcm):
+        """Queue one VAD segment for bounded voice-stop detection only."""
+        if not self.recording or self.recording_queue is None:
+            return
+        if self.recording_queue.full():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                self.recording_queue.get_nowait()
+        with contextlib.suppress(asyncio.QueueFull):
+            self.recording_queue.put_nowait(pcm)
+
+    async def recording_voice_unavailable(self, message):
+        if not self.recording or self.recording_voice_notified:
+            return
+        self.recording_voice_notified = True
+        with contextlib.suppress(Exception):
+            await self.emit('recording.voice_stop_unavailable', message=message)
+
+    async def recording_limit_reached(self):
+        if self.recording is not None:
+            await self.stop_recording('limit', speak=True)
+
+    async def recording_storage_failed(self):
+        if self.recording is None:
+            return
+        with contextlib.suppress(Exception):
+            await self.emit('error', code='recording_storage_failed',
+                            message='录音写入失败，已停止并保存已录到的部分。')
+        await self.stop_recording('storage_error', speak=False)
+
+    async def recording_tick(self):
+        recording = self.recording
+        if recording is None or self.recording_manager is None:
+            return
+        if recording.duration >= self.recording_manager.max_seconds:
+            await self.stop_recording('limit', speak=True)
+
+    async def request_recording_stop(self):
+        recording = self.recording
+        if recording is None:
+            return
+        if recording.confirming:
+            await self.stop_recording('voice', speak=True)
+            return
+        recording.confirming = True
+        recording.confirm_deadline = time.monotonic()+CONFIRM_SECONDS
+        await self.emit('recording.confirming', recording=recording.metadata(),
+                        expires_in=CONFIRM_SECONDS)
+        timer = self.recording_confirm_timer = asyncio.create_task(
+            self._recording_confirm_timeout(recording))
+        self.tasks.add(timer)
+        timer.add_done_callback(self.tasks.discard)
+        prompt = asyncio.create_task(self._speak_recording_prompt(
+            '要停止录音吗？请再说一次“确认停止”，或者点击网页上的停止。'))
+        self.tasks.add(prompt)
+        prompt.add_done_callback(self.tasks.discard)
+
+    async def _recording_confirm_timeout(self, recording):
+        try:
+            await asyncio.sleep(CONFIRM_SECONDS)
+        except asyncio.CancelledError:
+            return
+        if self.recording is recording and recording.confirming:
+            recording.confirming = False
+            recording.confirm_deadline = None
+            self.recording_confirm_timer = None
+            with contextlib.suppress(Exception):
+                await self.emit('recording.confirm_expired', recording=recording.metadata())
+
+    async def _recording_worker(self):
+        try:
+            while self.recording is not None:
+                pcm = await self.recording_queue.get()
+                if self.recording is None:
+                    return
+                if not self.recording_listen_allowed():
+                    continue
+                try:
+                    async with asyncio.timeout(20):
+                        text = await self.pipeline.transcribe(pcm)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    await self.recording_voice_unavailable(
+                        '语音停止指令暂时不可用，录音仍在继续；请用网页或开关键停止。')
+                    continue
+                if self.recording is None:
+                    return
+                action = recording_command(text)
+                if action == 'stop':
+                    if self.recording.confirming:
+                        await self.stop_recording('voice', speak=True)
+                    else:
+                        await self.request_recording_stop()
+                elif action == 'confirm' and self.recording.confirming:
+                    await self.stop_recording('voice', speak=True)
+        except asyncio.CancelledError:
+            pass
+
+    async def _speak_recording_prompt(self, text):
+        while self.turn is not None and not self.turn.cancelled:
+            if self.recording is None or self.closed:
+                return
+            await asyncio.sleep(.1)
+        if self.recording is None or self.closed or self.turn is not None:
+            return
+        await self._speak_system(text)
+
+    async def _speak_system(self, text):
+        if self.closed:
+            return
+        while self.turn is not None:
+            await asyncio.sleep(.1)
+            if self.closed:
+                return
+        turn = self.turn = Turn(system=True)
+        turn.task = asyncio.create_task(self._run(turn, None, None, announcement=text))
+        self.tasks.add(turn.task)
+        turn.task.add_done_callback(self.tasks.discard)
+        await asyncio.gather(turn.task, return_exceptions=True)
 
     async def interrupt(self, reason='manual'):
         turn = self.turn
@@ -102,10 +301,10 @@ class Session:
         self.turn = None
         await self.emit('playback.clear', interrupted_turn_id=turn.id if turn else None, reason=reason)
         if not self.closed:
-            await self.transition('listening')
+            await self.transition('recording' if self.recording is not None else 'listening')
 
     async def submit(self, text=None, pcm=None):
-        if self.closed:
+        if self.closed or self.recording is not None:
             return
         if self.turn:
             await self.interrupt('new_input')
@@ -140,6 +339,17 @@ class Session:
                         announcement = text = '我在，请说。'
                 if not text:
                     return
+                if self.recording is None and announcement is None:
+                    action = recording_command(text)
+                    if action == 'start':
+                        try:
+                            await self.start_recording('voice' if transcribed else 'text')
+                        except ValueError as exc:
+                            await self.emit('error', turn, code=str(exc),
+                                            message='录音模式启动失败，请检查磁盘空间后重试。')
+                            return
+                        turn.system = True
+                        announcement = text = '开始录音，只录不答。'
                 if transcribed and announcement is None:
                     await self.emit('transcript.final', turn, text=text,
                                     elapsed_ms=round((time.monotonic()-turn.started)*1000))
@@ -215,7 +425,8 @@ class Session:
                                 continue
                             turn.text += delta
                             pending += delta
-                            await self.emit('reply.delta', turn, text=delta)
+                            if not turn.system:
+                                await self.emit('reply.delta', turn, text=delta)
                             if re.search(r'[。！？!?\n]', pending) or len(pending) >= 70:
                                 await sentences.put(pending)
                                 pending = ''
@@ -301,7 +512,8 @@ class Session:
                     group.create_task(produce())
                     group.create_task(synthesize())
                     group.create_task(speak())
-                await self.emit('reply.final', turn, text=turn.text)
+                if not turn.system:
+                    await self.emit('reply.final', turn, text=turn.text)
                 status = 'generated'
                 if self.playback_ack:
                     try:
@@ -310,8 +522,9 @@ class Session:
                     except TimeoutError:
                         await self.emit('playback.unconfirmed', turn)
                 self.record_reply(turn, status)
-                await self.emit('turn.completed', turn, delivery=status,
-                                elapsed_ms=round((time.monotonic()-turn.started)*1000))
+                if not turn.system:
+                    await self.emit('turn.completed', turn, delivery=status,
+                                    elapsed_ms=round((time.monotonic()-turn.started)*1000))
         except asyncio.CancelledError:
             self.record_reply(turn, 'interrupted')
         except Exception as exc:
@@ -328,7 +541,11 @@ class Session:
         finally:
             if self.turn is turn and not self.closed:
                 self.turn = None
-                if self.state != 'standby':
+                if self.recording is not None:
+                    self.recording_listen_after = time.monotonic()+.6
+                    with contextlib.suppress(Exception):
+                        await self.transition('recording')
+                elif self.state != 'standby':
                     with contextlib.suppress(Exception):
                         await self.transition('listening' if activated else 'standby')
 
@@ -346,7 +563,7 @@ class Session:
         try:
             while True:
                 record=await self.notifications.get()
-                while self.turn or self.input_active or time.monotonic()-self.last_activity<.5:
+                while self.turn or self.input_active or self.recording is not None or time.monotonic()-self.last_activity<.5:
                     await asyncio.sleep(.1)
                 if self.closed:return
                 calendar=getattr(getattr(self.pipeline,'local',None),'calendar_reminders',None)
@@ -381,6 +598,8 @@ class Session:
         except asyncio.CancelledError:pass
 
     async def idle(self):
+        if self.recording is not None:
+            return  # 录音模式由用户明确停止，不能因空闲自动回到待机。
         timers=getattr(getattr(self.pipeline,'local',None),'timer_reminders',None)
         if timers and timers.enabled() and timers.store.running(self.device_id):return
         if self.operations and (self.notification_ids or any(self.operations.get(identity)['session_id']==self.id for identity in self.operations.tasks)):
@@ -397,6 +616,11 @@ class Session:
     async def close(self):
         if self.closed:
             return
+        # A device key press or network loss closes the channel: finalize the WAV
+        # quietly before the task set is torn down.
+        if self.recording is not None:
+            with contextlib.suppress(Exception):
+                await self.stop_recording('disconnect', notify=False)
         await self.interrupt('disconnect')
         self.closed = True
         self.state = 'disconnected'

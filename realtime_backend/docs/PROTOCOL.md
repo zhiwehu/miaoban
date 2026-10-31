@@ -38,10 +38,13 @@
 
 | type | 字段 | 语义 |
 |---|---|---|
-| input.text | text: 1–4000 字符 | 激活并开始新一轮；会取消旧回复 |
-| session.activate / wake | — | 激活聆听，音频无需重新握手 |
-| session.standby | — | 取消当前轮次并回到待机 |
-| interrupt | — | 显式打断并继续聆听 |
+| input.text | text: 1–4000 字符 | 激活并开始新一轮；会取消旧回复。录音模式下被忽略 |
+| session.activate / wake | — | 激活聆听，音频无需重新握手；录音模式下无效果 |
+| session.standby | — | 取消当前轮次并回到待机；正在录音时先保存录音 |
+| interrupt | — | 显式打断并继续聆听；正在录音时等同于停止并保存 |
+| abort | — | 设备取消播报；正在录音时等同于停止并保存 |
+| recording.start | — | 开始录音（与网页开始按钮相同的会话级动作） |
+| recording.stop | — | 停止录音（与网页停止按钮相同的会话级动作） |
 | playback.done | turn_id | 本地播放缓冲确实排空后的回执 |
 | ping | — | 返回 pong |
 
@@ -57,7 +60,7 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 | type | 主要字段 |
 |---|---|
 | session.connected | device_id, protocol, wake_mode, barge_in |
-| session.state | state: standby/listening/thinking/speaking |
+| session.state | state: standby/listening/thinking/speaking/recording |
 | session.activated | mode |
 | speech.started | probability |
 | transcript.final / message.user | text |
@@ -68,7 +71,17 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 | playback.clear | interrupted_turn_id, reason |
 | playback.unconfirmed | — |
 | turn.completed | delivery: generated/played, elapsed_ms |
+| recording.started | recording: {id, session_id, device_id, started_at, duration_ms, format, sample_rate, channels, download_url:null, ...} |
+| recording.confirming | recording, expires_in=20；先说了一次“停止录音模式”，等待“确认停止” |
+| recording.confirm_expired | recording；20 秒内没有确认，继续录音 |
+| recording.stopped | recording；此时 download_url 可用 |
+| recording.voice_stop_unavailable | message；VAD/ASR 不可用，录音仍在继续 |
+| recording.input_ignored | message；录音模式下收到的文字消息被忽略 |
 | error | code, message, 可选 error_class |
+
+`session.state=recording` 表示音频正在写入 WAV，此时普通语音不产生
+`transcript.final`、`message.user`、`reply.*` 或工具调用。录音提示（开始确认、
+停止二次确认、最终保存提示）使用普通 `audio.start/chunk/end` 播放，但不写对话历史。
 
 收到 `playback.clear` 时立即停止正在播放的音源、清空所有排队音频、使旧 turn_id
 失效；此后任何迟到的旧轮次片段必须丢弃。新 `audio.start` 建立新轮次播放所有权。
@@ -76,14 +89,19 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 
 ## 管理 API
 
-- `GET /api/status`：在线会话与 VAD 文件可用性。
+- `GET /api/status`：在线会话与 VAD 文件可用性；在线会话带 `recording` 字段。
 - `GET /api/config`、`PUT /api/config`：完整配置快照，写入先校验再原子保存。
 - `GET /api/sessions?before=<updated>`：最近 100 个，时间游标向前翻页。
 - `GET /api/sessions/{sid}/messages?before=<id>`：最多 100 条，按时间正序返回。
 - `GET /api/logs?session_id=<sid>&before=<id>`：最近 100 条，倒序返回。
-- `POST /api/sessions/{sid}/interrupt`：停止在线会话。
+- `POST /api/sessions/{sid}/interrupt`：停止在线会话；录音中则停止并保存录音。
 - `GET /api/events`：管理 WebSocket，含实时文字增量，不含音频。
 - `POST /api/login`：`{"token":"<admin token>"}`，HttpOnly/SameSite Strict Cookie。
+- `GET /api/recordings?session_id=<sid>`：列出录音及活动状态；不返回文件路径。
+- `POST /api/recordings`：`{"session_id":"<32 hex>"}` 开始录音；会话必须在线，重复开始返回 409。
+- `POST /api/recordings/{id}/stop`：停止并保存；会话已断线时直接完成文件。
+- `GET /api/recordings/{id}/audio`：下载已完成的 WAV；活动中的文件返回 404。
+- `DELETE /api/recordings/{id}`：删除 WAV 与元数据；活动中的录音返回 409。
 
 管理事件流积压超过 256 条时发 `events.resync`，应重新请求会话/日志快照。
 它不是持久消息队列。记录存储失败不伪装成持久化成功。

@@ -20,6 +20,7 @@ from .audio import AudioCodec, vad_path
 from .config import ConfigFile
 from .input import AudioInput
 from .models import Pipeline, LocalModels, ProviderError
+from .recording import Recordings
 from .session import Session
 from .store import Store
 from .device_mcp import DeviceMCP
@@ -118,6 +119,7 @@ class Hub:
         self.extensions = ExtensionManager(self.root)
         self.operations=Operations(self.root,publish=self.operation_changed)
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
+        self.recordings = Recordings(self.root)
 
         self.skills=Skills(self.root,self.workflows) if skills_enabled else None
         self.timers=TimerReminders(self.root,self.operations,self.sessions,lambda:self.config.get()['tools']['timer'])
@@ -163,6 +165,8 @@ class Hub:
             for session in list(self.sessions.values()):
                 with contextlib.suppress(Exception):
                     await session.idle()
+                with contextlib.suppress(Exception):
+                    await session.recording_tick()
             for name,scheduler in (('calendar',self.calendar),('timer',self.timers)):
                 try:await scheduler.tick()
                 except Exception as exc:
@@ -182,6 +186,7 @@ class Hub:
         for session in list(self.sessions.values()):
             await session.close()
         await asyncio.gather(*self.cleanups, return_exceptions=True)
+        self.recordings.close()
         for watcher in self.watchers:
             if not watcher.full():
                 watcher.put_nowait(None)
@@ -341,7 +346,7 @@ async def device_gateway(request, ws):
         pipeline.device = DeviceMCP(device_mcp_send)
         session = Session(sid, device, hub.store, pipeline, send, publish=hub.publish,
                           wake_mode=mode, wake_phrase=cfg['wake']['phrase'], playback_ack=not legacy,
-                          idle_seconds=cfg['wake']['idle_seconds'])
+                          idle_seconds=cfg['wake']['idle_seconds'], recording_manager=hub.recordings)
         session.device_listener = request.app.get(DEVICE_ONLY, False) and getattr(request,'protocol_name',None) != 'mqtt_udp'
         session.transport_socket = ws
         session.protocol = getattr(request, 'protocol_name', 'xiaozhi_websocket' if legacy else 'websocket_v1')
@@ -393,14 +398,35 @@ async def device_gateway(request, ws):
                     text = value.get('text')
                     if not isinstance(text, str) or not 1 <= len(text.strip()) <= 4000:
                         raise ValueError('invalid_text')
+                    if session.recording is not None:
+                        await session.emit('recording.input_ignored',
+                                           message='录音模式中不处理对话；请先点击停止或按开关键。')
+                        continue
                     if session.state == 'standby':
                         await session.activate()
                     await session.submit(text.strip())
                 elif kind in ('session.activate','wake') or (kind == 'listen' and value.get('state') in ('detect','start')):
-                    await session.activate()
+                    if session.recording is None:
+                        await session.activate()
                 elif kind in ('interrupt','abort'):
-                    await session.interrupt('client')
+                    if session.recording is not None:
+                        # The robot's key sends abort while speaking and closes the
+                        # channel while listening. Both mean "stop recording".
+                        await session.stop_recording('client', speak=False)
+                    else:
+                        await session.interrupt('client')
+                elif kind == 'recording.start':
+                    try:
+                        await session.start_recording('client')
+                    except ValueError as exc:
+                        await session.emit('error', code=str(exc),
+                                           message='录音模式启动失败，请检查磁盘空间后重试。')
+                elif kind == 'recording.stop':
+                    if session.recording is not None:
+                        await session.stop_recording('client', speak=False)
                 elif kind == 'session.standby':
+                    if session.recording is not None:
+                        await session.stop_recording('client', speak=False)
                     await session.interrupt('standby')
                     await session.transition('standby')
                 elif kind == 'playback.done':
@@ -470,7 +496,8 @@ async def api(request):
         return web.json_response(dict(version='0.1.0', online=len(hub.sessions), vad_available=vad,
             mqtt_ready=bool(hub.mqtt and hub.mqtt.ready.is_set()),
             model_validation='not_probed', sessions=[dict(id=s.id, device_id=s.device_id, state=s.state,
-            wake_mode=s.wake_mode, protocol=getattr(s,'protocol','unknown')) for s in hub.sessions.values()]))
+            wake_mode=s.wake_mode, protocol=getattr(s,'protocol','unknown'),
+            recording=s.recording.id if s.recording is not None else None) for s in hub.sessions.values()]))
     if name == 'config':
         if request.method == 'PUT':
             value = await request.json()
@@ -619,7 +646,10 @@ async def interrupt(request):
     session = request.app[HUB].sessions.get(request.match_info['sid'])
     if not session:
         raise web.HTTPNotFound()
-    await session.interrupt('console')
+    if session.recording is not None:
+        await session.stop_recording('console', speak=False)
+    else:
+        await session.interrupt('console')
     return web.json_response({'ok':True})
 
 
@@ -755,6 +785,12 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/sessions/{sid}/messages', messages)
     app.router.add_get('/api/sessions/{sid}/tool-calls', tool_calls)
     app.router.add_post('/api/sessions/{sid}/interrupt', interrupt)
+    from .recording_api import recording_api
+    app.router.add_get('/api/recordings', recording_api)
+    app.router.add_post('/api/recordings', recording_api)
+    app.router.add_get('/api/recordings/{identity}/audio', recording_api)
+    app.router.add_post('/api/recordings/{identity}/stop', recording_api)
+    app.router.add_delete('/api/recordings/{identity}', recording_api)
     app.router.add_post('/api/services/{kind}/{action}', service_action)
     app.router.add_get('/api/config/{scope:models|tools}', api)
     app.router.add_put('/api/config/{scope:models|tools}', api)

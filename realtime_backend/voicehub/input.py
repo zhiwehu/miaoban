@@ -12,6 +12,8 @@ class AudioInput:
         self.echo_cancellation, self.config = echo_cancellation, config
         self.queue = asyncio.Queue(maxsize=64)
         self.codec, self.vad = None, None
+        self.vad_task = None
+        self.recording_vad_failed = False
         self.segmenter = Segmenter(config['speech_threshold'], config['onset_ms'],
                                    config['silence_ms'], config['max_utterance_seconds'])
         self.buffer = b''
@@ -32,9 +34,81 @@ class AudioInput:
     async def run(self):
         session = self.session
         disabled = False
+        recording_seen = None
+        recording_onset = False
         try:
             while True:
                 packet = await self.queue.get()
+                if packet is None:
+                    break
+                recording = session.recording
+                if recording is not None:
+                    # Recording mode owns every packet: no ASR turn, no replies.
+                    if recording_seen is not recording:
+                        recording_seen = recording
+                        self.segmenter.reset()
+                        self.buffer = b''
+                        recording_onset = False
+                        self.recording_vad_failed = False
+                        disabled = False
+                        if not session.recording_voice_stop_allowed():
+                            self.recording_vad_failed = True
+                            await session.recording_voice_unavailable(
+                                '当前语音识别不是本机模型，录音不会上传做停止检测；请用网页或开关键停止。')
+                    if self.codec is None:
+                        try:
+                            self.codec = AudioCodec(self.format)
+                        except Exception:
+                            await session.recording_voice_unavailable(
+                                '音频解码不可用，录音无法继续；请检查运行环境的音频依赖。')
+                            continue
+                    try:
+                        decoded = await asyncio.to_thread(self.codec.decode, packet)
+                    except (ValueError, TypeError):
+                        continue
+                    except Exception:
+                        with contextlib.suppress(Exception):
+                            await session.emit('error', code='audio_input_failed',
+                                               message='音频输入失败，请重新连接。')
+                        continue
+                    if session.recording is not recording:
+                        continue
+                    try:
+                        if recording.write(decoded) == 'limit':
+                            await session.recording_limit_reached()
+                    except OSError:
+                        await session.recording_storage_failed()
+                        continue
+                    if self.recording_vad_failed:
+                        continue
+                    if self.vad is None:
+                        # Load the VAD beside the capture loop, never in its path:
+                        # a slow model load must not overflow the audio queue.
+                        if self.vad_task is None or self.vad_task.done():
+                            self.vad_task = asyncio.create_task(
+                                self._load_recording_vad(session))
+                        continue
+                    self.buffer += decoded
+                    while len(self.buffer) >= 1024:
+                        pcm = np.frombuffer(self.buffer[:1024], '<i2').astype(np.float32)/32768
+                        self.buffer = self.buffer[1024:]
+                        probability = await asyncio.to_thread(self.vad.probability, pcm)
+                        onset, segment = self.segmenter.feed(pcm, probability)
+                        if onset:
+                            # Drop any utterance that began while a prompt was audible,
+                            # so the assistant cannot confirm its own stop prompt.
+                            recording_onset = session.recording_listen_allowed()
+                        if segment is not None:
+                            if (recording_onset and session.recording is recording
+                                    and session.recording_listen_allowed()):
+                                session.recording_heard(segment)
+                            recording_onset = False
+                    continue
+                if recording_seen is not None:
+                    # Do not carry a half-utterance from recording mode into chat.
+                    self.segmenter.reset()
+                    self.buffer = b''
+                    recording_seen = None
                 if disabled:
                     continue
                 if session.state == 'standby' and session.wake_mode != 'backend':
@@ -84,7 +158,33 @@ class AudioInput:
             with contextlib.suppress(Exception):
                 await session.emit('error', code='audio_input_failed', message='音频输入失败，请重新连接。')
 
+    async def _load_recording_vad(self, session):
+        try:
+            path = vad_path(self.config['vad_model'])
+            vad = await asyncio.to_thread(Silero, path)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.recording_vad_failed = True
+            with contextlib.suppress(Exception):
+                await session.recording_voice_unavailable(
+                    '语音检测模型不可用，录音仍在继续；请用网页或开关键停止。')
+        else:
+            self.vad = vad
+
     async def close(self):
         self.session.input_active=False
-        self.task.cancel()
+        # On a device key press the channel closes immediately; drain already
+        # queued packets into the WAV instead of dropping the tail of the memo.
+        if self.session.recording is not None and not self.task.done():
+            try:
+                await asyncio.wait_for(self.queue.put(None), 2)
+                await asyncio.wait_for(self.task, 2)
+            except (TimeoutError, asyncio.QueueFull):
+                self.task.cancel()
+        else:
+            self.task.cancel()
         await asyncio.gather(self.task, return_exceptions=True)
+        if self.vad_task and not self.vad_task.done():
+            self.vad_task.cancel()
+            await asyncio.gather(self.vad_task, return_exceptions=True)

@@ -753,6 +753,124 @@ select {
   background: #e8dbca;
   box-shadow: 0 0 0 12px #f2eade;
 }
+.mic-orb.recording {
+  background: #f1d6cd;
+  border-color: #dca48f;
+  box-shadow:
+    0 0 0 12px #f8e8e1,
+    0 0 0 13px #efd4c9;
+}
+.recording-strip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin: 14px auto 0;
+  padding: 8px 12px;
+  border: 1px solid #dfb69a;
+  border-radius: 999px;
+  background: #f7ece4;
+  color: #843f2b;
+  font-size: 11px;
+}
+.recording-strip.confirming {
+  background: #f6e3c9;
+  border-color: #d6a25c;
+  color: #7a5325;
+}
+.recording-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #c14a37;
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+@keyframes recording-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(193, 74, 55, .35); }
+  50% { opacity: .55; box-shadow: 0 0 0 5px rgba(193, 74, 55, 0); }
+}
+.recording-clock {
+  font-family: Menlo, monospace;
+  font-size: 11px;
+}
+.recording-note {
+  color: #8a5a45;
+}
+.danger {
+  background: #a23c2e;
+  color: #fffefa;
+  border: 1px solid #a23c2e;
+  border-radius: 6px;
+  padding: 9px 14px;
+  font-size: 12px;
+}
+.danger:hover {
+  background: #843f2b;
+}
+.button-row > .danger {
+  flex: 1;
+  white-space: nowrap;
+}
+.recording-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.recordings-panel {
+  margin-top: 20px;
+}
+.recording-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e5e7dd;
+}
+.recording-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.recording-main strong {
+  font-size: 13px;
+}
+.recording-meta {
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.recording-tag {
+  align-self: flex-start;
+  font-size: 9px;
+  color: #5d7263;
+  background: #eaf0e5;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.recording-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.recording-actions .secondary,
+.recording-actions .danger {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 10px;
+}
+.recording-actions a.secondary {
+  display: inline-block;
+  text-decoration: none;
+}
+.recording-actions .text-button {
+  padding: 6px 4px;
+}
 .mic-display h3 {
   font-family: "Songti SC", serif;
   font-size: 21px;
