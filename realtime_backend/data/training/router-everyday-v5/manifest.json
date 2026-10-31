@@ -1,0 +1,59 @@
+{
+  "dataset": "router-everyday-v5",
+  "built": "2026-10-31",
+  "seed": 20261031,
+  "builder": "scripts/build_router_v5_data.py",
+  "training_split_seed": 20261030,
+  "splits": {
+    "train": {
+      "rows": 9206,
+      "labels": {
+        "item_memory": 1373,
+        "news": 704,
+        "null": 2780,
+        "shopping_list": 1290,
+        "system_info": 316,
+        "timer": 1919,
+        "weather": 824
+      }
+    },
+    "validation": {
+      "rows": 1230,
+      "labels": {
+        "item_memory": 102,
+        "news": 98,
+        "null": 632,
+        "shopping_list": 97,
+        "system_info": 74,
+        "timer": 141,
+        "weather": 86
+      }
+    },
+    "test": {
+      "rows": 853,
+      "labels": {
+        "item_memory": 134,
+        "news": 18,
+        "null": 407,
+        "shopping_list": 111,
+        "system_info": 5,
+        "timer": 169,
+        "weather": 9
+      }
+    }
+  },
+  "files": {
+    "train.jsonl": {
+      "sha256": "a2479d135ffd6de3a69dffaee9d0dc6885d83b0c404edc9dd114462653caad11",
+      "bytes": 2255828
+    },
+    "validation.jsonl": {
+      "sha256": "3082d81d22d86fb5183ad65c657e6a970490e9978039ffa745e69630942f3b18",
+      "bytes": 363974
+    },
+    "test.jsonl": {
+      "sha256": "e0832560efc50aad5ad3261905d0d3537adda56e001b90beabae4b13aa9cf86f",
+      "bytes": 241924
+    }
+  }
+}

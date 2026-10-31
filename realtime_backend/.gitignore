@@ -1,5 +1,9 @@
 # Private runtime, model files and build products
-**/data/
+# 运行期数据（对话库、日志、服务记录）；训练数据集走下面的白名单
+data/*
+!data/training/
+data/training/*
+!data/training/router-everyday-v5/
 **/.venv/
 **/__pycache__/
 *.py[cod]

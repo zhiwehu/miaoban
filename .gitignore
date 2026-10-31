@@ -28,3 +28,10 @@ firmware/head/main/assets/lang_config.h
 
 # Local smoke/benchmark output
 /diagnostics/
+
+# 训练数据集随代码一起发布；模型权重、adapter、日志、对话库仍然忽略
+!realtime_backend/data/
+realtime_backend/data/*
+!realtime_backend/data/training/
+realtime_backend/data/training/*
+!realtime_backend/data/training/router-everyday-v5/
