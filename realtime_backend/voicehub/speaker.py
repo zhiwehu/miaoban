@@ -59,7 +59,8 @@ def _env_int(name, default, low, high):
 
 class SpeakerTracker:
     """Online cosine clustering of one recording's segment embeddings."""
-    def __init__(self, threshold=None, max_speakers=None, min_seconds=None):
+    def __init__(self, threshold=None, max_speakers=None, min_seconds=None,
+                 promote_seconds=0.0):
         self.threshold = (_env_float('VOICEHUB_SPEAKER_THRESHOLD', .25, .05, .9)
                           if threshold is None
                           else min(.9, max(.05, float(threshold))))
@@ -73,12 +74,16 @@ class SpeakerTracker:
         self.counts = []
         self.first = []
         self.durations = []
+        self.promote_seconds = max(0.0, float(promote_seconds))
+        self.pending = []
+        self.pending_seconds = 0.0
 
     @property
     def count(self):
         return len(self.centroids)
 
     def _add(self, embedding, duration):
+        self.pending, self.pending_seconds = [], 0.0
         self.centroids.append(embedding.copy())
         self.counts.append(1)
         self.first.append(len(self.first))
@@ -86,7 +91,9 @@ class SpeakerTracker:
         identity = len(self.centroids)
         return identity, f'说话人{identity}'
 
-    def _join(self, identity, embedding, duration):
+    def _join(self, identity, embedding, duration, clear_pending=True):
+        if clear_pending:
+            self.pending, self.pending_seconds = [], 0.0
         index = identity-1
         total = self.counts[index]
         centroid = (self.centroids[index]*total + embedding)/(total+1)
@@ -103,11 +110,28 @@ class SpeakerTracker:
             return self._add(embedding, duration)
         similarities = np.stack(self.centroids) @ embedding
         best = int(np.argmax(similarities))
-        if (float(similarities[best]) >= self.threshold
-                or duration < self.min_seconds
-                or len(self.centroids) >= self.max_speakers):
+        if float(similarities[best]) >= self.threshold:
             return self._join(best+1, embedding, duration)
-        return self._add(embedding, duration)
+        if duration < self.min_seconds or len(self.centroids) >= self.max_speakers:
+            return self._join(best+1, embedding, duration)
+        if self.promote_seconds <= 0:
+            return self._add(embedding, duration)
+        # A new voice has to persist before it becomes a speaker.  This prevents
+        # short content/noise windows from creating 3, 4, 5... speakers.
+        self.pending.append(embedding.copy())
+        self.pending_seconds += duration
+        if self.pending_seconds >= self.promote_seconds and len(self.pending) >= 2:
+            centroid = _normalize(np.stack(self.pending).mean(0))
+            identity = len(self.centroids)+1
+            self.centroids.append(centroid)
+            self.counts.append(len(self.pending))
+            self.first.append(len(self.first))
+            self.durations.append(self.pending_seconds)
+            self.pending, self.pending_seconds = [], 0.0
+            return identity, f'说话人{identity}'
+        # Provisional assignment: do not contaminate the existing centroid
+        # with an unmatched window, and keep accumulating evidence.
+        return best+1, f'说话人{best+1}'
 
     def refine(self):
         """Fold single-segment clusters, then return an old→new id map.

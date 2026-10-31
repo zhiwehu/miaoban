@@ -147,12 +147,13 @@ class Session:
         except ValueError:
             live_threshold = .42
         try:
-            live_max = int(os.environ.get('VOICEHUB_LIVE_SPEAKER_MAX', '2'))
+            live_max = int(os.environ.get('VOICEHUB_LIVE_SPEAKER_MAX', '6'))
         except ValueError:
-            live_max = 2
+            live_max = 6
         self.recording_speakers = (SpeakerTracker(threshold=live_threshold,
                                                   min_seconds=.8,
-                                                  max_speakers=live_max)
+                                                  max_speakers=live_max,
+                                                  promote_seconds=2.0)
                                    if self.speaker_engine else None)
         self.recording_speaker_failed = False
         self.recording_speaker_failures = 0
@@ -533,7 +534,7 @@ class Session:
         async def run():
             try:
                 from .rediarize import rediarize
-                await rediarize(recording_id, data_root, speakers=2, mode='text')
+                await rediarize(recording_id, data_root, speakers=0, mode='text')
                 if not self.closed:
                     await self.emit('recording.diarized', recording_id=recording_id)
                 minutes = self.minutes or getattr(

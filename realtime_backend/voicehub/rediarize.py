@@ -20,7 +20,7 @@ from .config import ConfigFile
 from .models import LocalModels, Pipeline
 from .recording import stamp_ms, stamp_text
 from .services import ServiceManager
-from .speaker import SpeakerEngine
+from .speaker import SpeakerEngine, SpeakerTracker
 
 CONTROL = re.compile(r'^(开始录音模式|开始录音|进入录音模式|停止录音模式|确认停止)[。！!，,、\s]*$')
 
@@ -240,7 +240,7 @@ async def _transcribe_turns(pcm, groups, data_root, hop=.8):
     return lines
 
 
-async def rediarize(recording_id, data_root, speakers=2, wait=False, mode='text'):
+async def rediarize(recording_id, data_root, speakers=0, wait=False, mode='text'):
     root = Path(data_root)
     audio = root/'recordings'/f'{recording_id}.wav'
     metadata_path = root/'recordings'/f'{recording_id}.json'
@@ -268,7 +268,14 @@ async def rediarize(recording_id, data_root, speakers=2, wait=False, mode='text'
         engine = SpeakerEngine(root/'speaker-cache')
         return [engine.embed(frame) for _, frame in rows]
     embeddings = await asyncio.to_thread(_embed_all)
-    labels = smooth_labels(cluster(embeddings, speakers))
+    if speakers and speakers > 0:
+        labels = smooth_labels(cluster(embeddings, speakers))
+    else:
+        tracker = SpeakerTracker(threshold=.42, min_seconds=.8,
+                                 max_speakers=6, promote_seconds=1.5)
+        labels = np.array([tracker.assign(item, 1.6)[0] for item in embeddings])
+        labels = smooth_labels(labels)
+        speakers = tracker.count
     groups = turns_from_windows(labels, duration=len(pcm)/16000)
     if mode == 'text':
         source = transcript_path

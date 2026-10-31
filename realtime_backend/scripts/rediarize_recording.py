@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--id', required=True)
     parser.add_argument('--data', default=str(Path(__file__).resolve().parents[1]/'data'))
-    parser.add_argument('--speakers', type=int, default=2)
+    parser.add_argument('--speakers', type=int, default=0, help='0 = automatic, or force a count')
     parser.add_argument('--wait', action='store_true')
     parser.add_argument('--mode', choices=('text', 'asr'), default='text')
     args = parser.parse_args()

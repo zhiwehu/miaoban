@@ -20,6 +20,15 @@ class SpeakerTrackerTests(unittest.TestCase):
         self.assertEqual(tracker.count, 2)
         self.assertEqual(tracker.assign([0, 0, -1], 2), (3, '说话人3'))
 
+    def test_new_speaker_requires_sustained_evidence(self):
+        tracker = SpeakerTracker(threshold=.25, min_seconds=.8, max_speakers=6,
+                                 promote_seconds=2)
+        self.assertEqual(tracker.assign([1, 0], 2), (1, '说话人1'))
+        # One low-similarity segment is not enough to invent a new person.
+        self.assertEqual(tracker.assign([0, 1], 2), (1, '说话人1'))
+        self.assertEqual(tracker.assign([0, 1], 2), (2, '说话人2'))
+        self.assertEqual(tracker.count, 2)
+
     def test_refine_folds_single_segment_outliers(self):
         tracker = SpeakerTracker(threshold=.25, min_seconds=.5, max_speakers=6)
         tracker.assign([1, 0], 2)

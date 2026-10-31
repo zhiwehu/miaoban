@@ -10,6 +10,7 @@ import numpy as np
 from voicehub.input import AudioInput
 from voicehub.recording import Recordings
 from voicehub.session import Session
+from voicehub.speaker import SpeakerTracker
 from voicehub.store import Store
 
 
@@ -224,6 +225,10 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_speaker_labels_do_not_merge_across_speakers_and_refine_on_stop(self):
         self.session.speaker_engine = FakeSpeakerEngine([[1, 0], [0, 1], [.9, .1]])
         recording = await self.session.start_recording('web')
+        # This test isolates turn merging; promotion timing is covered in
+        # test_speaker.py.  Create speakers immediately here.
+        self.session.recording_speakers = SpeakerTracker(
+            threshold=.25, min_seconds=.5, promote_seconds=0)
         self.session.recording_listen_after = 0
         self.pipeline.transcripts = ['甲说话', '乙说话', '甲又说']
 
