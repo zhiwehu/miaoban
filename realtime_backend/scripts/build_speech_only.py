@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
+from voicehub.recording import _fade_edges
 from voicehub.audio import Segmenter, Silero, vad_path
 
 
@@ -109,8 +110,8 @@ def build(recording_id, data, config, force=False):
                     continue
                 start = frame_end-len(segment)+segmenter.last_pre_trim_frames*512
                 end = frame_end-segmenter.last_trailing_silence*512
-                target.writeframes((np.clip(trimmed, -1, 1)*32767)
-                                   .astype('<i2').tobytes())
+                pcm = (np.clip(trimmed, -1, 1)*32767).astype('<i2').tobytes()
+                target.writeframes(_fade_edges(pcm))
                 mapping.append({'full_start_ms': round(start/16000*1000),
                                 'full_end_ms': round(end/16000*1000),
                                 'ready_start_ms': round(ready_frames/16000*1000),

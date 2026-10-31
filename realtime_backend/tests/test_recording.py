@@ -3,6 +3,8 @@ import tempfile
 import unittest
 import uuid
 import wave
+
+import numpy as np
 from pathlib import Path
 from unittest.mock import patch
 
@@ -155,7 +157,10 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         with wave.open(str(path), 'rb') as wav:
             self.assertEqual(wav.getframerate(), 16000)
             self.assertEqual(wav.getnframes(), 8000)
-            self.assertEqual(wav.readframes(8000), b'\x01\x00'*8000)
+            samples = np.frombuffer(wav.readframes(8000), '<i2')
+            self.assertEqual(samples[0], 0)
+            self.assertEqual(samples[-1], 0)
+            self.assertTrue(np.any(samples[200:-200] == 1))
         self.manager.delete(recording.id)
         self.assertFalse(path.exists())
 

@@ -74,6 +74,40 @@ def cluster(embeddings, count=2):
     return best[1]
 
 
+def consolidate_labels(labels, centroids, min_share=.06, min_count=3):
+    """Merge tiny clusters into the nearest well-supported speaker cluster."""
+    labels = np.asarray(labels, dtype=int)
+    n = len(labels)
+    if n == 0 or not centroids:
+        return labels
+    counts = np.bincount(labels)
+    threshold = max(min_count, int(round(n*min_share)))
+    large = [int(i) for i in range(len(counts)) if counts[i] >= threshold]
+    if not large:
+        large = [int(np.argmax(counts))]
+    centers = np.stack([_normalize(item) for item in centroids])
+    mapping = {}
+    for index in range(len(counts)):
+        if counts[index] == 0:
+            continue
+        if index in large:
+            mapping[index] = index
+        else:
+            target = max(large, key=lambda item: float(
+                np.dot(centers[index], centers[item])))
+            mapping[index] = target
+    merged = np.array([mapping.get(int(item), int(item)) for item in labels])
+    # Renumber by first appearance, same convention as turns_from_windows.
+    order, next_id, result = {}, 1, []
+    for value in merged:
+        value = int(value)
+        if value not in order:
+            order[value] = next_id
+            next_id += 1
+        result.append(order[value])
+    return np.asarray(result, dtype=int)
+
+
 def smooth_labels(labels, radius=2):
     labels = np.asarray(labels, dtype=int)
     output = labels.copy()
@@ -275,7 +309,8 @@ async def rediarize(recording_id, data_root, speakers=0, wait=False, mode='text'
                                  max_speakers=6, promote_seconds=1.5)
         labels = np.array([tracker.assign(item, 1.6)[0] for item in embeddings])
         labels = smooth_labels(labels)
-        speakers = tracker.count
+        labels = consolidate_labels(labels, tracker.centroids)
+        speakers = len(set(int(item) for item in labels))
     groups = turns_from_windows(labels, duration=len(pcm)/16000)
     if mode == 'text':
         source = transcript_path

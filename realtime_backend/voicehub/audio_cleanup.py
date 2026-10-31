@@ -11,9 +11,9 @@ import wave
 from pathlib import Path
 
 PROFILES = {
-    'mild': 'highpass=f=70,adeclip,highshelf=f=3200:g=-4,lowpass=f=6800,'
+    'mild': 'highpass=f=90,adeclick,adeclip,highshelf=f=3200:g=-4,lowpass=f=6800,'
             'alimiter=level=false:limit=0.95:latency=true',
-    'strong': 'highpass=f=80,adeclip,highshelf=f=2800:g=-7,lowpass=f=5200,'
+    'strong': 'highpass=f=90,adeclick,adeclip,highshelf=f=2800:g=-7,lowpass=f=5200,'
               'alimiter=level=false:limit=0.95:latency=true',
 }
 

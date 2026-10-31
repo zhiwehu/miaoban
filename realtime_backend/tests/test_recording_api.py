@@ -154,7 +154,10 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         data = await speech.read()
         with wave.open(io.BytesIO(data), 'rb') as wav:
             self.assertEqual(wav.getnframes(), 4000)
-            self.assertEqual(wav.readframes(4000), b'\x02\x00'*4000)
+            samples = np.frombuffer(wav.readframes(4000), '<i2')
+            self.assertEqual(samples[0], 0)
+            self.assertEqual(samples[-1], 0)
+            self.assertTrue(np.any(samples[200:-200] == 2))
         await self.client.delete(f'/api/recordings/{recording["id"]}')
         self.assertEqual((await self.client.get(
             f'/api/recordings/{recording["id"]}/speech')).status, 404)

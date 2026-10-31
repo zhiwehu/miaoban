@@ -20,6 +20,8 @@ import time
 import uuid
 from pathlib import Path
 
+import numpy as np
+
 SAMPLE_RATE = 16000
 CHANNELS = 1
 SAMPLE_WIDTH = 2
@@ -102,6 +104,18 @@ def _wav_header(data_bytes=0):
     return struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 36+data_bytes, b'WAVE', b'fmt ',
                        16, 1, CHANNELS, SAMPLE_RATE, SAMPLE_RATE*CHANNELS*SAMPLE_WIDTH,
                        CHANNELS*SAMPLE_WIDTH, SAMPLE_WIDTH*8, b'data', data_bytes)
+
+
+def _fade_edges(pcm, milliseconds=8):
+    """Short fades prevent a click where two VAD segments are concatenated."""
+    data = np.frombuffer(pcm, '<i2').copy()
+    fade = min(len(data)//2, int(SAMPLE_RATE*milliseconds/1000))
+    if fade <= 0:
+        return pcm
+    ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)
+    data[:fade] = (data[:fade].astype(np.float32)*ramp).astype(np.int16)
+    data[-fade:] = (data[-fade:].astype(np.float32)*ramp[::-1]).astype(np.int16)
+    return data.tobytes()
 
 
 class ActiveRecording:
@@ -211,6 +225,7 @@ class ActiveRecording:
             return
         if len(pcm) % SAMPLE_WIDTH:
             pcm = pcm[:-1]
+        pcm = _fade_edges(pcm)
         remaining = self.max_samples-self.speech_samples
         if remaining <= 0 or not pcm:
             return

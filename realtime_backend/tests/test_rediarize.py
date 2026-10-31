@@ -2,7 +2,8 @@ import unittest
 
 import numpy as np
 
-from voicehub.rediarize import (cluster, label_existing_text, smooth_labels,
+from voicehub.rediarize import (cluster, consolidate_labels,
+                                label_existing_text, smooth_labels,
                                 turns_from_windows)
 
 
@@ -25,6 +26,14 @@ class RediarizeTests(unittest.TestCase):
                                     [(0, 5, 1), (5, 10, 2)], 10)
         self.assertEqual(''.join(line['text'] for line in lines), '甲。乙。')
         self.assertEqual([line['speaker_id'] for line in lines], [1, 2])
+
+    def test_tiny_cluster_is_merged_into_most_similar_large_cluster(self):
+        labels = np.array([0]*100+[1]*10+[2]*2)
+        centroids = [np.array([1., 0.]), np.array([0., 1.]),
+                     np.array([.9, .1])]
+        merged = consolidate_labels(labels, centroids)
+        self.assertEqual(len(set(int(x) for x in merged)), 2)
+        self.assertEqual(merged[0], merged[-1])
 
     def test_cluster_separates_orthogonal_embeddings(self):
         embeddings = [np.array([1., 0.]), np.array([.9, .1]),
