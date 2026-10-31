@@ -146,8 +146,13 @@ class Session:
             live_threshold = float(os.environ.get('VOICEHUB_LIVE_SPEAKER_THRESHOLD', '.42'))
         except ValueError:
             live_threshold = .42
+        try:
+            live_max = int(os.environ.get('VOICEHUB_LIVE_SPEAKER_MAX', '2'))
+        except ValueError:
+            live_max = 2
         self.recording_speakers = (SpeakerTracker(threshold=live_threshold,
-                                                  min_seconds=.8)
+                                                  min_seconds=.8,
+                                                  max_speakers=live_max)
                                    if self.speaker_engine else None)
         self.recording_speaker_failed = False
         self.recording_speaker_failures = 0
@@ -515,7 +520,10 @@ class Session:
         duration = metadata.get('duration_ms') or 0
         gaps = [b-a for a, b in zip(starts, starts[1:])]
         gaps.append(max(0, duration-starts[-1]))
-        if max(gaps or [0]) < 20000:
+        # Over-splitting is also a reason to run the final pass, even for a
+        # short recording whose gaps never reach 20 seconds.
+        if (max(gaps or [0]) < 20000
+                and metadata.get('speaker_count', 0) <= 2):
             return
         data_root = getattr(getattr(self.pipeline, 'local', None), 'data_root', None)
         if not data_root:
