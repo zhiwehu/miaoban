@@ -83,7 +83,7 @@ class Operations:
        if len(text)>16000:raise ValueError('operation_output_limit')
      record.update(status='waiting' if str(record.get('workflow_status','')).startswith('waiting_') else 'cancelled' if record.get('workflow_status')=='cancelled' else 'failed' if failed else 'completed',text=text.strip() or '任务处理结束，请查看任务记录。')
    except asyncio.CancelledError:record.update(status='unknown',text='已请求停止执行；正在进行的外部操作可能已经生效，请核实记录。')
-   except Exception:record.update(status='failed',text='后台任务未能完成，请在 MCP 页查看状态并检查工具配置。')
+   except Exception:record.update(status='failed',text='后台任务未能完成，请在网页上查看原因。')
    finally:
     if progress_task:
      progress_task.cancel()

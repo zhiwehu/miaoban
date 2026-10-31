@@ -39,7 +39,7 @@ class ExtensionRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_disabled_music_explains_setup_without_claiming_to_play(self):
         pipeline=SimpleNamespace(config=copy.deepcopy(DEFAULT))
         result=[item async for item in chat(pipeline,[{'role':'user','content':'播放音乐'}])]
-        self.assertEqual(result,['本地音乐尚未启用，请在 MCP 工具页设置音乐目录并启用。'])
+        self.assertEqual(result,['本地音乐还没开启，请在网页上设置音乐目录并启用。'])
 
     async def test_uploaded_tool_overrides_fixed_model_candidate_and_carries_actual_parameters(self):
         with tempfile.TemporaryDirectory() as root:

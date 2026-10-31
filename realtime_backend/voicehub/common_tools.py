@@ -20,7 +20,7 @@ async def call_tool(http, name, arguments):
             value = await TOOLS[name].execute(http, **arguments)
         return {'content':[{'type':'text','text':json.dumps(value, ensure_ascii=False)}], 'isError':False}
     except (ValueError, TypeError, KeyError, IndexError, ET.ParseError, aiohttp.ClientError, TimeoutError, OSError) as exc:
-        music_errors={'music_directory_required':'请先在 MCP 工具页设置音乐目录。',
+        music_errors={'music_directory_required':'请先在网页上设置音乐目录。',
                       'music_directory_unavailable':'音乐目录不存在或当前无法读取。',
                       'music_disabled':'本地音乐工具尚未启用。','music_player_unavailable':'当前主机未提供 afplay 播放器。',
                       'music_playback_failed':'播放器启动失败，请检查音频格式。','music_player_busy':'旧播放器尚未退出，请先停止后重试。'}

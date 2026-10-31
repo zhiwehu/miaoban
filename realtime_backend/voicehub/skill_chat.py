@@ -30,7 +30,7 @@ async def execute(pipeline,history,skills,matches):
    args=data['arguments']
   task=skills.instantiate(item['id'],args,pipeline.session_id)
  except (ValueError,TypeError,KeyError,TimeoutError) as exc:
-  if str(exc)=='workflow_tool_unavailable':yield '这个技能需要的工具尚未启用，请先到 MCP 页启用对应工具。';return
+  if str(exc)=='workflow_tool_unavailable':yield '这个技能需要的工具还没开启，请先到网页上打开。';return
   fields='、'.join({'title':'标题','content':'正文','to':'收件人邮箱'}.get(key,key) for key in item['parameters'].get('required',[]));yield '技能参数还不完整或格式不正确。请再说一次“'+item['name']+'”，并提供'+fields+'。';return
  yield ToolStatus('skill','started',arguments={'skill':item['id']},planner='skill')
  async with contextlib.aclosing(skills.workflows.run(task['id'],pipeline,history)) as source:

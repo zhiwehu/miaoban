@@ -62,7 +62,7 @@ def summary(name,action,value):
  if status=='needs_selection':return '有重名或多个候选，请明确'+('计时器名称，并使用不同名字新建。' if name=='timer' else '完整名称。')
  if status=='not_found':return '没有找到对应记录，请先查询列表或说明完整名称。'
  if name=='shopping_list':
-  if action=='list':return '购物清单为空。' if not rows else '购物清单：'+'；'.join(r['name']+('，已买好' if r['state']=='bought' else '，待购买') for r in rows[:15])+('；还有更多条目，请在 MCP 页查看。' if len(rows)>15 else '。')
+  if action=='list':return '购物清单为空。' if not rows else '购物清单：'+'；'.join(r['name']+('，已买好' if r['state']=='bought' else '，待购买') for r in rows[:15])+('；还有更多条目，网页上能看到。' if len(rows)>15 else '。')
   return {'add':'已加入购物清单。','complete':'已标记为买好。','remove':'已从购物清单移除。'}[action]
  if name=='item_memory':
   if action=='remember':return '记住了，'+rows[0]['item']+'在'+rows[0]['location']+'。'
@@ -142,7 +142,7 @@ async def execute(pipeline,history,result):
    operation=current_operation.get()
    if operation is not None:operation['everyday_question']=True
    yield {'shopping_list':'请说清要操作的商品名称，例如加入两盒牛奶。','item_memory':'请明确物品名称；记录时还需要位置，例如记住护照在书房抽屉。','timer':'请说明时长，例如倒计时五分钟；有多个计时器时请说名称。'}[name]
-  else:yield '操作未成功，请在 MCP 工具页检查启用状态后重试。'
+  else:yield '这次没操作成功，请在网页上检查开关后重试。'
   return
  yield ToolStatus(name,'completed',round((time.monotonic()-started)*1000),arguments=args,planner=planner)
  yield summary(name,action,data)

@@ -42,7 +42,7 @@ def route(pipeline,history):
   if (has_time or date_only or title_only) and not re.search(r'什么|是否|是不是|为什么|怎么|几点|吗|[？?]',text):text=pending['text']+'；用户补充（以此为准）：'+text;topic=True
  if not topic or re.search(r'怎么|如何|什么意思|解释|介绍|支持.*吗',text):return None
  if re.match(r'^(?:请)?(?:暂时)?(?:不要|先别|别|不需要)',text) and re.search('添加|新建|创建|设置|安排',text):return refusal('好的，不会创建日程或提醒。')
- if not pipeline.config['tools'].get('calendar'):return refusal('日程工具尚未启用，请在 MCP 工具页启用日程与提醒。')
+ if not pipeline.config['tools'].get('calendar'):return refusal('日程工具还没开启，请在网页上打开日程和提醒。')
  pipeline._calendar_request_seq=getattr(pipeline,'_calendar_request_seq',0)+1
  return execute(pipeline,history,text,store,pipeline._calendar_request_seq)
 async def refusal(text):yield text

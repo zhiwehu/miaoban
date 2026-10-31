@@ -108,11 +108,11 @@ async def chat(pipeline, history):
     cfg = pipeline.config['tools']
     if files is not None and not cfg.get('file_organizer'):
         pipeline._previous_tool_plan=None
-        yield '文件整理尚未启用，请在 MCP 工具页设置允许整理的目录并启用。'
+        yield '文件整理还没开启，请在网页上设置允许整理的目录并启用。'
         return
     if not cfg.get('music') and music_plan(latest) is not None:
         pipeline._previous_tool_plan=None
-        yield '本地音乐尚未启用，请在 MCP 工具页设置音乐目录并启用。'
+        yield '本地音乐还没开启，请在网页上设置音乐目录并启用。'
         return
     if cfg.get('music') and music_refusal(latest):
         pipeline._previous_tool_plan=None
@@ -232,7 +232,7 @@ async def chat(pipeline, history):
         yield ToolStatus(name, 'failed', round((time.monotonic()-started)*1000), code)
         if name=='file_organizer':
             from .mcp_tools.file_organizer import ERROR_MESSAGES
-            yield ERROR_MESSAGES.get(code,'文件整理预览未成功，请在 MCP 页检查指定目录。')
+            yield ERROR_MESSAGES.get(code,'文件整理预览没成功，请在网页上检查指定目录。')
             return
         if name=='weather':
             from .mcp_tools.weather import ERROR_MESSAGES
@@ -240,7 +240,7 @@ async def chat(pipeline, history):
                 yield ERROR_MESSAGES[code]
                 return
         if name=='music' and code.startswith('music_'):
-            yield '本地音乐暂时无法使用，请在 MCP 工具页检查音乐目录、启用状态和播放器。'
+            yield '本地音乐暂时用不了，请在网页上检查音乐目录、启用状态和播放器。'
             return
         yield ('这次查询超时了，请稍后再试。' if 'timeout' in code else
                '这次查询没有成功，可能是网络或服务暂时不可用，请稍后再试。')

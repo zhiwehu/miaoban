@@ -4,13 +4,13 @@ import json
 import os
 from pathlib import Path
 from ..file_organizer import FileOrganizer
-SCHEMA=('统计管理员指定目录第一层文件，或生成按类型分类的整理预览。不会移动文件；必须到 MCP 页确认后才执行。',{
+SCHEMA=('统计管理员指定目录第一层文件，或生成按类型分类的整理预览。不会移动文件；必须到网页确认后才执行。',{
  'action':{'type':'string','enum':['scan','preview'],'description':'scan统计；preview生成待确认整理计划。不能传目录、移动或删除操作。'}})
 REQUIRED=['action']
 ACKNOWLEDGEMENT='我先查看指定目录，整理方案生成后请到页面确认。'
 READ_ONLY=True
 ERROR_MESSAGES={
- 'file_disabled':'文件整理尚未启用，请在 MCP 页设置指定目录并启用。',
+ 'file_disabled':'文件整理还没开启，请在网页上设置指定目录并启用。',
  'file_directory_invalid':'请设置一个存在的绝对目录，不能使用符号链接作为整理目录。',
  'file_directory_forbidden':'不能整理系统根目录、用户主目录或包含本平台运行数据的目录。',
  'file_directory_changed':'整理目录发生变化，请重新生成预览。',
@@ -37,7 +37,7 @@ async def execute(http,action):
  except OSError:raise ValueError('file_directory_unavailable') from None
  if action=='scan':return {**result,'status':'scanned','message':'只统计文件类型和数量，没有读取内容或移动文件。'}
  return {'status':'pending_confirmation','plan_id':result['id'],**{k:result[k] for k in ('count','categories','skipped')},
-         'requires_confirmation':True,'message':'尚未移动任何文件。请到 MCP 工具页查看源文件与目标列表，再确认执行。'}
+         'requires_confirmation':True,'message':'尚未移动任何文件。请到网页上查看源文件与目标列表，再确认执行。'}
 
 
 def spoken_summary(result):
@@ -51,4 +51,4 @@ def spoken_summary(result):
  if kinds:response+='，其中'+kinds
  response+='。'
  if skipped:response+='跳过'+str(skipped)+'项，包括子目录、隐藏文件或链接等。'
- return response+('文件尚未移动，请到 MCP 工具页核对清单并确认执行。' if value['status']=='pending_confirmation' else '没有读取文件内容或移动文件。')
+ return response+('文件尚未移动，请到网页上核对清单并确认执行。' if value['status']=='pending_confirmation' else '没有读取文件内容或移动文件。')

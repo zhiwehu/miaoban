@@ -96,7 +96,7 @@ class FileRoutingTests(unittest.IsolatedAsyncioTestCase):
   from voicehub.config import DEFAULT
   from voicehub.tool_chat import chat
   result=[item async for item in chat(SimpleNamespace(config=copy.deepcopy(DEFAULT)),[{'role':'user','content':'整理文件'}])]
-  self.assertIn('尚未启用',result[0])
+  self.assertIn('还没开启',result[0])
  def test_quoted_negative_and_other_intents_are_not_commands(self):
   from voicehub.extension_routing import file_plan
   for text in ('不要整理文件','解释整理文件是什么意思','查一下新闻','把“整理文件”翻译成英文','删除全部文件'):

@@ -53,7 +53,7 @@ class PhrasingTests(unittest.TestCase):
         self.assertTrue(body.endswith('。'),body)
 
     def test_failures_are_spoken_as_written(self):
-        text='后台任务未能完成，请在 MCP 页查看状态并检查工具配置。'
+        text='后台任务未能完成，请在网页上查看原因。'
         self.assertEqual(phrasing.announcement(text,status='failed'),text)
 
 

@@ -366,7 +366,7 @@ class Session:
                     # 进度提示本身就是一句话，不能再套一层前缀。
                     text=record['text']
                 elif kind in ('calendar','timer'):
-                    text=record['text'] if len(record['text'])<=120 else record['text'][:120]+'。完整结果可在 MCP 页查看。'
+                    text=record['text'] if len(record['text'])<=120 else record['text'][:120]+'。完整结果可在网页查看。'
                 else:
                     text=phrasing.announcement(record['text'],record.get('status','completed'))
                 turn=self.turn=Turn(notification_id=record['id'])
