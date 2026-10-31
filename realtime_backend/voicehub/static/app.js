@@ -757,7 +757,7 @@ let recordings = [], displayedRecording = null;
 let displayedTranscript = [], displayedTranscriptState = "idle";
 let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
 let recordingClockTimer = null, recordingLocalStart = 0;
-let recordingsRefreshTimer = null, connectingWebAudio = null;
+let recordingsRefreshTimer = null;
 let identity;
 try {
   identity = JSON.parse(sessionStorage.getItem("voicehub-client") || "null");
@@ -870,7 +870,7 @@ function renderRecordingConsole() {
         : "喵伴设备正在录音；网页麦克风未参与。"
     : recording
       ? recordingSource(recording) + " · " + dateTime(recording.started_at)
-      : "说“开始录音模式”，或者连接网页麦克风后开始。";
+      : "在网页客户端或喵伴说“开始录音模式”后开始。";
   $("recordings-duration").textContent = active
     ? formatClock(duration)
     : formatClock(recording?.duration_ms || 0);
@@ -879,17 +879,8 @@ function renderRecordingConsole() {
   $("recordings-lines").textContent = lines + " 行";
   $("recordings-orb").classList.toggle("active", !!active);
   $("recordings-orb").classList.toggle("confirming", !!displayedConfirming);
-  const hasActive =
-    activeRecordings().length > 0 || displayedRecording?.status === "active";
-  $("recordings-start").hidden = hasActive;
-  $("recordings-start").disabled = hasActive;
-  $("recordings-connect").hidden = hasActive;
+  $("recordings-stop").hidden = !active;
   $("recordings-stop").disabled = !active;
-  const connected = !!(socket && clientReady && stream);
-  $("recordings-connect").disabled = connected;
-  $("recordings-connect").textContent = connected
-    ? "麦克风已连接"
-    : "连接网页麦克风";
   const download = $("recordings-download");
   const downloadable = !!(recording && !active && recording.download_url);
   download.hidden = !downloadable;
@@ -1120,7 +1111,7 @@ function renderRecordings() {
     empty(
       target,
       "还没有录音",
-      "说“开始录音模式”，或点“开始网页录音”。",
+      "在网页客户端或喵伴说“开始录音模式”。",
     );
     scheduleRecordingsRefresh();
     return;
@@ -1215,51 +1206,10 @@ async function loadRecordings() {
   syncRecordingControls();
   scheduleRecordingsRefresh();
 }
-async function ensureWebSession() {
-  if (socket && clientReady && stream) return true;
-  if (connectingWebAudio) return connectingWebAudio;
-  connectingWebAudio = (async () => {
-    await connect(true);
-    const deadline = Date.now() + 10000;
-    while (Date.now() < deadline && !(socket && clientReady && stream))
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    return !!(socket && clientReady && stream);
-  })();
-  try {
-    return await connectingWebAudio;
-  } finally {
-    connectingWebAudio = null;
-    syncRecordingControls();
-  }
-}
 window.addEventListener("voicehub:view", (event) => {
   if (event.detail === "recordings")
     loadRecordings().catch((error) => notice("读取录音失败：" + error.message, true));
 });
-async function startRecording() {
-  if (activeRecordings().length) {
-    notice("已经有一个录音在进行，请先停止它。", true);
-    return;
-  }
-  $("recordings-start").disabled = true;
-  try {
-    if (!(await ensureWebSession())) {
-      notice("需要先连接网页麦克风，才能开始网页录音。", true);
-      return;
-    }
-    const data = await api("recordings", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({session_id: identity.session_id}),
-    });
-    await selectDisplayedRecording(data.recording);
-    await loadRecordings();
-  } catch (error) {
-    notice("无法开始录音：" + error.message, true);
-  } finally {
-    renderRecordingConsole();
-  }
-}
 async function displayStoppedRecording(recording) {
   if (!displayedRecording || displayedRecording.id !== recording.id) {
     await selectDisplayedRecording(recording);
@@ -1703,16 +1653,11 @@ function disconnect() {
 $("connect-text").onclick = () => connect(false);
 $("connect-mic").onclick = () => connect(true);
 $("disconnect-client").onclick = disconnect;
-$("recordings-start").onclick = () => startRecording();
 $("recordings-stop").onclick = () => stopDisplayedRecording();
 $("recordings-refresh").onclick = () =>
   loadRecordings().catch((error) => notice("刷新录音失败：" + error.message, true));
 $("recording-jump").onclick = () =>
   $("transcript-lines").scrollIntoView({behavior: "smooth", block: "start"});
-$("recordings-connect").onclick = async () => {
-  if (!(await ensureWebSession()))
-    notice("无法连接网页麦克风，请检查浏览器权限。", true);
-};
 $("lab-open-recordings").onclick = () => view("recordings");
 $("activate-client").onclick = () => {
   context?.resume().catch(() => {});

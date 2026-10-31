@@ -503,7 +503,7 @@
                 <div class="recording-hero-copy">
                   <h3 id="recordings-title">还没有开始录音</h3>
                   <p id="recordings-subtitle">
-                    说“开始录音模式”，或者连接网页麦克风后开始。
+                    在网页客户端或喵伴说“开始录音模式”后开始。
                   </p>
                 </div>
               </div>
@@ -513,12 +513,8 @@
                 <div><dt>转写</dt><dd id="recordings-lines">0 行</dd></div>
               </dl>
               <div class="button-row">
-                <button id="recordings-start" class="primary">开始网页录音</button>
-                <button id="recordings-stop" class="danger" disabled>
+                <button id="recordings-stop" class="danger" hidden disabled>
                   停止并保存
-                </button>
-                <button id="recordings-connect" class="secondary">
-                  连接网页麦克风
                 </button>
               </div>
               <div class="button-row">
@@ -533,9 +529,9 @@
                 </button>
               </div>
               <p class="hint">
-                网页录音使用本页麦克风；喵伴录音由设备自己采集，两者不会同时开始。
-                录音中不会回答，也不会写入对话记录。停止方式：网页停止、喵伴开关键，
-                或说“停止录音模式”后再说“确认停止”。
+                这里是服务端的录音管理页：开始录音请到网页客户端或对喵伴说
+                “开始录音模式”。录音中不会回答，也不会写入对话记录。停止方式：
+                网页客户端或本页停止、喵伴开关键，或说“停止录音模式”后再说“确认停止”。
               </p>
             </article>
             <article class="panel recording-live">
@@ -568,7 +564,7 @@
               <div class="empty">
                 <span>◎</span>
                 <h3>还没有录音</h3>
-                <p>说“开始录音模式”，或点“开始网页录音”。</p>
+                <p>在网页客户端或喵伴说“开始录音模式”。</p>
               </div>
             </div>
           </article>
