@@ -1090,34 +1090,52 @@ body[data-view="recordings"] footer {
   padding-top: 10px;
   border-top: 1px solid var(--line);
 }
+.minutes-panel > .section-heading {
+  margin-bottom: 4px;
+}
 .minutes-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 12px 0;
+  margin: 8px 0 6px;
 }
 .minutes-toolbar .primary,
 .minutes-toolbar .secondary {
-  padding: 8px 12px;
-  font-size: 11px;
+  min-height: 34px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 10px;
 }
 .minutes-field {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 11px;
+  gap: 6px;
+  margin: 0;
+  color: #617063;
+  font-size: 10px;
+  letter-spacing: .5px;
+  white-space: nowrap;
 }
 .minutes-field select {
-  min-width: 150px;
-  max-width: 240px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
+  display: inline-block;
+  width: 210px;
+  min-width: 0;
+  max-width: 260px;
+  margin-top: 0;
+  padding: 7px 10px;
+  border: 1px solid #cfd8c9;
   border-radius: 7px;
   background: #fffdf8;
   color: var(--ink);
   font: inherit;
+  font-size: 11px;
+  outline: none;
+}
+.minutes-field select:focus-visible {
+  border-color: #8aa38b;
+  box-shadow: 0 0 0 2px #dce8d8;
 }
 .minutes-status {
   padding: 12px 14px;
@@ -1259,16 +1277,28 @@ body[data-view="recordings"] footer {
   font-size: 11px;
 }
 .minutes-history-block {
-  margin-top: 20px;
-  padding-top: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
 }
 .minutes-history-block .section-heading {
-  margin-bottom: 7px;
+  align-items: center;
+  margin-bottom: 6px;
 }
 .minutes-history-block h3 {
   margin: 0;
   font-size: 12px;
+}
+.minutes-history-block .section-heading .hint {
+  margin: 0;
+  font-size: 9px;
+}
+.minutes-history .minutes-empty {
+  margin: 4px 0 0;
+  padding: 12px 14px;
+  border: 1px dashed #d7dfd1;
+  border-radius: 7px;
+  background: #fafbf6;
 }
 .minutes-history {
   display: grid;
@@ -1811,13 +1841,25 @@ footer {
 @media(max-width:480px) { .usb-steps { gap:7px; } .usb-steps li { gap:5px; font-size:12px; } .usb-steps b { width:25px; height:25px; } }
 
 .minutes-custom {
-  margin: -4px 0 12px;
+  margin: 0 0 10px;
   color: var(--muted);
   font-size: 10px;
 }
 .minutes-custom summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #617063;
   cursor: pointer;
   user-select: none;
+}
+.minutes-custom summary::before {
+  content: "＋";
+  color: #6d8b70;
+  font-size: 11px;
+}
+.minutes-custom[open] summary {
+  color: var(--teal);
 }
 .minutes-custom-body {
   display: grid;
