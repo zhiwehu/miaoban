@@ -137,6 +137,8 @@ class ActiveRecording:
         self.speech_map_path = manager.root/f'{self.id}-speech.json'
         self.speech_samples = 0
         self.speech_segments = []
+        self.last_data_sync = time.monotonic()
+        self.last_checkpoint = time.monotonic()
         self.file = open(self.path, 'wb', buffering=0)
         os.chmod(self.path, 0o600)
         self.file.write(_wav_header())
@@ -169,7 +171,39 @@ class ActiveRecording:
             pcm = pcm[:limit_bytes]
         self.file.write(pcm)
         self.samples += len(pcm)//SAMPLE_WIDTH
+        now = time.monotonic()
+        if now-self.last_data_sync >= 2:
+            try:
+                os.fsync(self.file.fileno())
+            except OSError:
+                pass
+            self.last_data_sync = now
+        if now-self.last_checkpoint >= 10:
+            self.checkpoint()
         return 'limit' if over or self.samples >= self.max_samples else None
+
+    def _sync_header(self, handle, samples):
+        try:
+            data_bytes = samples*SAMPLE_WIDTH
+            handle.seek(4)
+            handle.write(struct.pack('<I', 36+data_bytes))
+            handle.seek(40)
+            handle.write(struct.pack('<I', data_bytes))
+            handle.seek(0, 2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        except OSError:
+            pass
+
+    def checkpoint(self):
+        """Persist header sizes and an active sidecar while recording."""
+        self.last_checkpoint = time.monotonic()
+        self._sync_header(self.file, self.samples)
+        self._sync_header(self.speech_file, self.speech_samples)
+        try:
+            self.manager.write_metadata(self.metadata())
+        except OSError:
+            pass
 
     def write_speech(self, pcm, full_start_ms=None, full_end_ms=None):
         """Append one VAD-trimmed utterance and its full-timeline mapping."""
@@ -185,6 +219,15 @@ class ActiveRecording:
         ready_start = round(self.speech_samples/SAMPLE_RATE*1000)
         self.speech_file.write(pcm)
         self.speech_samples += len(pcm)//SAMPLE_WIDTH
+        now = time.monotonic()
+        if now-self.last_data_sync >= 2:
+            try:
+                os.fsync(self.speech_file.fileno())
+            except OSError:
+                pass
+            self.last_data_sync = now
+        if now-self.last_checkpoint >= 10:
+            self.checkpoint()
         if isinstance(full_start_ms, (int, float)) and isinstance(full_end_ms, (int, float)):
             self.speech_segments.append({
                 'full_start_ms': round(full_start_ms),
@@ -217,6 +260,10 @@ class ActiveRecording:
         self.transcript_entries.append(entry)
         self.transcript_file.write(f'[{stamp}] {prefix}{clean}\n'.encode('utf-8'))
         self.transcript_file.flush()
+        try:
+            os.fsync(self.transcript_file.fileno())
+        except OSError:
+            pass
         self.transcript_lines += 1
         return self.transcript_lines, stamp, clean
 
@@ -248,7 +295,17 @@ class ActiveRecording:
             handle.seek(self.transcript_last_offset)
             handle.truncate()
             handle.write(line)
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
         self.transcript_file = open(self.transcript_path, 'ab')
+        try:
+            self.transcript_file.flush()
+            os.fsync(self.transcript_file.fileno())
+        except OSError:
+            pass
         self.transcript_last_text = merged
         if self.transcript_entries:
             self.transcript_entries[-1]['text'] = merged
@@ -550,11 +607,12 @@ class Recordings:
             metadata.setdefault('speech_duration_ms', 0)
         ready = self.ready_path(identity)
         speech = self.speech_path(identity)
-        metadata['ready_available'] = bool(speech)
+        speech_map = self.speech_map_path(identity)
+        metadata['ready_available'] = bool(speech and speech_map)
         metadata['ready_audio_url'] = (f'/api/recordings/{identity}/ready'
-                                       if speech else None)
+                                       if speech and speech_map else None)
         metadata['speech_map_url'] = (f'/api/recordings/{identity}/speech-map'
-                                      if self.speech_map_path(identity) else None)
+                                      if speech_map else None)
         if ready:
             data_bytes = max(0, ready.stat().st_size-HEADER_BYTES)
             metadata['ready_bytes'] = data_bytes
@@ -654,54 +712,87 @@ class Recordings:
             if not re.fullmatch(r'[a-f0-9]{32}', identity):
                 continue
             metadata_path = self.metadata_path(identity)
+            existing = {}
             if metadata_path.is_file():
                 try:
-                    metadata = json.loads(metadata_path.read_text())
-                    if isinstance(metadata, dict) and metadata.get('status') != 'active':
-                        continue
+                    loaded = json.loads(metadata_path.read_text())
+                    if isinstance(loaded, dict) and loaded.get('id') == identity:
+                        existing = loaded
+                        if loaded.get('status') != 'active':
+                            continue
                 except (OSError, ValueError):
-                    pass
+                    existing = {}
             try:
                 size = audio.stat().st_size
                 data_bytes = max(0, size-HEADER_BYTES)
+                data_bytes -= data_bytes % SAMPLE_WIDTH
                 with open(audio, 'r+b') as handle:
                     handle.seek(4)
                     handle.write(struct.pack('<I', 36+data_bytes))
                     handle.seek(40)
                     handle.write(struct.pack('<I', data_bytes))
+                    handle.flush()
+                    try:
+                        os.fsync(handle.fileno())
+                    except OSError:
+                        pass
                 os.chmod(audio, 0o600)
                 speech = self.root/f'{identity}-speech.wav'
-                for extra in (speech, self.root/f'{identity}-clean.wav'):
+                clean = self.root/f'{identity}-clean.wav'
+                ready = self.root/f'{identity}-ready.wav'
+                for extra in (speech, clean, ready):
                     if not extra.is_file():
                         continue
                     extra_bytes = max(0, extra.stat().st_size-HEADER_BYTES)
+                    extra_bytes -= extra_bytes % SAMPLE_WIDTH
                     with open(extra, 'r+b') as handle:
                         handle.seek(4)
                         handle.write(struct.pack('<I', 36+extra_bytes))
                         handle.seek(40)
                         handle.write(struct.pack('<I', extra_bytes))
+                        handle.flush()
+                        try:
+                            os.fsync(handle.fileno())
+                        except OSError:
+                            pass
                     os.chmod(extra, 0o600)
                 samples = data_bytes//SAMPLE_WIDTH
-                started_at = audio.stat().st_mtime-(samples/SAMPLE_RATE)
                 transcript = self.root/f'{identity}.txt'
                 transcript_available = transcript.is_file()
+                transcript_text = ''
                 transcript_lines = 0
+                speaker_count = existing.get('speaker_count', 0)
                 if transcript_available:
                     try:
-                        transcript_lines = len(transcript.read_text(
-                            encoding='utf-8', errors='replace').splitlines())
+                        transcript_text = transcript.read_text(
+                            encoding='utf-8', errors='replace')
+                        transcript_lines = len(transcript_text.splitlines())
+                        speakers = {int(number) for number in re.findall(
+                            r']\s*说话人\s*(\d+)[：:]', transcript_text)}
+                        if speakers:
+                            speaker_count = max(speaker_count or 0, len(speakers))
                     except OSError:
-                        transcript_available, transcript_lines = False, 0
+                        transcript_available, transcript_lines, transcript_text = False, 0, ''
+                duration_ms = round((samples/SAMPLE_RATE)*1000)
+                started_at = existing.get('started_at')
+                if not isinstance(started_at, (int, float)):
+                    started_at = audio.stat().st_mtime-(samples/SAMPLE_RATE)
+                ended_at = existing.get('ended_at')
+                if not isinstance(ended_at, (int, float)):
+                    ended_at = audio.stat().st_mtime
+                map_path = self.speech_map_path(identity)
+                speech_file = speech if speech.is_file() else None
                 metadata = {
+                    **existing,
                     'id': identity,
-                    'session_id': None,
-                    'device_id': None,
+                    'session_id': existing.get('session_id'),
+                    'device_id': existing.get('device_id'),
                     'status': 'recovered',
-                    'trigger': 'unknown',
+                    'trigger': existing.get('trigger', 'unknown'),
                     'reason': 'server_restart',
                     'started_at': round(started_at, 3),
-                    'ended_at': round(audio.stat().st_mtime, 3),
-                    'duration_ms': round((samples/SAMPLE_RATE)*1000),
+                    'ended_at': round(ended_at, 3),
+                    'duration_ms': duration_ms,
                     'samples': samples,
                     'bytes': samples*SAMPLE_WIDTH,
                     'format': 'wav',
@@ -712,16 +803,21 @@ class Recordings:
                     'transcript_url': (f'/api/recordings/{identity}/transcript'
                                        if transcript_available else None),
                     'transcript_lines': transcript_lines,
-                    'speech_available': (self.root/f'{identity}-speech.wav').is_file(),
+                    'speaker_count': speaker_count,
+                    'transcription_error': existing.get('transcription_error'),
+                    'speech_available': bool(speech_file),
                     'speech_audio_url': (f'/api/recordings/{identity}/speech'
-                                         if (self.root/f'{identity}-speech.wav').is_file()
-                                         else None),
-                    'speech_bytes': (self.root/f'{identity}-speech.wav').stat().st_size-HEADER_BYTES
-                                    if (self.root/f'{identity}-speech.wav').is_file() else 0,
+                                         if speech_file else None),
+                    'speech_bytes': max(0, speech_file.stat().st_size-HEADER_BYTES)
+                                    if speech_file else 0,
                     'speech_duration_ms': round(
-                        ((self.root/f'{identity}-speech.wav').stat().st_size-HEADER_BYTES)
-                        /SAMPLE_WIDTH/SAMPLE_RATE*1000)
-                    if (self.root/f'{identity}-speech.wav').is_file() else 0,
+                        max(0, speech_file.stat().st_size-HEADER_BYTES)
+                        /SAMPLE_WIDTH/SAMPLE_RATE*1000) if speech_file else 0,
+                    'speech_map_url': (f'/api/recordings/{identity}/speech-map'
+                                       if map_path else None),
+                    'ready_available': bool(speech_file and map_path),
+                    'ready_audio_url': (f'/api/recordings/{identity}/ready'
+                                        if speech_file and map_path else None),
                     'available': True,
                 }
                 self.write_metadata(metadata)

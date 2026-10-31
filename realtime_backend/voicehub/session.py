@@ -56,6 +56,7 @@ class Session:
         self.recording_worker=None
         self.recording_confirm_timer=None
         self.recording_listen_after=0.0
+        self.last_recording_packet_at=0.0
         self.recording_asr_notified=False
         self.recording_speakers=None
         self.recording_speaker_failed=False
@@ -137,6 +138,7 @@ class Session:
         self.recording = recording
         self.recording_queue = asyncio.Queue(maxsize=8)
         self.recording_listen_after = time.monotonic()+.2
+        self.last_recording_packet_at = time.monotonic()
         self.recording_asr_notified = False
         try:
             live_threshold = float(os.environ.get('VOICEHUB_LIVE_SPEAKER_THRESHOLD', '.42'))
@@ -239,6 +241,13 @@ class Session:
             return
         if recording.duration >= self.recording_manager.max_seconds:
             await self.stop_recording('limit', speak=True)
+            return
+        # A half-open socket can stay "connected" after a device loses power.
+        # Continuous clients send audio even during silence; five minutes with
+        # no packet means the source is gone, so finalize what we have.
+        if (self.last_recording_packet_at
+                and time.monotonic()-self.last_recording_packet_at > 300):
+            await self.stop_recording('input_timeout', notify=True)
 
     async def request_recording_stop(self):
         recording = self.recording

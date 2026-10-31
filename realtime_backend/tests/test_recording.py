@@ -213,6 +213,44 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 self.manager.start('session-e', 'browser', 'web')
 
+    def test_checkpoint_writes_active_sidecar_and_valid_header(self):
+        recording = self.manager.start('checkpoint', 'device', 'voice')
+        recording.write(b'\0\0'*1600)
+        recording.checkpoint()
+        sidecar = json.loads(self.manager.metadata_path(recording.id).read_text())
+        self.assertEqual(sidecar['status'], 'active')
+        self.assertEqual(sidecar['duration_ms'], 100)
+        with wave.open(str(recording.path), 'rb') as wav:
+            self.assertEqual(wav.getnframes(), 1600)
+        self.manager.stop(recording.id, 'web')
+
+    def test_active_sidecar_is_preserved_after_crash(self):
+        identity = uuid.uuid4().hex
+        root = self.manager.root
+        data = b'\0\0'*8000
+        (root/f'{identity}.wav').write_bytes(_wav_header(0)+data)
+        (root/f'{identity}.txt').write_text(
+            '[00:00] 说话人1：第一句\n[00:02] 说话人2：第二句\n',
+            encoding='utf-8')
+        started = 1700000000
+        (root/f'{identity}.json').write_text(json.dumps({
+            'id': identity, 'session_id': 'session-crash', 'device_id': 'dev-crash',
+            'status': 'active', 'trigger': 'voice', 'started_at': started,
+            'duration_ms': 500, 'speaker_count': 1,
+        }), encoding='utf-8')
+        recovered = Recordings(self.root)
+        self.addCleanup(recovered.close)
+        metadata = recovered.get(identity)
+        self.assertEqual(metadata['status'], 'recovered')
+        self.assertEqual(metadata['session_id'], 'session-crash')
+        self.assertEqual(metadata['device_id'], 'dev-crash')
+        self.assertEqual(metadata['started_at'], started)
+        self.assertEqual(metadata['speaker_count'], 2)
+        self.assertEqual(metadata['transcript_lines'], 2)
+        self.assertEqual(metadata['reason'], 'server_restart')
+        with wave.open(str(root/f'{identity}.wav'), 'rb') as wav:
+            self.assertEqual(wav.getnframes(), 8000)
+
     def test_crash_recovery_repairs_header_and_creates_sidecar(self):
         identity = uuid.uuid4().hex
         path = self.manager.root/f'{identity}.wav'

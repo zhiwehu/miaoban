@@ -828,6 +828,7 @@ function recordingReason(reason) {
     storage_error: "写入失败",
     server_shutdown: "服务关闭",
     server_restart: "异常重启恢复",
+    input_timeout: "音频输入中断",
   }[reason] || reason || "未知";
 }
 let currentLineIndex = -1;

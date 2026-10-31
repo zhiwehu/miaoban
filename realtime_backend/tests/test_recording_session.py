@@ -110,6 +110,17 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         metadata = self.manager.list()[0]
         self.assertEqual(metadata['reason'], 'limit')
 
+    async def test_input_timeout_finalizes_a_half_open_recording(self):
+        await self.session.start_recording('web')
+        self.session.recording.write(b'\0\0'*1600)
+        self.session.last_recording_packet_at = time.monotonic()-301
+        await self.session.recording_tick()
+        self.assertIsNone(self.session.recording)
+        self.assertEqual(self.session.state, 'standby')
+        metadata = self.manager.list()[0]
+        self.assertEqual(metadata['reason'], 'input_timeout')
+        self.assertTrue(self.manager.audio_path(metadata['id']).is_file())
+
     async def test_web_stop_finalizes_the_file_and_returns_to_listening(self):
         recording = await self.session.start_recording('web')
         recording.write(b'\x01\x00'*1600)

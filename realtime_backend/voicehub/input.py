@@ -46,6 +46,7 @@ class AudioInput:
                     break
                 recording = session.recording
                 if recording is not None:
+                    session.last_recording_packet_at = time.monotonic()
                     # Recording mode owns every packet: no ASR turn, no replies.
                     if recording_seen is not recording:
                         recording_seen = recording
