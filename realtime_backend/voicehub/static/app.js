@@ -1006,7 +1006,7 @@ function renderRecordingDetail() {
   }
   $("recording-action-hint").textContent = active
     ? "录音结束后可以播放、下载和点击文字跳转；当前文字可以先行导出。"
-    : "播放和“下载精简音频”默认使用已去掉空白并降噪的版本；“下载原始音频”保留完整原始文件。会议纪要使用本地 Qwen3.5-4B。";
+    : "播放和“下载精简音频”默认使用已去掉空白、降噪的版本；“下载原始音频”保留完整原始文件。会议纪要由本机离线生成。";
   syncAudio(recording);
 }
 function lineSeconds(line) {
@@ -1482,7 +1482,8 @@ async function loadMinutesTemplates() {
   const data = await api("meeting-templates");
   minutesTemplates = data.templates || [];
   minutesModelId = data.model_id || "";
-  $("minutes-model-tag").textContent = minutesModelId || "本地模型";
+  $("minutes-model-tag").textContent = "本机离线生成";
+  $("minutes-model-tag").title = minutesModelId || "";
   const select = $("minutes-template");
   select.replaceChildren();
   for (const template of minutesTemplates) {
@@ -1556,7 +1557,7 @@ function renderMinutesResult(result) {
   target.hidden = false;
   const head = node("div", "minutes-result-head");
   head.append(node("strong", "", result.template_name || "会议纪要"));
-  head.append(node("span", "", "本地模型"));
+  head.append(node("span", "", "本机生成"));
   head.append(node("span", "", formatMinutesTime(result.generated_at)));
   target.append(head);
   const overview = node("div", "minutes-overview", result.overview || "");
