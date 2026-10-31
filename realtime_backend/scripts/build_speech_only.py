@@ -92,6 +92,8 @@ def build(recording_id, data, config, force=False):
                 if not raw:
                     continue
                 frame = np.frombuffer(raw, '<i2').astype(np.float32)/32768
+                if len(frame) < 512:
+                    frame = np.pad(frame, (0, 512-len(frame)))
                 probability = vad.probability(frame)
                 _, segment = segmenter.feed(frame, probability)
                 if segment is None:
