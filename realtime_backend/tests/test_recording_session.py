@@ -37,6 +37,26 @@ class Pipeline:
         return self.transcripts.pop(0) if self.transcripts else '无关内容'
 
 
+class FakeSpeakerEngine:
+    def __init__(self, vectors):
+        self.vectors = list(vectors)
+        self.calls = 0
+
+    def embed(self, pcm):
+        vector = self.vectors[self.calls]
+        self.calls += 1
+        return np.asarray(vector, dtype=np.float32)
+
+
+class FailingSpeakerEngine:
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, pcm):
+        self.calls += 1
+        raise RuntimeError('model unavailable')
+
+
 class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -189,6 +209,52 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
                          '[00:00] 第一段话。第二段话\n[00:00] 第三段话')
         self.assertEqual(transcript['lines'][0]['text'], '第一段话。第二段话')
         await self.session.stop_recording('web')
+
+    async def test_speaker_labels_do_not_merge_across_speakers_and_refine_on_stop(self):
+        self.session.speaker_engine = FakeSpeakerEngine([[1, 0], [0, 1], [.9, .1]])
+        recording = await self.session.start_recording('web')
+        self.session.recording_listen_after = 0
+        self.pipeline.transcripts = ['甲说话', '乙说话', '甲又说']
+
+        self.session.recording_heard(np.zeros(32000, dtype=np.float32), 0, None)
+        await wait_for(lambda: any(e['type'] == 'recording.transcript'
+                                   for e in self.events))
+        first = [e for e in self.events if e['type'] == 'recording.transcript'][-1]
+        self.assertEqual(first['speaker'], '说话人1')
+        self.assertEqual(first['speaker_id'], 1)
+
+        self.session.recording_heard(np.zeros(32000, dtype=np.float32), 0, 700)
+        await wait_for(lambda: self.manager.transcript(recording.id)['count'] >= 2)
+        second = [e for e in self.events if e['type'] == 'recording.transcript'][-1]
+        self.assertEqual(second['speaker'], '说话人2')
+        self.assertEqual(second['line'], 2)
+        self.assertFalse(second['merged'])
+
+        self.session.recording_heard(np.zeros(32000, dtype=np.float32), 0, 700)
+        await wait_for(lambda: self.manager.transcript(recording.id)['count'] >= 3)
+        metadata = await self.session.stop_recording('web')
+        self.assertEqual(metadata['speaker_count'], 1)
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual([line['speaker'] for line in transcript['lines']],
+                         ['说话人1', '说话人1', '说话人1'])
+        self.assertNotIn('说话人2', transcript['text'])
+
+    async def test_speaker_engine_failure_does_not_stop_the_transcript(self):
+        self.session.speaker_engine = FailingSpeakerEngine()
+        await self.session.start_recording('web')
+        self.session.recording_listen_after = 0
+        self.pipeline.transcripts = ['没有声纹也要转写']
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32), 0, None)
+        await wait_for(lambda: any(e['type'] == 'recording.transcript'
+                                   for e in self.events))
+        await wait_for(lambda: any(e['type'] == 'recording.speaker_unavailable'
+                                   for e in self.events))
+        transcript = self.manager.transcript(self.session.recording.id)
+        self.assertEqual(transcript['count'], 1)
+        self.assertEqual(transcript['lines'][0]['text'], '没有声纹也要转写')
+        self.assertIsNone(transcript['lines'][0]['speaker'])
+        metadata = await self.session.stop_recording('web')
+        self.assertEqual(metadata['speaker_count'], 0)
 
     async def test_stop_waits_for_the_last_transcript_line(self):
         recording = await self.session.start_recording('web')

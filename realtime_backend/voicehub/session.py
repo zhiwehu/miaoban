@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from . import phrasing
 from .recording import (CONFIRM_SECONDS, TRANSCRIPT_JOIN_PAUSE_MS,
                         command as recording_command, duration_text)
+from .speaker import SpeakerTracker
 from .tools import ToolNotice, ToolStatus
 
 
@@ -55,6 +56,10 @@ class Session:
         self.recording_confirm_timer=None
         self.recording_listen_after=0.0
         self.recording_asr_notified=False
+        self.recording_speakers=None
+        self.recording_speaker_failed=False
+        self.recording_speaker_notified=False
+        self.speaker_engine=getattr(getattr(pipeline,'local',None),'speakers',None)
         self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
         self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
         self.notification_callback=self.queue_notification
@@ -129,6 +134,10 @@ class Session:
         self.recording_queue = asyncio.Queue(maxsize=8)
         self.recording_listen_after = time.monotonic()+.2
         self.recording_asr_notified = False
+        self.recording_speakers = SpeakerTracker() if self.speaker_engine else None
+        self.recording_speaker_failed = False
+        self.recording_speaker_notified = False
+        recording.speaker_count = 0
         worker = self.recording_worker = asyncio.create_task(self._recording_worker())
         self.tasks.add(worker)
         worker.add_done_callback(self.tasks.discard)
@@ -160,6 +169,14 @@ class Session:
             except (TimeoutError, asyncio.CancelledError):
                 worker.cancel()
                 await asyncio.gather(worker, return_exceptions=True)
+        if self.recording_speakers is not None:
+            try:
+                mapping, count = self.recording_speakers.refine()
+                recording.relabel_transcript(mapping)
+                recording.speaker_count = count
+            except Exception:
+                pass
+            self.recording_speakers = None
         self.recording = None
         if self.turn and self.turn.system:
             with contextlib.suppress(Exception):
@@ -285,15 +302,40 @@ class Session:
                 if not handled and self.recording is recording:
                     elapsed_ms = (started_ms if started_ms is not None
                                   else round(recording.duration*1000))
+                    speaker, speaker_id = None, None
+                    if (self.speaker_engine and self.recording_speakers
+                            and not self.recording_speaker_failed):
+                        try:
+                            embedding = await asyncio.wait_for(
+                                asyncio.to_thread(self.speaker_engine.embed, pcm), 6)
+                            speaker_id, speaker = self.recording_speakers.assign(
+                                embedding, len(pcm)/16000)
+                            recording.speaker_count = self.recording_speakers.count
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            self.recording_speaker_failed = True
+                            if not self.recording_speaker_notified:
+                                self.recording_speaker_notified = True
+                                with contextlib.suppress(Exception):
+                                    await self.emit(
+                                        'recording.speaker_unavailable',
+                                        recording_id=recording.id,
+                                        message='发言人区分暂时不可用，转写继续；请检查本机声纹模型。')
                     try:
+                        same_speaker = (speaker_id ==
+                                        recording.transcript_last_speaker_id)
                         if (pause_ms is not None
                                 and pause_ms < TRANSCRIPT_JOIN_PAUSE_MS
-                                and recording.transcript_lines > 0):
-                            merged = recording.merge_transcript(text)
+                                and recording.transcript_lines > 0
+                                and same_speaker):
+                            merged = recording.merge_transcript(
+                                text, speaker, speaker_id)
                         else:
                             merged = None
                         appended = (None if merged else
-                                    recording.append_transcript(text, elapsed_ms))
+                                    recording.append_transcript(
+                                        text, elapsed_ms, speaker, speaker_id))
                     except OSError:
                         await self.recording_transcription_unavailable(
                             '转写写入失败，录音仍在继续；请检查磁盘空间。')
@@ -306,6 +348,7 @@ class Session:
                                         text=clean, stamp=stamp,
                                         lines=recording.transcript_lines,
                                         elapsed_ms=elapsed_ms,
+                                        speaker=speaker, speaker_id=speaker_id,
                                         merged=bool(merged))
         except asyncio.CancelledError:
             pass

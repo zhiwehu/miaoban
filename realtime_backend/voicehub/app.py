@@ -21,6 +21,7 @@ from .config import ConfigFile
 from .input import AudioInput
 from .models import Pipeline, LocalModels, ProviderError
 from .recording import Recordings
+from .speaker import SpeakerEngine
 from .session import Session
 from .store import Store
 from .device_mcp import DeviceMCP
@@ -145,6 +146,7 @@ class Hub:
     async def start(self):
         self.http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90, connect=10, sock_read=30))
         self.local = LocalModels()
+        self.local.speakers = SpeakerEngine(self.root/'speaker-cache')
         self.local.services = self.services
         self.local.planner = self.planner
         self.local.extensions = self.extensions

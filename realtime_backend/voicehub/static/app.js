@@ -42,6 +42,7 @@ const eventLabels = {
   "recording.stopped": "录音已保存",
   "recording.transcript": "实时转写",
   "recording.transcription_unavailable": "实时转写不可用",
+  "recording.speaker_unavailable": "发言人区分不可用",
   "recording.input_ignored": "录音中忽略文字",
   "tool.started": "工具查询中",
   "tool.completed": "工具查询完成",
@@ -426,6 +427,8 @@ function observe() {
       if (e.type === "recording.transcript") applyTranscriptEvent(e);
       else if (e.type === "recording.transcription_unavailable")
         applyTranscriptionUnavailable(e);
+      else if (e.type === "recording.speaker_unavailable")
+        notice(e.message || "发言人区分暂时不可用。", true);
       else if (e.type === "recording.confirming" &&
                displayedRecording?.id === e.recording?.id) {
         displayedConfirming = true;
@@ -923,6 +926,7 @@ function renderRecordingDetail() {
     recordingSource(recording),
     formatClock(recording.duration_ms),
     lines + " 行",
+    recording.speaker_count ? recording.speaker_count + " 位发言人" : "",
     formatBytes(recording.bytes || 0),
     recording.reason ? recordingReason(recording.reason) : "",
   ].filter(Boolean);
@@ -1003,7 +1007,10 @@ function transcriptLine(value) {
     const seconds = lineSeconds({stamp});
     if (seconds !== null) elapsed = seconds * 1000;
   }
-  return {stamp, text: String(value?.text || ""), elapsed_ms: elapsed};
+  const speaker = value?.speaker ? String(value.speaker) : null;
+  const speakerId = Number.isFinite(value?.speaker_id) ? value.speaker_id : null;
+  return {stamp, text: String(value?.text || ""), elapsed_ms: elapsed,
+          speaker, speaker_id: speakerId};
 }
 function renderTranscript() {
   const target = $("transcript-lines");
@@ -1022,6 +1029,11 @@ function renderTranscript() {
       const row = node("div", "transcript-line");
       row.dataset.index = index;
       if (line.stamp) row.append(node("time", "", line.stamp));
+      if (line.speaker) {
+        const speaker = node("span", "speaker", line.speaker);
+        if (line.speaker_id) speaker.dataset.speaker = line.speaker_id;
+        row.append(speaker);
+      }
       row.append(node("span", "", line.text));
       if (displayedRecording.status === "active" || lineSeconds(line) === null) {
         row.classList.add("unseekable");
@@ -1063,6 +1075,8 @@ function renderTranscript() {
   }
   if (displayedConfirming)
     hint = "等待确认停止：请说“确认停止”，或点停止按钮。";
+  if (displayedTranscript.length && (displayedRecording?.speaker_count || 0) > 0)
+    hint += " 说话人由本机声纹自动分组，可能受短句或重叠说话影响。";
   $("transcript-status").textContent = status;
   $("transcript-hint").textContent = hint;
   const audio = $("recording-audio");
@@ -1142,6 +1156,8 @@ function applyTranscriptEvent(event) {
       stamp: event.stamp || displayedTranscript[index].stamp,
       text: event.text,
       elapsed_ms: displayedTranscript[index].elapsed_ms,
+      speaker: displayedTranscript[index].speaker,
+      speaker_id: displayedTranscript[index].speaker_id,
     };
     displayedTranscriptState = "active";
     transcriptWarning = "";
@@ -1159,7 +1175,12 @@ function applyTranscriptEvent(event) {
     stamp: event.stamp || "",
     text: event.text,
     elapsed_ms: typeof event.elapsed_ms === "number" ? event.elapsed_ms : null,
+    speaker: event.speaker || null,
+    speaker_id: Number.isFinite(event.speaker_id) ? event.speaker_id : null,
   });
+  if (displayedRecording && Number.isFinite(event.speaker_id))
+    displayedRecording.speaker_count = Math.max(
+      displayedRecording.speaker_count || 0, event.speaker_id);
   displayedTranscriptState = "active";
   transcriptWarning = "";
   displayedRecording.transcription_error = null;
@@ -1260,7 +1281,8 @@ function renderRecordings() {
         recordingOrigin(recording) === "web" ? "网页" : "喵伴",
         formatClock(recording.duration_ms),
         (recording.transcript_lines || 0) + " 行",
-      ].join(" · "),
+        recording.speaker_count ? recording.speaker_count + " 人" : "",
+      ].filter(Boolean).join(" · "),
     );
     item.append(top, sub);
     item.onclick = () =>
@@ -1726,6 +1748,10 @@ function openClient() {
       }
       if (e.type === "recording.transcription_unavailable") {
         applyTranscriptionUnavailable(e);
+        return;
+      }
+      if (e.type === "recording.speaker_unavailable") {
+        notice(e.message || "发言人区分暂时不可用。", true);
         return;
       }
       if (e.type === "recording.deleted") {

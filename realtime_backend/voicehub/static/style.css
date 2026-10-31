@@ -1017,7 +1017,36 @@ select {
   font-family: Menlo, monospace;
   font-size: 10px;
 }
-.transcript-line span {
+.transcript-line .speaker {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #eaf0e5;
+  color: #5d7263;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.transcript-line .speaker[data-speaker="2"] {
+  background: #f6e3c9;
+  color: #7a5325;
+}
+.transcript-line .speaker[data-speaker="3"] {
+  background: #e3e7f4;
+  color: #48527a;
+}
+.transcript-line .speaker[data-speaker="4"] {
+  background: #f3e2ef;
+  color: #7a4568;
+}
+.transcript-line .speaker[data-speaker="5"] {
+  background: #e1eef0;
+  color: #34636b;
+}
+.transcript-line .speaker[data-speaker="6"] {
+  background: #f1e8d8;
+  color: #6f5a38;
+}
+.transcript-line span:last-child {
   min-width: 0;
 }
 .minutes-panel {

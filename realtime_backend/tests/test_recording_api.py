@@ -125,6 +125,21 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transcript['count'], 2)
         await self.client.post(f'/api/recordings/{recording["id"]}/stop')
 
+    async def test_transcript_api_exposes_speaker_labels(self):
+        recording = await self.start()
+        self.session.recording.append_transcript('甲说话', 0, '说话人1', 1)
+        self.session.recording.append_transcript('乙说话', 1500, '说话人2', 2)
+        data = await (await self.client.get(
+            f'/api/recordings/{recording["id"]}/transcript')).json()
+        self.assertEqual([line['speaker'] for line in data['lines']],
+                         ['说话人1', '说话人2'])
+        self.assertEqual([line['speaker_id'] for line in data['lines']], [1, 2])
+        self.assertEqual([line['text'] for line in data['lines']],
+                         ['甲说话', '乙说话'])
+        self.assertEqual(data['text'],
+                         '[00:00] 说话人1：甲说话\n[00:01] 说话人2：乙说话')
+        await self.client.post(f'/api/recordings/{recording["id"]}/stop')
+
     async def test_active_recording_cannot_be_downloaded_or_started_twice(self):
         recording = await self.start()
         self.assertEqual((await self.client.get(f'/api/recordings/{recording["id"]}/audio')).status, 404)

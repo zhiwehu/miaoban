@@ -96,6 +96,27 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(transcript_path.exists())
         self.assertIsNone(self.manager.transcript(recording.id))
 
+    def test_speaker_prefixes_parse_and_can_be_relabelled(self):
+        recording = self.manager.start('session-speaker', 'device', 'voice')
+        recording.append_transcript('第一句', 0, '说话人1', 1)
+        recording.append_transcript('第二句', 2000, '说话人2', 2)
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual([line['speaker'] for line in transcript['lines']],
+                         ['说话人1', '说话人2'])
+        self.assertEqual([line['text'] for line in transcript['lines']],
+                         ['第一句', '第二句'])
+        self.assertIn('说话人1：第一句', transcript['text'])
+        self.assertIsNone(recording.merge_transcript('不同人', '说话人1', 1))
+        self.assertEqual(recording.merge_transcript('第二句补充', '说话人2', 2),
+                         (2, '00:02', '第二句。第二句补充'))
+        recording.relabel_transcript({1: 1, 2: 1})
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual([line['speaker'] for line in transcript['lines']],
+                         ['说话人1', '说话人1'])
+        self.assertEqual(recording.speaker_count, 1)
+        self.assertIn('说话人1：第二句。第二句补充', transcript['text'])
+        self.assertNotIn('说话人2', transcript['text'])
+
     def test_short_pause_merges_with_a_full_stop_instead_of_a_new_line(self):
         recording = self.manager.start('session-join', 'device', 'voice')
         self.assertEqual(recording.append_transcript('第一句话', 0),

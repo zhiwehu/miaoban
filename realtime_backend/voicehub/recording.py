@@ -79,6 +79,7 @@ def duration_text(seconds):
 
 
 _STAMP = re.compile(r'^\[(\d{1,3}:\d{2}(?::\d{2})?)\]\s?(.*)$')
+_SPEAKER = re.compile(r'^(说话人\s*(\d+))[：:]\s?(.*)$')
 
 
 def stamp_text(elapsed_ms):
@@ -127,6 +128,10 @@ class ActiveRecording:
         self.transcript_last_offset = 0
         self.transcript_last_stamp = ''
         self.transcript_last_text = ''
+        self.transcript_last_speaker = None
+        self.transcript_last_speaker_id = None
+        self.transcript_entries = []
+        self.speaker_count = 0
         self.transcription_error = None
         self.file = open(self.path, 'wb', buffering=0)
         os.chmod(self.path, 0o600)
@@ -159,7 +164,7 @@ class ActiveRecording:
         self.samples += len(pcm)//SAMPLE_WIDTH
         return 'limit' if over or self.samples >= self.max_samples else None
 
-    def append_transcript(self, text, elapsed_ms=0):
+    def append_transcript(self, text, elapsed_ms=0, speaker=None, speaker_id=None):
         """Append one VAD segment as one [mm:ss] line; returns (line, stamp, text)."""
         if self.status != 'active':
             return None
@@ -172,17 +177,25 @@ class ActiveRecording:
         if self.transcript_file is None:
             self.transcript_file = open(self.transcript_path, 'ab')
             os.chmod(self.transcript_path, 0o600)
+        prefix = f'{speaker}：' if speaker else ''
         self.transcript_last_offset = self.transcript_file.tell()
         self.transcript_last_stamp = stamp
         self.transcript_last_text = clean
-        self.transcript_file.write(f'[{stamp}] {clean}\n'.encode('utf-8'))
+        self.transcript_last_speaker = speaker
+        self.transcript_last_speaker_id = speaker_id
+        entry = {'stamp': stamp, 'speaker': speaker, 'speaker_id': speaker_id,
+                 'text': clean}
+        self.transcript_entries.append(entry)
+        self.transcript_file.write(f'[{stamp}] {prefix}{clean}\n'.encode('utf-8'))
         self.transcript_file.flush()
         self.transcript_lines += 1
         return self.transcript_lines, stamp, clean
 
-    def merge_transcript(self, text):
+    def merge_transcript(self, text, speaker=None, speaker_id=None):
         """Join a short-pause continuation to the previous line with a full stop."""
         if self.status != 'active' or self.transcript_lines == 0:
+            return None
+        if speaker_id != self.transcript_last_speaker_id:
             return None
         clean = re.sub(r'\s+', ' ', text or '').strip()
         clean = clean.lstrip('，,。.；;：:、 ')
@@ -200,14 +213,53 @@ class ActiveRecording:
             self.transcript_file.flush()
             self.transcript_file.close()
             self.transcript_file = None
-        line = f'[{self.transcript_last_stamp}] {merged}\n'.encode('utf-8')
+        prefix = f'{self.transcript_last_speaker}：' if self.transcript_last_speaker else ''
+        line = f'[{self.transcript_last_stamp}] {prefix}{merged}\n'.encode('utf-8')
         with open(self.transcript_path, 'r+b') as handle:
             handle.seek(self.transcript_last_offset)
             handle.truncate()
             handle.write(line)
         self.transcript_file = open(self.transcript_path, 'ab')
         self.transcript_last_text = merged
+        if self.transcript_entries:
+            self.transcript_entries[-1]['text'] = merged
         return self.transcript_lines, self.transcript_last_stamp, merged
+
+    def relabel_transcript(self, mapping):
+        """Rewrite speaker labels after the tracker's final small-cluster merge."""
+        if not mapping or not self.transcript_entries:
+            return
+        changed = False
+        for entry in self.transcript_entries:
+            old = entry.get('speaker_id')
+            if old is None:
+                continue
+            new = mapping.get(old, old)
+            label = f'说话人{new}'
+            if new != old or entry.get('speaker') != label:
+                changed = True
+            entry['speaker_id'] = new
+            entry['speaker'] = label
+        if not changed:
+            return
+        self.close_transcript()
+        last_offset = 0
+        with open(self.transcript_path, 'wb') as handle:
+            for entry in self.transcript_entries:
+                last_offset = handle.tell()
+                prefix = f"{entry['speaker']}：" if entry.get('speaker') else ''
+                handle.write(f"[{entry['stamp']}] {prefix}{entry['text']}\n".encode('utf-8'))
+        os.chmod(self.transcript_path, 0o600)
+        self.transcript_file = open(self.transcript_path, 'ab')
+        self.transcript_last_offset = last_offset
+        last = self.transcript_entries[-1]
+        self.transcript_last_stamp = last['stamp']
+        self.transcript_last_text = last['text']
+        self.transcript_last_speaker = last.get('speaker')
+        self.transcript_last_speaker_id = last.get('speaker_id')
+        self.transcript_lines = len(self.transcript_entries)
+        self.speaker_count = len({entry.get('speaker_id') for entry in self.transcript_entries
+                                  if entry.get('speaker_id') is not None})
 
     def close_transcript(self):
         if self.transcript_file is None:
@@ -245,6 +297,7 @@ class ActiveRecording:
             'transcript_available': transcript_available,
             'transcript_url': f'/api/recordings/{self.id}/transcript' if transcript_available else None,
             'transcript_lines': self.transcript_lines,
+            'speaker_count': self.speaker_count,
             'transcription_error': self.transcription_error,
             'available': True,
         }
@@ -353,10 +406,20 @@ class Recordings:
         for raw in raw_lines:
             match = _STAMP.match(raw)
             if match:
-                stamp, text = match.group(1), match.group(2)
-                lines.append({'stamp': stamp, 'elapsed_ms': stamp_ms(stamp), 'text': text})
+                stamp, rest = match.group(1), match.group(2)
+                speaker_match = _SPEAKER.match(rest)
+                if speaker_match:
+                    speaker, speaker_id, text = (speaker_match.group(1),
+                                                 int(speaker_match.group(2)),
+                                                 speaker_match.group(3))
+                else:
+                    speaker, speaker_id, text = None, None, rest
+                lines.append({'stamp': stamp, 'elapsed_ms': stamp_ms(stamp),
+                              'speaker': speaker, 'speaker_id': speaker_id,
+                              'text': text})
             else:
-                lines.append({'stamp': '', 'elapsed_ms': None, 'text': raw})
+                lines.append({'stamp': '', 'elapsed_ms': None, 'speaker': None,
+                              'speaker_id': None, 'text': raw})
         return {'id': identity, 'status': metadata.get('status'), 'available': True,
                 'text': '\n'.join(raw_lines), 'lines': lines, 'count': len(lines)}
 
@@ -375,6 +438,7 @@ class Recordings:
             except OSError:
                 metadata['transcript_lines'] = 0
         metadata.setdefault('transcript_lines', 0)
+        metadata.setdefault('speaker_count', 0)
         metadata.setdefault('transcription_error', None)
         return metadata
 
