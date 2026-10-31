@@ -43,6 +43,8 @@ const eventLabels = {
   "recording.transcript": "实时转写",
   "recording.transcription_unavailable": "实时转写不可用",
   "recording.speaker_unavailable": "发言人区分不可用",
+  "recording.processing": "正在精转写",
+  "recording.finalize_failed": "精转写失败",
   "recording.diarized": "发言人重分析完成",
   "recording.minutes_started": "正在自动生成会议纪要",
   "recording.input_ignored": "录音中忽略文字",
@@ -437,6 +439,15 @@ function observe() {
         loadRecordings().catch(() => {});
         loadDisplayedTranscript(displayedRecording).catch(() => {});
         notice("发言人重分析完成，逐字稿已更新。");
+      } else if (e.type === "recording.processing") {
+        if (displayedRecording?.id === e.recording_id) {
+          loadRecordings().catch(() => {});
+          notice("录音已保存，正在精转写和说话人分析。");
+        }
+      } else if (e.type === "recording.finalize_failed") {
+        notice(e.message || "精转写失败，录音和原文字仍已保存。", true);
+        if (displayedRecording?.id === e.recording_id)
+          loadRecordings().catch(() => {});
       } else if (e.type === "recording.minutes_started") {
         notice("逐字稿已更新，正在自动生成默认会议纪要。");
       }
@@ -1075,6 +1086,14 @@ function renderTranscript() {
   let hint = "时间戳是录音内时间；停顿后自动换行。转写只使用本机 ASR。";
   if (!displayedRecording) {
     empty(target, "还没有文字", "选择一条录音或开始录音后，这里会显示文字。");
+  } else if (displayedRecording.status === "active") {
+    empty(target, "正在录音…", "声音正在保存；停止后自动做完整精转写和纪要。");
+    status = "录音中 · 正在保存";
+    hint = "录音时在后台转写，但不在页面实时显示；停止后会做一次更准确的完整转写和说话人分析。";
+  } else if (displayedRecording.finalizing) {
+    empty(target, "正在精转写…", "录音已保存；完整转写、说话人分析和模板纪要完成后会自动显示。");
+    status = "精转写中";
+    hint = "不需要保持页面打开；录音和后台文字已经保存。";
   } else if (displayedTranscript.length) {
     displayedTranscript.forEach((value, index) => {
       const line = transcriptLine(value);
@@ -1105,13 +1124,8 @@ function renderTranscript() {
       target.append(row);
     });
     target.scrollTop = stick ? target.scrollHeight : previousTop;
-    if (displayedRecording.status === "active") {
-      status = "录音中 · 实时粗分";
-      hint = "录音中的说话人标签是实时粗分；停止后会自动按整段录音重新分析，最终结果以停止后为准。";
-    } else {
-      status = "已保存";
-      hint = "点击一行跳到对应录音位置；拖动进度条会同步高亮当前段落。";
-    }
+    status = "已保存";
+    hint = "点击一行跳到对应录音位置；拖动进度条会同步高亮当前段落。";
   } else if (transcriptWarning) {
     empty(target, "没有转写", transcriptWarning);
     status = "无转写";
@@ -1119,9 +1133,6 @@ function renderTranscript() {
   } else if (displayedTranscriptState === "loading") {
     empty(target, "正在读取转写…", "稍等，正在从本机读取文字。");
     status = "读取中";
-  } else if (displayedRecording.status === "active") {
-    empty(target, "正在听…", "停顿后会实时出现一行文字。");
-    status = "录音中 · 等待第一段";
   } else {
     empty(target, "没有转写", "这条录音没有可用文字（旧录音或 ASR 不可用）。");
     status = "无转写";
@@ -1193,7 +1204,7 @@ async function selectDisplayedRecording(recording, {load = true} = {}) {
   displayedTranscript = [];
   displayedTranscriptState = recording.status === "active" ? "active" : "stopped";
   displayedConfirming = false;
-  transcriptWarning = recording.transcription_error || "";
+  transcriptWarning = recording.transcription_error || recording.finalizing_error || "";
   transcriptFetchToken++;
   currentLineIndex = -1;
   speechMap = null;

@@ -24,8 +24,9 @@ class AudioInput:
             chunk_seconds = 6
         chunk_seconds = min(12, max(3, chunk_seconds))
         self.speech_max_samples = self.segmenter.max_samples
-        self.recording_max_samples = min(
+        self.recording_max_samples = (min(
             self.speech_max_samples, int(chunk_seconds*16000))
+            if session.recording_live_display else self.speech_max_samples)
         self.buffer = b''
         self.task = asyncio.create_task(self.run())
         self.window, self.packets = time.monotonic(), 0
@@ -136,7 +137,9 @@ class AudioInput:
                                             to_pcm16(speech, 16000),
                                             start_ms+lead/16000*1000,
                                             start_ms+end/16000*1000)
-                                session.recording_heard(segment, start_ms, pending_pause_ms)
+                                if session.recording_live_asr:
+                                    session.recording_heard(
+                                        segment, start_ms, pending_pause_ms)
                             recording_onset = False
                             pending_pause_ms = None
                             recording_between = True

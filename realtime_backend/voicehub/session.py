@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import contextlib
+import json
 import os
 import re
 import time
@@ -59,6 +60,10 @@ class Session:
         self.last_recording_packet_at=0.0
         self.recording_asr_notified=False
         self.recording_speakers=None
+        self.recording_live_asr = os.environ.get(
+            'VOICEHUB_RECORDING_LIVE_ASR', '1').lower() in ('1', 'true', 'yes', 'on')
+        self.recording_live_display = os.environ.get(
+            'VOICEHUB_RECORDING_LIVE_DISPLAY', '0').lower() in ('1', 'true', 'yes', 'on')
         self.recording_speaker_failed=False
         self.recording_speaker_failures=0
         self.recording_speaker_retry_at=0.0
@@ -154,7 +159,8 @@ class Session:
                                                   min_seconds=.8,
                                                   max_speakers=live_max,
                                                   promote_seconds=2.0)
-                                   if self.speaker_engine else None)
+                                   if self.speaker_engine and self.recording_live_display
+                                   else None)
         self.recording_speaker_failed = False
         self.recording_speaker_failures = 0
         self.recording_speaker_retry_at = 0.0
@@ -409,13 +415,14 @@ class Session:
                             if not result:
                                 continue
                             line, stamp, clean = result
-                            await self.emit('recording.transcript',
-                                            recording_id=recording.id, line=line,
-                                            text=clean, stamp=stamp,
-                                            lines=recording.transcript_lines,
-                                            elapsed_ms=round(run_elapsed),
-                                            speaker=speaker, speaker_id=speaker_id,
-                                            merged=bool(merged))
+                            if self.recording_live_display:
+                                await self.emit('recording.transcript',
+                                                recording_id=recording.id, line=line,
+                                                text=clean, stamp=stamp,
+                                                lines=recording.transcript_lines,
+                                                elapsed_ms=round(run_elapsed),
+                                                speaker=speaker, speaker_id=speaker_id,
+                                                merged=bool(merged))
                     except OSError:
                         await self.recording_transcription_unavailable(
                             '转写写入失败，录音仍在继续；请检查磁盘空间。')
@@ -504,37 +511,41 @@ class Session:
         return grouped or None
 
     def _maybe_rediarize(self, recording, metadata):
+        """Finalize every recording after stop: full ASR, speakers, minutes."""
         if self.closed:
             return
-        entries = list(getattr(recording, 'transcript_entries', []) or [])
-        if len(entries) < 2:
-            return
-        starts = []
-        for entry in entries:
-            try:
-                starts.append(stamp_ms(entry.get('stamp', '')))
-            except (TypeError, ValueError):
-                return
-        starts = [value for value in starts if isinstance(value, (int, float))]
-        if len(starts) != len(entries):
-            return
-        duration = metadata.get('duration_ms') or 0
-        gaps = [b-a for a, b in zip(starts, starts[1:])]
-        gaps.append(max(0, duration-starts[-1]))
-        # Over-splitting is also a reason to run the final pass, even for a
-        # short recording whose gaps never reach 20 seconds.
-        if (max(gaps or [0]) < 20000
-                and metadata.get('speaker_count', 0) <= 2):
+        if (metadata.get('duration_ms') or 0) < 2000:
             return
         data_root = getattr(getattr(self.pipeline, 'local', None), 'data_root', None)
         if not data_root:
             return
         recording_id = recording.id
+        mode = os.environ.get('VOICEHUB_POSTSTOP_MODE', 'asr').lower()
+        if mode not in ('asr', 'text'):
+            mode = 'asr'
+        metadata['finalizing'] = True
+        metadata['finalizing_stage'] = 'transcribing'
+        metadata.pop('finalizing_error', None)
+        if self.recording_manager is not None:
+            with contextlib.suppress(OSError):
+                self.recording_manager.write_metadata(metadata)
 
         async def run():
             try:
                 from .rediarize import rediarize
-                await rediarize(recording_id, data_root, speakers=0, mode='text')
+                await rediarize(recording_id, data_root, speakers=0, mode=mode)
+                path = self.recording_manager.metadata_path(recording_id) \
+                    if self.recording_manager else None
+                current = metadata
+                if path and path.is_file():
+                    with contextlib.suppress(OSError, ValueError):
+                        current = json.loads(path.read_text())
+                current['finalizing'] = False
+                current['finalized_at'] = time.time()
+                current['finalizing_stage'] = 'done'
+                current.pop('finalizing_error', None)
+                if self.recording_manager is not None:
+                    self.recording_manager.write_metadata(current)
                 if not self.closed:
                     await self.emit('recording.diarized', recording_id=recording_id)
                 minutes = self.minutes or getattr(
@@ -549,11 +560,35 @@ class Session:
                                             recording_id=recording_id)
                     except Exception:
                         pass
-            except Exception:
-                pass
+            except Exception as exc:
+                current = metadata
+                path = self.recording_manager.metadata_path(recording_id) \
+                    if self.recording_manager else None
+                if path and path.is_file():
+                    with contextlib.suppress(OSError, ValueError):
+                        current = json.loads(path.read_text())
+                current['finalizing'] = False
+                current['finalizing_stage'] = 'failed'
+                current['finalizing_error'] = str(exc)[:300]
+                if self.recording_manager is not None:
+                    with contextlib.suppress(OSError):
+                        self.recording_manager.write_metadata(current)
+                if not self.closed:
+                    with contextlib.suppress(Exception):
+                        await self.emit('recording.finalize_failed',
+                                        recording_id=recording_id,
+                                        message='精转写或说话人分析失败，录音和原文字仍已保存。')
+        with contextlib.suppress(Exception):
+            asyncio.get_running_loop()
         task = asyncio.create_task(run())
         self.rediarize_tasks.add(task)
         task.add_done_callback(self.rediarize_tasks.discard)
+        if not self.closed:
+            with contextlib.suppress(Exception):
+                asyncio.create_task(self.emit(
+                    'recording.processing', recording_id=recording_id,
+                    stage='transcribing',
+                    message='录音已保存，正在做完整转写和说话人分析。'))
 
     async def _speak_recording_prompt(self, text):
         while self.turn is not None and not self.turn.cancelled:
