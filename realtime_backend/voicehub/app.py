@@ -22,6 +22,7 @@ from .input import AudioInput
 from .models import Pipeline, LocalModels, ProviderError
 from .session import Session
 from .store import Store
+from .device_mcp import DeviceMCP
 from .services import ServiceManager, ServiceError
 from .connections import Connections, ConnectionError
 from .rex_planner import RexPlanner
@@ -332,6 +333,12 @@ async def device_gateway(request, ws):
             elif kind == 'error':
                 await ws.send_json(event)
         pipeline = hub.factory(cfg, hub.http, hub.local)
+
+        async def device_mcp_send(payload):
+            # The device runs its own MCP server; JSON-RPC rides the same socket.
+            await ws.send_json({'session_id': sid, 'type': 'mcp', 'payload': payload})
+
+        pipeline.device = DeviceMCP(device_mcp_send)
         session = Session(sid, device, hub.store, pipeline, send, publish=hub.publish,
                           wake_mode=mode, wake_phrase=cfg['wake']['phrase'], playback_ack=not legacy,
                           idle_seconds=cfg['wake']['idle_seconds'])
@@ -398,6 +405,11 @@ async def device_gateway(request, ws):
                     await session.transition('standby')
                 elif kind == 'playback.done':
                     session.playback_done(value.get('turn_id'))
+                elif kind == 'mcp':
+                    payload = value.get('payload')
+                    if not isinstance(payload, dict):
+                        raise ValueError('invalid_message')
+                    pipeline.device.feed(payload)
                 elif kind == 'ping':
                     await ws.send_json({'type':'pong'})
                 else:
@@ -424,6 +436,9 @@ async def device_gateway(request, ws):
                 await ingress.close()
             if session:
                 await session.close()
+                device_bridge = getattr(pipeline, 'device', None)
+                if device_bridge is not None:
+                    device_bridge.close()
                 hub.publish(dict(type='session.disconnected', session_id=session.id, timestamp=time.time()))
             await ws.close()
         task = asyncio.create_task(cleanup())

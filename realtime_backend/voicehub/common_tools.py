@@ -17,6 +17,8 @@ async def call_tool(http, name, arguments):
     try:
         validate_arguments(name, arguments)
         async with asyncio.timeout(18):
+            if getattr(TOOLS[name],'DEVICE_TOOL',False):
+                raise ValueError('device_only_tool')
             value = await TOOLS[name].execute(http, **arguments)
         return {'content':[{'type':'text','text':json.dumps(value, ensure_ascii=False)}], 'isError':False}
     except (ValueError, TypeError, KeyError, IndexError, ET.ParseError, aiohttp.ClientError, TimeoutError, OSError) as exc:
@@ -79,7 +81,9 @@ async def serve():
             elif method == 'ping':
                 response['result'] = {}
             elif ready and method == 'tools/list':
-                response['result'] = {'tools':catalogue()}
+                # Device-side tools need the live WebSocket; never advertise them here.
+                response['result'] = {'tools':[tool for tool in catalogue()
+                                               if not getattr(TOOLS[tool['name']],'DEVICE_TOOL',False)]}
             elif ready and method == 'tools/call' and isinstance(params, dict):
                 response['result'] = await call_tool(http, params.get('name'), params.get('arguments', {}))
             else:

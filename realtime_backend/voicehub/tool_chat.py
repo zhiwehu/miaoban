@@ -10,7 +10,7 @@ from .tools import catalogue, parse_plan, ToolNotice, ToolStatus, ACKNOWLEDGEMEN
 from .tools import validate_arguments
 from .rex_planner import PlannerError
 from .local_calendar import calendar_answer
-from .extension_routing import file_request,volume_request,music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate,file_plan,file_candidate
+from .extension_routing import file_request,volume_command,music_plan,music_refusal,dynamic_plan,is_conversational_turn,music_candidate,file_plan,file_candidate
 
 
 async def rex_plan(pipeline,history,cfg):
@@ -32,14 +32,45 @@ async def rex_plan(pipeline,history,cfg):
     return result
 
 
+_VOLUME_ERRORS = {
+    'device_unavailable': '现在没有连上喵伴，音量调不了。',
+    'device_timeout': '喵伴没有响应，音量可能没变，等下再说一次。',
+    'device_mcp_incompatible': '这台设备不支持调节音量。',
+    'device_status_invalid': '读不到喵伴现在的音量。',
+    'device_tool_error': '喵伴那边没有执行成功。',
+    'invalid_volume_action': '要调到多少呢？可以说音量调到 40。',
+    'volume_value_required': '要调到多少呢？可以说音量调到 40。',
+}
+
+
+async def device_turn(pipeline, arguments):
+    """Run a device-side MCP tool inline: no ToolNotice, so no background hand-off."""
+    from .mcp_tools import device_volume
+    from .device_mcp import DeviceMCPError
+    started = time.monotonic()
+    yield ToolStatus('device_volume', 'started', arguments=arguments, planner='device_rules')
+    try:
+        async with asyncio.timeout(8):
+            result, sentence = await device_volume.run(pipeline, arguments)
+    except (DeviceMCPError, TimeoutError) as exc:
+        code = getattr(exc, 'code', 'device_timeout')
+        yield ToolStatus('device_volume', 'failed', round((time.monotonic()-started)*1000), code)
+        yield _VOLUME_ERRORS.get(code, '这次没能调音量，等下再说一次。')
+        return
+    yield ToolStatus('device_volume', 'completed', round((time.monotonic()-started)*1000), arguments=result)
+    yield sentence
+
+
 async def chat(pipeline, history):
     latest=next((m.get('content','') for m in reversed(history) if m.get('role')=='user'),'')
     if getattr(getattr(pipeline,'local',None),'skills',None) is None and re.search(r'(?:执行|运行|启动|调用)\s*(?:skill|技能)',latest,re.IGNORECASE):
         yield '技能功能已暂停。你可以直接查询天气、日程，或使用其他 MCP 工具。'
         return
-    if volume_request(latest):
+    volume=volume_command(latest)
+    if volume is not None and pipeline.config['tools'].get('device_volume',True):
         pipeline._previous_tool_plan=None
-        yield '暂时还不能用语音调节音量，请先用播放设备上的音量键调整。'
+        async with contextlib.aclosing(device_turn(pipeline,volume)) as source:
+            async for value in source:yield value
         return
     files=file_request(history)
     if files is None and re.fullmatch(r'(?:文件夹|目录|那你帮我整理吧|开始整理)[。！？!?,， ]*',latest.strip()):
@@ -203,6 +234,11 @@ async def chat(pipeline, history):
         return
     if name == 'news':
         arguments = {'source':cfg['news_source'], 'limit':cfg['news_limit'], **arguments}
+    if name=='device_volume':
+        pipeline._previous_tool_plan=None
+        async with contextlib.aclosing(device_turn(pipeline,arguments)) as source:
+            async for value in source:yield value
+        return
     # The session drains this acknowledgement through TTS before resuming this generator.
     yield ToolNotice(name, phrasing.acknowledge(name))
     started = time.monotonic()

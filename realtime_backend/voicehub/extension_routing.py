@@ -112,11 +112,45 @@ def file_candidate(text):
     return re.search(r'文件|文件夹|目录|整理|归类|\b(?:files?|folder|directory|organize)\b',text,re.IGNORECASE) is not None
 
 
-def volume_request(text):
-    """Recognize only a direct volume command; never fabricate tool support."""
-    text=text.strip().rstrip('。！？!?,， ')
-    prefix=r'(?:(?:请|帮我|麻烦你)[\s，,]*)*'
-    return re.fullmatch(prefix+r'(?:把)?(?:音乐|播放|喵伴|设备|声音|的)*(?:音量|声音)(?:再)?(?:调|调节|调到|调成)?(?:降低|提高|调低|调高|调小|调大|小|大|低|高|轻|响)(?:一点|一些|点|些|一档|两档|一下)?',text) is not None
+_CHINESE_DIGITS = {'零':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9}
+
+
+def _volume_number(text):
+    """Accept 30、三十、十五、百分之三十; None when nothing numeric is present."""
+    digits=re.search(r'(\d{1,3})',text)
+    if digits:return int(digits.group(1))
+    word=re.search(r'[零一二两三四五六七八九十]{1,3}',text)
+    if not word:return None
+    value=word.group(0)
+    if '十' in value:
+        left,_,right=value.partition('十')
+        tens=_CHINESE_DIGITS.get(left,1) if left else 1
+        ones=_CHINESE_DIGITS.get(right,0) if right else 0
+        return tens*10+ones
+    return _CHINESE_DIGITS.get(value)
+
+
+def volume_command(text):
+    """Parse a direct volume command; None means "not a volume request".
+
+    Returns {'action': 'set'|'up'|'down'|'mute'|'unmute'|'status', 'value': int?}.
+    """
+    compact=re.sub(r'[\s，。！？,.!?~～、]+','',text.strip())
+    subject=r'(?:音乐|播放|喵伴|设备|声音|的)*(?:音量|声音)'
+    prefix=r'(?:现在|目前)?(?:请|帮我|麻烦你|把|将)*'
+    if re.fullmatch(prefix+r'(?:取消|打开|恢复|解除)(?:静音|声音|音量)',compact):return {'action':'unmute'}
+    if re.fullmatch(prefix+r'(?:静音|别出声|不要出声|关掉声音|关闭声音|声音关掉|闭麦)',compact):return {'action':'mute'}
+    if re.fullmatch(prefix+subject+r'(?:现在|是|有)?(?:多少|多大|几|剩多少)',compact):return {'action':'status'}
+    match=re.fullmatch(prefix+subject+r'(?:再)?(?:调到|调成|设为|设置为|调至|改为|降到|升到)?(?:百分之)?([0-9一二两三四五六七八九十]{1,3})',compact)
+    if match:
+        value=_volume_number(match.group(1))
+        return {'action':'set','value':max(0,min(100,value))} if value is not None else {'action':'set'}
+    direction=r'(降低|提高|调低|调高|调小|调大|减小|增大|大|高|响|小|低|轻)'
+    match=re.fullmatch(prefix+subject+r'(?:再)?(?:调|降|升|提)?'+direction+r'(?:一点|一些|点|些|一档|两档|一下|声)?',compact)
+    if match:return {'action':'up' if any(mark in match.group(1) for mark in '大高响提增') else 'down'}
+    match=re.fullmatch(prefix+r'(?:调|降|升|提)?'+direction+r'(?:一点|一些|点|些|一档|两档|一下)?(?:的)?'+subject,compact)
+    if match:return {'action':'up' if any(mark in match.group(1) for mark in '大高响提增') else 'down'}
+    return None
 
 
 def file_request(history):

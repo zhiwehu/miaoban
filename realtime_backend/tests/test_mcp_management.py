@@ -23,7 +23,7 @@ class McpManagementTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get('/api/mcp')
         data = await response.json()
         tools = {t['name']:t for t in data['tools']}
-        self.assertEqual(set(tools), {'weather','news','system_info','music','file_organizer','calendar','shopping_list','timer','item_memory'})
+        self.assertEqual(set(tools), {'weather','news','system_info','music','file_organizer','calendar','shopping_list','timer','item_memory','device_volume'})
         self.assertFalse(tools['music']['enabled'])
         self.assertFalse(tools['news']['enabled'])
         self.assertEqual(tools['weather']['inputSchema']['required'], ['city'])

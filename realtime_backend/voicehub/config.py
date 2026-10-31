@@ -20,7 +20,7 @@ DEFAULT = {
     'audio': {'barge_in': True, 'vad_model': '', 'speech_threshold': .65,
               'onset_ms': 160, 'silence_ms': 640, 'max_utterance_seconds': 15},
     'retention_days': 30,
-    'tools': {'shopping_list':False,'timer':False,'item_memory':False,'calendar': True,'weather': True, 'news': True, 'system_info': True, 'music':False, 'music_directory':'','file_organizer':False,'file_directory':'',
+    'tools': {'shopping_list':False,'timer':False,'item_memory':False,'calendar': True,'weather': True, 'news': True, 'system_info': True, 'music':False, 'music_directory':'','file_organizer':False,'file_directory':'','device_volume':True,
               'default_city': '', 'news_source': 'bbc', 'news_limit': 3,
               'timeout_seconds': 20, 'planner': 'llm'},
 }
@@ -32,7 +32,7 @@ def validate(config):
     elif isinstance(config,dict) and isinstance(config.get('tools'),dict) and 'planner' not in config['tools']:
         config={**config,'tools':{**config['tools'],'planner':'llm'}}
     if isinstance(config,dict) and isinstance(config.get('tools'),dict):
-        config={**config,'tools':{'shopping_list':False,'timer':False,'item_memory':False,'calendar':True,'music':False,'music_directory':'','file_organizer':False,'file_directory':'',**config['tools']}}
+        config={**config,'tools':{'shopping_list':False,'timer':False,'item_memory':False,'calendar':True,'music':False,'music_directory':'','file_organizer':False,'file_directory':'','device_volume':True,**config['tools']}}
     if not isinstance(config, dict) or set(config) != set(DEFAULT):
         raise ValueError('配置字段不完整或包含未知字段')
     if not isinstance(config['system_prompt'], str) or len(config['system_prompt']) > 8000:
