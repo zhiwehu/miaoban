@@ -786,6 +786,16 @@ function formatClock(milliseconds) {
     : String(minutes);
   return clock + ":" + String(seconds).padStart(2, "0");
 }
+function transcriptStamp(milliseconds) {
+  const total = Math.max(0, Math.floor((milliseconds || 0) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return hours
+    ? hours + ":" + String(minutes).padStart(2, "0") + ":" +
+      String(seconds).padStart(2, "0")
+    : String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+}
 function formatBytes(bytes) {
   if (!bytes) return "0 KB";
   if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + " KB";
@@ -1006,7 +1016,13 @@ function applyTranscriptEvent(event) {
     loadDisplayedTranscript(displayedRecording).catch(() => {});
     return;
   }
-  displayedTranscript.push({stamp: event.stamp || "", text: event.text});
+  displayedTranscript.push({
+    stamp: event.stamp ||
+      (typeof event.elapsed_ms === "number"
+        ? transcriptStamp(event.elapsed_ms)
+        : ""),
+    text: event.text,
+  });
   displayedTranscriptState = "active";
   transcriptWarning = "";
   displayedRecording.transcription_error = null;
