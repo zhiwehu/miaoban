@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from . import phrasing
 from .recording import (CONFIRM_SECONDS, TRANSCRIPT_JOIN_PAUSE_MS,
-                        command as recording_command, duration_text, stamp_ms)
+                        command as recording_command, stamp_ms)
 from .speaker import SpeakerTracker
 from .tools import ToolNotice, ToolStatus
 
@@ -120,15 +120,16 @@ class Session:
         asr = config.get('asr') if isinstance(config, dict) else None
         return not isinstance(asr, dict) or asr.get('provider', 'builtin') == 'builtin'
 
-    async def start_recording(self, trigger='voice'):
+    async def start_recording(self, trigger='voice', current_turn=None):
         if self.closed:
             raise ValueError('session_closed')
         if self.recording is not None:
             return self.recording
         if self.recording_manager is None:
             raise ValueError('recording_unavailable')
-        if trigger in ('web', 'client') and self.turn is not None:
-            # A button start must not capture an in-flight assistant reply.
+        if self.turn is not None and self.turn is not current_turn:
+            # Any start entry point must cut an in-flight reply and playback.
+            # The voice command's own turn is excluded: it is about to return.
             await self.interrupt('recording')
         recording = self.recording_manager.start(self.id, self.device_id, trigger)
         self.recording = recording
@@ -153,6 +154,11 @@ class Session:
             return None
         recording.stopping = True
         self.recording_listen_after = 0
+        # Stop is a mode switch, not a new conversational turn. Cut any reply
+        # or mode prompt before waiting for the final audio.
+        if self.turn is not None:
+            with contextlib.suppress(Exception):
+                await self.interrupt('recording_stop')
         timer = self.recording_confirm_timer
         self.recording_confirm_timer = None
         if timer and timer is not asyncio.current_task():
@@ -179,9 +185,6 @@ class Session:
                 pass
             self.recording_speakers = None
         self.recording = None
-        if self.turn and self.turn.system:
-            with contextlib.suppress(Exception):
-                await self.interrupt('recording_stop')
         metadata = self.recording_manager.stop(recording.id, reason) if self.recording_manager else None
         metadata = metadata or recording.metadata()
         self._maybe_rediarize(recording, metadata)
@@ -189,12 +192,7 @@ class Session:
             with contextlib.suppress(Exception):
                 await self.emit('recording.stopped', recording=metadata)
                 if self.state != 'standby':
-                    await self.transition('listening')
-        if speak and not self.closed:
-            with contextlib.suppress(Exception):
-                await self._speak_system(
-                    '录音已停止，共'+duration_text(metadata.get('duration_ms', 0)/1000)+
-                    '。可以在网页下载。')
+                    await self.transition('standby')
         return metadata
 
     def recording_heard(self, pcm, elapsed_ms=None, pause_ms=None):
@@ -470,13 +468,14 @@ class Session:
                     action = recording_command(text)
                     if action == 'start':
                         try:
-                            await self.start_recording('voice' if transcribed else 'text')
+                            await self.start_recording('voice' if transcribed else 'text',
+                                                       current_turn=turn)
                         except ValueError as exc:
                             await self.emit('error', turn, code=str(exc),
                                             message='录音模式启动失败，请检查磁盘空间后重试。')
                             return
                         turn.system = True
-                        announcement = text = '开始录音，只录不答。'
+                        return
                 if transcribed and announcement is None:
                     await self.emit('transcript.final', turn, text=text,
                                     elapsed_ms=round((time.monotonic()-turn.started)*1000))

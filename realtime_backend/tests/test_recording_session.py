@@ -85,7 +85,7 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.session.state, 'recording')
         self.assertFalse(self.pipeline.chat_called)
         self.assertEqual(self.store.messages(self.session.id), [])
-        self.assertIn('开始录音', self.pipeline.spoken[0])
+        self.assertEqual(self.pipeline.spoken, [])
         self.assertTrue(any(event['type'] == 'recording.started' for event in self.events))
         self.assertFalse(any(event['type'] in ('message.user', 'transcript.final', 'reply.final')
                              for event in self.events))
@@ -105,8 +105,8 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         self.session.recording.write(b'\0\0'*200)
         await self.session.recording_tick()
         self.assertIsNone(self.session.recording)
-        self.assertEqual(self.session.state, 'listening')
-        self.assertTrue(any('录音已停止' in text for text in self.pipeline.spoken))
+        self.assertEqual(self.session.state, 'standby')
+        self.assertEqual(self.pipeline.spoken, [])
         metadata = self.manager.list()[0]
         self.assertEqual(metadata['reason'], 'limit')
 
@@ -116,7 +116,7 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         metadata = await self.session.stop_recording('web')
         self.assertEqual(metadata['id'], recording.id)
         self.assertIsNone(self.session.recording)
-        self.assertEqual(self.session.state, 'listening')
+        self.assertEqual(self.session.state, 'standby')
         self.assertTrue(self.manager.audio_path(recording.id).is_file())
         self.assertTrue(any(event['type'] == 'recording.stopped' for event in self.events))
         self.assertFalse(self.pipeline.chat_called)
@@ -134,10 +134,10 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
             self.pipeline.transcripts = ['确认停止']
             self.session.recording_heard(np.zeros(1600, dtype=np.float32))
             await wait_for(lambda: self.session.recording is None
-                           and self.session.state == 'listening')
-        self.assertEqual(self.session.state, 'listening')
+                           and self.session.state == 'standby')
+        self.assertEqual(self.session.state, 'standby')
         self.assertTrue(any(event['type'] == 'recording.stopped' for event in self.events))
-        self.assertTrue(any('录音已停止' in text for text in self.pipeline.spoken))
+        self.assertFalse(any('录音已停止' in text for text in self.pipeline.spoken))
         transcript = self.manager.transcript(self.manager.list()[0]['id'])
         self.assertEqual(transcript['count'], 0)  # control phrases are not dictation
 

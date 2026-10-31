@@ -74,7 +74,7 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(stopped['transcript_available'])
         self.assertEqual(stopped['transcript_lines'], 2)
         await wait_message(self.ws, 'recording.stopped')
-        self.assertEqual(self.session.state, 'listening')
+        self.assertEqual(self.session.state, 'standby')
 
         listing = await (await self.client.get('/api/recordings')).json()
         self.assertIn(recording['id'], [item['id'] for item in listing['recordings']])
@@ -225,7 +225,7 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
             while self.session.recording is not None:
                 await asyncio.sleep(.01)
         await wait_message(self.ws, 'recording.stopped')
-        self.assertEqual(self.session.state, 'listening')
+        self.assertEqual(self.session.state, 'standby')
 
     async def test_voice_start_command_over_the_session_enters_recording(self):
         # A typed command uses the same session-level detector as a transcript.
