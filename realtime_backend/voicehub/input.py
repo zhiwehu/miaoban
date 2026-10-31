@@ -1,6 +1,7 @@
 """Bounded audio ingress; protocol control messages never wait for ASR or VAD."""
 import asyncio
 import contextlib
+import os
 import time
 import numpy as np
 from .audio import AudioCodec, Segmenter, Silero, to_pcm16, vad_path
@@ -16,6 +17,15 @@ class AudioInput:
         self.recording_vad_failed = False
         self.segmenter = Segmenter(config['speech_threshold'], config['onset_ms'],
                                    config['silence_ms'], config['max_utterance_seconds'])
+        try:
+            chunk_seconds = float(os.environ.get(
+                'VOICEHUB_RECORDING_CHUNK_SECONDS', '6'))
+        except ValueError:
+            chunk_seconds = 6
+        chunk_seconds = min(12, max(3, chunk_seconds))
+        self.speech_max_samples = self.segmenter.max_samples
+        self.recording_max_samples = min(
+            self.speech_max_samples, int(chunk_seconds*16000))
         self.buffer = b''
         self.task = asyncio.create_task(self.run())
         self.window, self.packets = time.monotonic(), 0
@@ -50,6 +60,7 @@ class AudioInput:
                     # Recording mode owns every packet: no ASR turn, no replies.
                     if recording_seen is not recording:
                         recording_seen = recording
+                        self.segmenter.max_samples = self.recording_max_samples
                         self.segmenter.reset()
                         self.buffer = b''
                         recording_onset = False
@@ -136,6 +147,7 @@ class AudioInput:
                     continue
                 if recording_seen is not None:
                     # Do not carry a half-utterance from recording mode into chat.
+                    self.segmenter.max_samples = self.speech_max_samples
                     self.segmenter.reset()
                     self.buffer = b''
                     recording_seen = None

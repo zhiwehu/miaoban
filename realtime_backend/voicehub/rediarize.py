@@ -300,7 +300,11 @@ async def rediarize(recording_id, data_root, speakers=0, wait=False, mode='text'
         raise ValueError('too_little_speech')
     def _embed_all():
         engine = SpeakerEngine(root/'speaker-cache')
-        return [engine.embed(frame) for _, frame in rows]
+        output = []
+        frames = [frame for _, frame in rows]
+        for start in range(0, len(frames), 32):
+            output.extend(engine.embed_batch(frames[start:start+32]))
+        return output
     embeddings = await asyncio.to_thread(_embed_all)
     if speakers and speakers > 0:
         labels = smooth_labels(cluster(embeddings, speakers))

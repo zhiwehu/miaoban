@@ -55,6 +55,20 @@ class IngressTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(cancelled)
         self.assertFalse(any(e['type']=='playback.clear' and e.get('reason')=='speech' for e in events))
 
+    async def test_recording_uses_six_second_chunks(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=Store(Path(root)/'test.db')
+            async def send(event):
+                pass
+            session=Session('one','device',store,Pipeline(),send)
+            ingress=AudioInput(session,'pcm_s16le',True,DEFAULT['audio'])
+            try:
+                self.assertEqual(ingress.recording_max_samples, 6*16000)
+                self.assertGreaterEqual(ingress.speech_max_samples,
+                                        ingress.recording_max_samples)
+            finally:
+                await ingress.close();await session.close();store.close()
+
     async def test_audio_queue_is_bounded_and_fails_explicitly(self):
         with tempfile.TemporaryDirectory() as root:
             store=Store(Path(root)/'test.db')
