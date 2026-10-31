@@ -10,6 +10,16 @@ from pathlib import Path
 class PlannerError(RuntimeError):pass
 
 
+def build_request(serial,users,defaults,previous=None):
+    """Build one classifier request; context only rides along for follow-ups."""
+    from .extension_routing import is_followup
+    latest=users[-1]
+    return {'id':serial,'text':latest,
+            'previous_user':users[-2][-80:] if len(users)>1 and is_followup(latest) else '',
+            'defaults':{k:defaults[k] for k in ('default_city','news_source','news_limit')},
+            'previous':previous}
+
+
 class RexPlanner:
     def __init__(self):
         self.process=None;self.lock=asyncio.Lock();self.serial=0
@@ -42,9 +52,7 @@ class RexPlanner:
                 try:
                     await self._start()
                     self.serial+=1
-                    request={'id':self.serial,'text':users[-1], 'previous_user':users[-2][-80:] if len(users)>1 else '',
-                             'defaults':{k:defaults[k] for k in ('default_city','news_source','news_limit')},
-                             'previous':previous}
+                    request=build_request(self.serial,users,defaults,previous)
                     raw=json.dumps(request,ensure_ascii=False).encode()+b'\n'
                     if len(raw)>16384:raise PlannerError('planner_input_limit')
                     self.process.stdin.write(raw);await self.process.stdin.drain()
