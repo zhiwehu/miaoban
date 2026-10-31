@@ -159,6 +159,33 @@ class RecordingApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get(
             f'/api/recordings/{recording["id"]}/speech')).status, 404)
 
+    async def test_clean_audio_is_generated_without_changing_original(self):
+        recording = await self.start()
+        t = np.arange(16000, dtype=np.float32)/16000
+        pcm = (np.clip(np.sin(2*np.pi*440*t)*2, -1, 1)*32767).astype('<i2')
+        self.session.recording.write(pcm.tobytes())
+        await self.client.post(f'/api/recordings/{recording["id"]}/stop')
+        original = await (await self.client.get(
+            f'/api/recordings/{recording["id"]}/audio')).read()
+        response = await self.client.post(
+            f'/api/recordings/{recording["id"]}/clean',
+            json={'profile': 'mild'})
+        self.assertEqual(response.status, 200)
+        cleaned = (await response.json())['recording']
+        self.assertTrue(cleaned['clean_available'])
+        self.assertEqual(cleaned['clean_profile'], 'mild')
+        self.assertIn(cleaned['clean_duration_ms'], (1000, 1001))
+        download = await self.client.get(f'/api/recordings/{recording["id"]}/clean')
+        self.assertEqual(download.status, 200)
+        data = await download.read()
+        with wave.open(io.BytesIO(data), 'rb') as wav:
+            self.assertEqual(wav.getnframes(), 16000)
+        self.assertEqual(await (await self.client.get(
+            f'/api/recordings/{recording["id"]}/audio')).read(), original)
+        await self.client.delete(f'/api/recordings/{recording["id"]}')
+        self.assertFalse((self.app[HUB].recordings.root /
+                          f'{recording["id"]}-clean.wav').exists())
+
     async def test_active_recording_cannot_be_downloaded_or_started_twice(self):
         recording = await self.start()
         self.assertEqual((await self.client.get(f'/api/recordings/{recording["id"]}/audio')).status, 404)

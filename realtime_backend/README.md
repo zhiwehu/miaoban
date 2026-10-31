@@ -56,7 +56,7 @@ cd /Users/huzhiwei/ai/miaoban/realtime_backend
 - 点击任意一行，音频跳到该行的起始时间并继续播放
 - 拖动播放进度条，当前段落会同步高亮并滚动到可见位置
 - “导出文字”下载带时间戳的 txt
-- “下载录音”下载 WAV（录音进行中不可用）
+- “下载录音”下载 WAV（录音进行中不可用）；“降噪”生成可与原始对比的降噪副本
 - “生成会议纪要”用本机 Qwen3.5-4B 按模板生成，可编辑、导出 Markdown/TXT
 
 开始方式：
@@ -84,6 +84,7 @@ cd /Users/huzhiwei/ai/miaoban/realtime_backend
 
 - `<id>.wav`：完整原始音频
 - `<id>-speech.wav`：只保留 VAD 人声片段的精简音频（如果检测到人声）
+- `<id>-clean.wav`：降噪副本，与完整音频同一时长；原始 `<id>.wav` 不变
 - `<id>.txt`：逐行转写，UTF-8，每行格式为 `[mm:ss] 文字`
 - `<id>.json`：会话、时间、时长、设备等元数据
 
@@ -96,6 +97,29 @@ cd realtime_backend
 python scripts/build_speech_only.py --all
 # 或只处理一条：python scripts/build_speech_only.py --id <32-hex-id>
 ```
+
+### 刺耳杂音与降噪
+
+部分喵伴录音在近距离/大音量下会削波，并带有明显的 2–8 kHz 高频毛刺；本地实测
+同一条 38.6 秒录音 4–6 kHz 能量占比 7.7%，而干净网页录音接近 0，削波样本约
+0.15%。这不是持续的宽带底噪，单纯“噪声门”效果有限，因此使用：
+`高通 70 Hz → adeclip 削波修复 → 高频搁架衰减 → 低通 → 限幅`。
+
+- 保留原始 `<id>.wav`，另写 `<id>-clean.wav`，采样率/声道/时长与原始一致，
+  所以转写时间戳和证据跳转仍然对得上。
+- 两档：轻度（默认，保留更多齿音）和强力（更明显地压掉 2–6 kHz 毛刺，但可能
+  让声音偏闷）。页面“降噪”按钮可重新处理。
+- 播放器可在“降噪/原始”之间切换；下载区保留完整音频、精简音频、降噪音频。
+- 旧录音可用脚本批量补生成；新录音按条点击生成（不会自动覆盖原始文件）：
+
+```sh
+python scripts/build_clean_audio.py --all --profile mild
+python scripts/build_clean_audio.py --id <32-hex-id> --profile strong --force
+```
+
+- 降噪只能减轻已经削波的失真，不能恢复被削掉的波形；如果刺耳来自外放啸叫、
+  多人重叠或设备本身故障，仍需要改善摆放/增益或更换设备。
+- 处理过程在后台线程调用本机 ffmpeg，不阻塞 aiohttp；没有 ffmpeg 时返回明确错误。
 
 会议纪要使用本地 Qwen3.5-4B，全部生成和保存都在本机；录音、文字和纪要
 都不会进入对话历史，也不会自动上传。断线、服务正常关闭、达到 4 小时上限或写入

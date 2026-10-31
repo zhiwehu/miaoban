@@ -114,7 +114,9 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
   `stamp` 是录音内相对时间；没有文字时 `available=false`。保存到磁盘的
   `<id>.txt` 每行同样带 `[mm:ss]` 和可选的 `说话人N：` 前缀。
 - `GET /api/recordings/{id}/speech`：返回精简 WAV（只含 VAD 人声片段），支持 Range；没有精简音频时 404。
-- `DELETE /api/recordings/{id}`：删除完整/精简 WAV、txt 与元数据；活动中的录音返回 409。
+- `POST /api/recordings/{id}/clean`：body `{profile:"mild"|"strong"}`，同步生成 `/clean` 降噪副本；原始 WAV 不变；返回更新后的录音元数据。
+- `GET /api/recordings/{id}/clean`：返回降噪 WAV（与完整音频同一时间轴，支持 Range）；没有时 404。
+- `DELETE /api/recordings/{id}`：删除完整/精简/降噪 WAV、txt、元数据及会议纪要；活动中的录音返回 409。
 
 ### 会议纪要 API
 

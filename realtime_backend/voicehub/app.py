@@ -123,6 +123,7 @@ class Hub:
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
         self.recordings = Recordings(self.root)
         self.minutes = MinutesService(self.root, self.recordings, publish=self.publish)
+        self.cleanup_locks = {}
 
         self.skills=Skills(self.root,self.workflows) if skills_enabled else None
         self.timers=TimerReminders(self.root,self.operations,self.sessions,lambda:self.config.get()['tools']['timer'])
@@ -796,6 +797,8 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_post('/api/recordings', recording_api)
     app.router.add_get('/api/recordings/{identity}/audio', recording_api)
     app.router.add_get('/api/recordings/{identity}/speech', recording_api)
+    app.router.add_get('/api/recordings/{identity}/clean', recording_api)
+    app.router.add_post('/api/recordings/{identity}/clean', recording_api)
     app.router.add_get('/api/recordings/{identity}/transcript', recording_api)
     app.router.add_post('/api/recordings/{identity}/stop', recording_api)
     app.router.add_delete('/api/recordings/{identity}', recording_api)

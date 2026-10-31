@@ -760,6 +760,7 @@ let recordings = [], displayedRecording = null;
 let displayedTranscript = [], displayedTranscriptState = "idle";
 let minutesTemplates = null, minutesJobs = [], minutesJob = null;
 let minutesPollTimer = null, minutesModelId = "", minutesRecordingId = null;
+let audioSource = "clean", cleanProcessing = false;
 let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
 let recordingsRefreshTimer = null;
 let identity;
@@ -871,11 +872,20 @@ function resetAudio() {
   $("recording-play").textContent = "▶";
   currentLineIndex = -1;
 }
+function recordingAudioUrl(recording) {
+  if (!recording || recording.status === "active") return "";
+  if (audioSource === "clean" && recording.clean_audio_url)
+    return recording.clean_audio_url;
+  return recording.download_url || "";
+}
 function syncAudio(recording) {
   const audio = $("recording-audio");
   const active = recording?.status === "active";
-  const url = (!active && recording?.download_url) || "";
-  const key = recording ? recording.id + ":" + recording.status : "";
+  const url = recordingAudioUrl(recording);
+  const key = recording
+    ? recording.id + ":" + recording.status + ":" + audioSource + ":" +
+      (recording.clean_available ? "clean" : "plain")
+    : "";
   if (audio.dataset.key !== key) {
     audio.dataset.key = key;
     resetAudio();
@@ -968,9 +978,37 @@ function renderRecordingDetail() {
     speech.download =
       "voicehub-" + stamp + "-" + recording.id.slice(0, 8) + "-speech.wav";
   }
+  const cleanAvailable = !active && !!recording.clean_available;
+  const source = $("recording-audio-source");
+  source.hidden = !cleanAvailable;
+  if (cleanAvailable) {
+    if (!["original", "clean"].includes(audioSource)) audioSource = "clean";
+    source.value = audioSource;
+  } else if (audioSource === "clean") {
+    audioSource = "original";
+  }
+  const cleanButton = $("recording-clean");
+  cleanButton.hidden = active;
+  cleanButton.disabled = cleanProcessing;
+  cleanButton.classList.toggle("is-busy", cleanProcessing);
+  cleanButton.textContent = cleanProcessing
+    ? "降噪处理中…"
+    : cleanAvailable ? "重新降噪" : "生成降噪音频";
+  $("recording-clean-profile").disabled = cleanProcessing;
+  $("recording-clean-profile").closest("label").hidden = active;
+  if (recording.clean_profile &&
+      ["mild", "strong"].includes(recording.clean_profile))
+    $("recording-clean-profile").value = recording.clean_profile;
+  const clean = $("recording-clean-download");
+  clean.hidden = !cleanAvailable;
+  if (cleanAvailable) {
+    clean.href = recording.clean_audio_url;
+    clean.download =
+      "voicehub-" + stamp + "-" + recording.id.slice(0, 8) + "-clean.wav";
+  }
   $("recording-action-hint").textContent = active
     ? "录音结束后可以播放、下载和点击文字跳转；当前文字可以先行导出。"
-    : "完整音频保留全部静音；精简音频只保留人声片段，时间轴与转写不对应。会议纪要使用本地模型，尚未接入。";
+    : "完整音频保留全部静音；精简音频只保留人声片段；降噪音频与完整音频同一时间轴，修复部分设备的削波和刺耳高频。会议纪要使用本地 Qwen3.5-4B。";
   syncAudio(recording);
 }
 function lineSeconds(line) {
@@ -1147,6 +1185,8 @@ async function selectDisplayedRecording(recording, {load = true} = {}) {
   transcriptWarning = recording.transcription_error || "";
   transcriptFetchToken++;
   currentLineIndex = -1;
+  audioSource = recording.clean_available ? "clean" : "original";
+  cleanProcessing = false;
   resetMinutes();
   renderRecordings();
   renderRecordingDetail();
@@ -1389,6 +1429,38 @@ async function exportTranscript() {
     notice("导出文字失败：" + error.message, true);
   }
 }
+async function cleanRecording() {
+  if (!displayedRecording || cleanProcessing) return;
+  const recordingId = displayedRecording.id;
+  const profile = $("recording-clean-profile").value;
+  cleanProcessing = true;
+  renderRecordingDetail();
+  notice("正在降噪处理，原始音频不会被修改…");
+  try {
+    const data = await api(
+      "recordings/" + encodeURIComponent(recordingId) + "/clean",
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({profile}),
+      },
+    );
+    if (displayedRecording?.id !== recordingId) return;
+    displayedRecording = {...displayedRecording, ...data.recording};
+    const index = recordings.findIndex((item) => item.id === recordingId);
+    if (index >= 0) recordings[index] = {...recordings[index], ...data.recording};
+    audioSource = "clean";
+    cleanProcessing = false;
+    renderRecordings();
+    renderRecordingDetail();
+    notice("降噪音频已生成；可以在播放器切换“降噪/原始”对比。");
+  } catch (error) {
+    cleanProcessing = false;
+    renderRecordingDetail();
+    notice("降噪处理失败：" + error.message, true);
+  }
+}
+
 function minutesStatusLabel(status) {
   return {
     queued: "排队中",
@@ -1945,6 +2017,19 @@ $("minutes-refresh").onclick = () =>
   loadMinutesJobs().catch((error) => notice("刷新纪要失败：" + error.message, true));
 $("minutes-cancel").onclick = () => cancelMinutesJob();
 $("minutes-template-create").onclick = () => createMinutesTemplate();
+$("recording-clean").onclick = () => cleanRecording();
+$("recording-audio-source").onchange = () => {
+  const audio = $("recording-audio");
+  const time = audio.currentTime || 0;
+  const playing = !audio.paused && !!audio.getAttribute("src");
+  audioSource = $("recording-audio-source").value;
+  syncAudio(displayedRecording);
+  if (!audio.getAttribute("src")) return;
+  audio.addEventListener("loadedmetadata", () => {
+    if (Number.isFinite(time) && time > 0) audio.currentTime = time;
+    if (playing) audio.play().catch(() => {});
+  }, {once: true});
+};
 $("minutes-edit-button").onclick = () => {
   if (!minutesJob?.result) return;
   $("minutes-editor").value =

@@ -535,6 +535,11 @@
                     </div>
                   </div>
                   <audio id="recording-audio" preload="metadata"></audio>
+                  <select id="recording-audio-source" class="player-source" hidden
+                          aria-label="播放音源">
+                    <option value="clean">降噪</option>
+                    <option value="original">原始</option>
+                  </select>
                 </div>
                 <div id="recording-player-placeholder" class="recording-player-placeholder" hidden>
                   录音仍在进行，停止后可以播放、下载和跳转文字。
@@ -552,13 +557,25 @@
                   <a id="recording-speech-download" class="secondary recording-download" hidden>
                     下载精简音频
                   </a>
+                  <label class="cleanup-control">降噪
+                    <select id="recording-clean-profile" aria-label="降噪强度">
+                      <option value="mild">轻度</option>
+                      <option value="strong">强力</option>
+                    </select>
+                  </label>
+                  <button id="recording-clean" class="secondary" type="button" hidden>
+                    生成降噪音频
+                  </button>
+                  <a id="recording-clean-download" class="secondary recording-download" hidden>
+                    下载降噪音频
+                  </a>
                   <button id="recording-minutes-button" class="secondary" type="button" disabled>
                     生成会议纪要
                   </button>
                 </div>
                 <p class="hint recording-action-hint" id="recording-action-hint">
-                  完整音频保留全部静音；精简音频只保留检测到人声的片段，时间轴与转写不对应。
-                  会议纪要使用本地模型，尚未接入。
+                  完整音频保留全部静音；精简音频只保留检测到人声的片段；降噪音频使用同一时间轴，
+                  修复部分设备的削波和高频毛刺。会议纪要使用本地模型生成。
                 </p>
                 <section class="recording-transcript-panel">
                   <div class="section-heading">

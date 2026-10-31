@@ -4,6 +4,7 @@ The web client uses these endpoints to stop a recording even when its session
 WebSocket already dropped, and to list/download/delete the WAV files.  Starting
 still requires the owning session because the recording is fed by that socket.
 """
+import asyncio
 import contextlib
 import re
 import time
@@ -19,6 +20,10 @@ ERRORS = {
     'recording_unavailable': '后端录音功能未启用。',
     'session_closed': '会话已断开，无法开始录音。',
     'invalid_request': '请求格式无效。',
+    'invalid_cleanup_profile': '未知的降噪档位。',
+    'cleanup_unavailable': '本机没有可用的 ffmpeg，无法降噪。',
+    'cleanup_failed': '降噪处理失败，请检查原始音频。',
+    'cleanup_timeout': '降噪处理超时。',
 }
 
 
@@ -85,6 +90,42 @@ async def recording_api(request):
                 'Content-Type': 'audio/wav',
                 'Cache-Control': 'no-store',
             })
+        if request.path.endswith('/clean'):
+            if metadata is None or metadata.get('status') == 'active':
+                raise web.HTTPNotFound()
+            if request.method == 'GET':
+                path = manager.clean_path(identity)
+                if path is None:
+                    raise web.HTTPNotFound()
+                return web.FileResponse(path, headers={
+                    'Content-Type': 'audio/wav',
+                    'Cache-Control': 'no-store',
+                })
+            body = await request.json()
+            if not isinstance(body, dict) or set(body) != {'profile'}:
+                raise ValueError('invalid_request')
+            profile = body.get('profile', 'mild')
+            if profile not in ('mild', 'strong'):
+                raise ValueError('invalid_cleanup_profile')
+            source = manager.audio_path(identity)
+            if source is None:
+                raise ValueError('recording_not_found')
+            from .audio_cleanup import CleanupError, clean_wav
+            lock = hub.cleanup_locks.setdefault(identity, asyncio.Lock())
+            async with lock:
+                target = manager.root/f'{identity}-clean.wav'
+                try:
+                    await asyncio.to_thread(clean_wav, source, target, profile)
+                except CleanupError as exc:
+                    code = exc.code
+                    status = 503 if code in ('cleanup_unavailable',) else (
+                        504 if code == 'cleanup_timeout' else 500)
+                    return error(code, status)
+                refreshed = manager.get(identity)
+                if refreshed is not None:
+                    refreshed['clean_profile'] = profile
+                    manager.write_metadata(refreshed)
+                return web.json_response({'recording': manager.get(identity)})
         if request.path.endswith('/stop'):
             if metadata is None:
                 raise web.HTTPNotFound()

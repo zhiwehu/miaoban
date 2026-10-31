@@ -1810,3 +1810,33 @@ footer {
   padding: 7px 11px;
   font-size: 10px;
 }
+.player-source {
+  flex: 0 0 auto;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffdf8;
+  color: #55645a;
+  font: inherit;
+  font-size: 10px;
+}
+.cleanup-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.cleanup-control select {
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fffdf8;
+  color: #55645a;
+  font: inherit;
+  font-size: 10px;
+}
+#recording-clean.is-busy {
+  opacity: .6;
+  cursor: wait;
+}

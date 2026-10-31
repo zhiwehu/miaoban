@@ -418,6 +418,14 @@ class Recordings:
         path = self.root/f'{identity}-speech.wav'
         return path if path.is_file() else None
 
+    def clean_path(self, identity):
+        if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
+            return None
+        if identity in self.active:
+            return None
+        path = self.root/f'{identity}-clean.wav'
+        return path if path.is_file() else None
+
     def transcript_path(self, identity):
         if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
             return None
@@ -493,6 +501,19 @@ class Recordings:
         else:
             metadata.setdefault('speech_bytes', 0)
             metadata.setdefault('speech_duration_ms', 0)
+        clean = self.clean_path(identity)
+        metadata['clean_available'] = bool(clean)
+        metadata['clean_audio_url'] = (f'/api/recordings/{identity}/clean'
+                                       if clean else None)
+        if clean:
+            data_bytes = max(0, clean.stat().st_size-HEADER_BYTES)
+            metadata.setdefault('clean_bytes', data_bytes)
+            metadata.setdefault('clean_duration_ms',
+                                round(data_bytes/SAMPLE_WIDTH/SAMPLE_RATE*1000))
+            metadata.setdefault('clean_profile', None)
+        else:
+            metadata.setdefault('clean_bytes', 0)
+            metadata.setdefault('clean_duration_ms', 0)
         return metadata
 
     def write_metadata(self, metadata, *, file=None):
@@ -549,9 +570,10 @@ class Recordings:
         audio, metadata = self.root/f'{identity}.wav', self.metadata_path(identity)
         transcript = self.root/f'{identity}.txt'
         speech = self.root/f'{identity}-speech.wav'
+        clean = self.root/f'{identity}-clean.wav'
         if not audio.is_file() and not metadata.is_file():
             raise ValueError('recording_not_found')
-        for path in (audio, metadata, transcript, speech):
+        for path in (audio, metadata, transcript, speech, clean):
             if path.exists():
                 path.unlink()
 
@@ -586,14 +608,16 @@ class Recordings:
                     handle.write(struct.pack('<I', data_bytes))
                 os.chmod(audio, 0o600)
                 speech = self.root/f'{identity}-speech.wav'
-                if speech.is_file():
-                    speech_bytes = max(0, speech.stat().st_size-HEADER_BYTES)
-                    with open(speech, 'r+b') as handle:
+                for extra in (speech, self.root/f'{identity}-clean.wav'):
+                    if not extra.is_file():
+                        continue
+                    extra_bytes = max(0, extra.stat().st_size-HEADER_BYTES)
+                    with open(extra, 'r+b') as handle:
                         handle.seek(4)
-                        handle.write(struct.pack('<I', 36+speech_bytes))
+                        handle.write(struct.pack('<I', 36+extra_bytes))
                         handle.seek(40)
-                        handle.write(struct.pack('<I', speech_bytes))
-                    os.chmod(speech, 0o600)
+                        handle.write(struct.pack('<I', extra_bytes))
+                    os.chmod(extra, 0o600)
                 samples = data_bytes//SAMPLE_WIDTH
                 started_at = audio.stat().st_mtime-(samples/SAMPLE_RATE)
                 transcript = self.root/f'{identity}.txt'
