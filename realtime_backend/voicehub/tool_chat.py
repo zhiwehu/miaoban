@@ -52,7 +52,22 @@ async def chat(pipeline, history):
     if workflow is None:workflow=calendar_route(pipeline,history)
     cached_rex=None
     cfg=pipeline.config['tools']
-    if workflow is None and music_plan(latest) is None and files is None and not music_refusal(latest) and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
+    # 天气类请求先给一个静默反馈，避免慢速规划期间屏幕上没有任何回应。
+    if workflow is None and getattr(getattr(pipeline,'local',None),'operations',None) and re.search(r'天气|气温|降雨|下雨|新闻|资讯|CPU|内存|磁盘|系统信息',latest,re.IGNORECASE):
+        yield ToolNotice('tool_planning','')
+    # 「（今天）天气怎么样」这类口语先归一化参数直接走天气工具，不进扩展工具规划器；
+    # 否则扩展规划器不可用时会误回「扩展工具规划暂时不可用」。
+    compact=re.sub(r'[\s，。！？,.!?]','',latest)
+    match=re.fullmatch(r'(?:(?:请|帮我|麻烦你))?(?:查询|查一下|查查|看看)?(今天|今日|明天|后天|现在)?(?:的)?天气(?:怎么样|如何|怎样|情况)?',compact)
+    if workflow is None and match and cfg.get('weather'):
+        from .slot_normalizer import normalize_spans
+        day=match.group(1)
+        spans=[{'type':'时间','span':day,'offset':[0,len(day)]}] if day else []
+        cached_rex=normalize_spans('weather',day or '',spans,cfg,getattr(pipeline,'_previous_tool_plan',None))
+        pipeline._previous_tool_plan=cached_rex
+        if cached_rex['status']=='clarify':
+            yield cached_rex['message'];return
+    if cached_rex is None and workflow is None and music_plan(latest) is None and files is None and not music_refusal(latest) and cfg.get('planner')=='rex' and any(cfg.get(k) for k in ('shopping_list','timer','item_memory')) and not is_conversational_turn(latest) and calendar_answer(latest) is None:
         if re.search(r'购物|采购|清单|计时|倒数|倒计时|放哪|位置|记住|物品|存放',latest):yield ToolNotice('tool_planning','收到，我来处理。')
         try:cached_rex=await rex_plan(pipeline,history,cfg)
         except (PlannerError,ValueError,TimeoutError):
@@ -111,7 +126,8 @@ async def chat(pipeline, history):
             async for text in source:
                 yield text
         return
-    if getattr(local,'operations',None) and (files is not None or music_candidate(latest) or re.search(r'天气|气温|降雨|下雨|新闻|资讯|CPU|内存|磁盘|系统信息',latest,re.IGNORECASE) or (extra and re.search(r'调用|使用工具|执行工具',latest))):
+    # 口语天气已经在上面的快速通道里给过静默反馈，这里不再追加语音确认。
+    if cached_rex is None and getattr(local,'operations',None) and (files is not None or music_candidate(latest) or re.search(r'天气|气温|降雨|下雨|新闻|资讯|CPU|内存|磁盘|系统信息',latest,re.IGNORECASE) or (extra and re.search(r'调用|使用工具|执行工具',latest))):
         yield ToolNotice('tool_planning','收到，我来处理。')
     mode=cfg.get('planner','llm')
     music=music_plan(latest) if cfg.get('music') else None
@@ -123,9 +139,13 @@ async def chat(pipeline, history):
         # independently before accepting the core classifier's result.
         try:dynamic_name,dynamic_arguments=await dynamic_plan(pipeline,history,candidates,cfg)
         except (ValueError,TimeoutError):
-            yield '扩展工具规划暂时不可用，请稍后再试。'
-            return
-    if files is not None:
+            # 扩展规划器不可用不应打断这一轮：静默退回核心工具/普通聊天，
+            # 下句话仍会重新尝试规划，用户不会听到「规划暂时不可用」。
+            dynamic_name,dynamic_arguments=None,{}
+    if cached_rex is not None and match:
+        name,arguments=cached_rex['tool'],cached_rex['arguments']
+        mode='weather_rules'
+    elif files is not None:
         name,arguments='file_organizer',files
         mode='file_rules';pipeline._previous_tool_plan=None
     elif music is not None:

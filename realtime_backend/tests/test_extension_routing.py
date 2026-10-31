@@ -128,3 +128,34 @@ class FileFollowupTests(unittest.TestCase):
         from voicehub.extension_routing import file_request
         for text in ['不要整理文件','整理是什么意思','把整理翻译成英文','删除全部文件','文件夹','不要帮我把我的文件夹里那些文件分类整理好','解释帮我把文件夹里的文件分类整理好是什么意思','帮我把文件夹里那些文件删除整理好']:
             self.assertIsNone(file_request([{'role':'assistant','content':'已生成文件分类预览'},{'role':'user','content':text}]))
+
+
+class PlannerResilienceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_extension_planner_failure_degrades_to_chat(self):
+        from unittest.mock import AsyncMock
+        cfg=copy.deepcopy(DEFAULT);cfg['tools'].update(planner='rex')
+        class Extensions:
+            def catalogue(self):return [{'name':'ext_demo__echo','description':'echo'}]
+            async def call(self,*args,**kwargs):raise AssertionError('No MCP call after a failed plan')
+        class P:
+            config=cfg;local=SimpleNamespace(extensions=Extensions())
+            async def raw_chat(self,history,**kwargs):yield '我们还是聊点别的吧。'
+        with patch('voicehub.tool_chat.dynamic_plan',side_effect=ValueError('invalid_plan')), \
+             patch('voicehub.tool_chat.rex_plan',AsyncMock(return_value={'status':'chat','tool':None,'arguments':{}})):
+            result=[x async for x in chat(P(),[{'role':'user','content':'说点有意思的事'}])]
+        self.assertEqual(result,['我们还是聊点别的吧。'])
+
+    async def test_dynamic_plan_sends_only_the_current_utterance(self):
+        from voicehub.extension_routing import dynamic_plan
+        seen=[]
+        class P:
+            async def raw_chat(self,history,**kwargs):
+                seen.append(history)
+                yield '{"tool":null,"arguments":{}}'
+        cfg=copy.deepcopy(DEFAULT)
+        history=[{'role':'user','content':'查新闻'},
+                 {'role':'assistant','content':'好的，我看一下。'},
+                 {'role':'user','content':'那今天几号'}]
+        await dynamic_plan(P(),history,[{'name':'ext_demo__echo','description':'echo'}],cfg['tools'])
+        self.assertEqual(seen,[[{'role':'user','content':'那今天几号'}]])
+
