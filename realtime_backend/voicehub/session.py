@@ -60,6 +60,8 @@ class Session:
         self.recording_asr_notified=False
         self.recording_speakers=None
         self.recording_speaker_failed=False
+        self.recording_speaker_failures=0
+        self.recording_speaker_retry_at=0.0
         self.recording_speaker_notified=False
         self.rediarize_tasks=set()
         self.speaker_engine=getattr(getattr(pipeline,'local',None),'speakers',None)
@@ -148,6 +150,8 @@ class Session:
                                                   min_seconds=.8)
                                    if self.speaker_engine else None)
         self.recording_speaker_failed = False
+        self.recording_speaker_failures = 0
+        self.recording_speaker_retry_at = 0.0
         self.recording_speaker_notified = False
         recording.speaker_count = 0
         worker = self.recording_worker = asyncio.create_task(self._recording_worker())
@@ -321,7 +325,7 @@ class Session:
                                   else round(recording.duration*1000))
                     speaker_runs = None
                     if (self.speaker_engine and self.recording_speakers
-                            and not self.recording_speaker_failed):
+                            and time.monotonic() >= self.recording_speaker_retry_at):
                         try:
                             speaker_runs = await self._live_speaker_runs(
                                 pcm, text, elapsed_ms)
@@ -329,27 +333,46 @@ class Session:
                             raise
                         except Exception:
                             speaker_runs = None
+                        failed_this_segment = False
                         if speaker_runs is None:
-                            try:
-                                embedding = await asyncio.wait_for(
-                                    asyncio.to_thread(self.speaker_engine.embed, pcm), 6)
-                                speaker_id, speaker = self.recording_speakers.assign(
-                                    embedding, len(pcm)/16000)
+                            if len(pcm) < 800:
+                                # Too short for ECAPA; reuse the last speaker
+                                # rather than declaring the whole model broken.
                                 speaker_runs = [{
                                     'start_ms': 0, 'end_ms': len(pcm)/16000*1000,
-                                    'speaker_id': speaker_id, 'speaker': speaker,
+                                    'speaker_id': recording.transcript_last_speaker_id,
+                                    'speaker': recording.transcript_last_speaker,
                                     'text': text}]
-                            except asyncio.CancelledError:
-                                raise
-                            except Exception:
-                                self.recording_speaker_failed = True
-                                if not self.recording_speaker_notified:
-                                    self.recording_speaker_notified = True
-                                    with contextlib.suppress(Exception):
-                                        await self.emit(
-                                            'recording.speaker_unavailable',
-                                            recording_id=recording.id,
-                                            message='发言人区分暂时不可用，转写继续；请检查本机声纹模型。')
+                            else:
+                                try:
+                                    embedding = await asyncio.wait_for(
+                                        asyncio.to_thread(self.speaker_engine.embed, pcm), 12)
+                                    speaker_id, speaker = self.recording_speakers.assign(
+                                        embedding, len(pcm)/16000)
+                                    speaker_runs = [{
+                                        'start_ms': 0, 'end_ms': len(pcm)/16000*1000,
+                                        'speaker_id': speaker_id, 'speaker': speaker,
+                                        'text': text}]
+                                except asyncio.CancelledError:
+                                    raise
+                                except Exception:
+                                    failed_this_segment = True
+                        if failed_this_segment:
+                            self.recording_speaker_failures += 1
+                            # A busy local model can time out once; do not give up
+                            # for the rest of the recording. Retry after a cooldown.
+                            self.recording_speaker_retry_at = time.monotonic()+30
+                            if (self.recording_speaker_failures >= 1
+                                    and not self.recording_speaker_notified):
+                                self.recording_speaker_notified = True
+                                with contextlib.suppress(Exception):
+                                    await self.emit(
+                                        'recording.speaker_unavailable',
+                                        recording_id=recording.id,
+                                        message='实时说话人暂时不稳定，转写继续；停止后会自动重新分析说话人。')
+                        else:
+                            self.recording_speaker_failures = 0
+                            self.recording_speaker_retry_at = 0.0
                         recording.speaker_count = self.recording_speakers.count
                     if speaker_runs is None:
                         speaker_runs = [{
