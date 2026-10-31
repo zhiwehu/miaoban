@@ -27,6 +27,7 @@ HEADER_BYTES = 44
 DEFAULT_MAX_SECONDS = 4 * 60 * 60
 MIN_FREE_BYTES = 256 * 1024 * 1024
 CONFIRM_SECONDS = 20
+TRANSCRIPT_JOIN_PAUSE_MS = 1000
 
 _PUNCTUATION = re.compile(r'[\s\W_]+', re.UNICODE)
 _START = re.compile(
@@ -123,6 +124,9 @@ class ActiveRecording:
         self.transcript_path = manager.root/f'{self.id}.txt'
         self.transcript_file = None
         self.transcript_lines = 0
+        self.transcript_last_offset = 0
+        self.transcript_last_stamp = ''
+        self.transcript_last_text = ''
         self.transcription_error = None
         self.file = open(self.path, 'wb', buffering=0)
         os.chmod(self.path, 0o600)
@@ -166,12 +170,44 @@ class ActiveRecording:
             clean = clean[:4000]
         stamp = stamp_text(elapsed_ms)
         if self.transcript_file is None:
-            self.transcript_file = open(self.transcript_path, 'a', encoding='utf-8')
+            self.transcript_file = open(self.transcript_path, 'ab')
             os.chmod(self.transcript_path, 0o600)
-        self.transcript_file.write(f'[{stamp}] {clean}\n')
+        self.transcript_last_offset = self.transcript_file.tell()
+        self.transcript_last_stamp = stamp
+        self.transcript_last_text = clean
+        self.transcript_file.write(f'[{stamp}] {clean}\n'.encode('utf-8'))
         self.transcript_file.flush()
         self.transcript_lines += 1
         return self.transcript_lines, stamp, clean
+
+    def merge_transcript(self, text):
+        """Join a short-pause continuation to the previous line with a full stop."""
+        if self.status != 'active' or self.transcript_lines == 0:
+            return None
+        clean = re.sub(r'\s+', ' ', text or '').strip()
+        clean = clean.lstrip('，,。.；;：:、 ')
+        if not clean:
+            return None
+        if len(clean) > 4000:
+            clean = clean[:4000]
+        previous = self.transcript_last_text
+        if previous and previous[-1] in '，,、；;：:':
+            previous = previous[:-1] + '。'
+        elif previous and previous[-1] not in '。！？!?；;':
+            previous += '。'
+        merged = previous + clean
+        if self.transcript_file is not None:
+            self.transcript_file.flush()
+            self.transcript_file.close()
+            self.transcript_file = None
+        line = f'[{self.transcript_last_stamp}] {merged}\n'.encode('utf-8')
+        with open(self.transcript_path, 'r+b') as handle:
+            handle.seek(self.transcript_last_offset)
+            handle.truncate()
+            handle.write(line)
+        self.transcript_file = open(self.transcript_path, 'ab')
+        self.transcript_last_text = merged
+        return self.transcript_lines, self.transcript_last_stamp, merged
 
     def close_transcript(self):
         if self.transcript_file is None:

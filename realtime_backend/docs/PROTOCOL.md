@@ -75,16 +75,18 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 | recording.confirming | recording, expires_in=20；先说了一次“停止录音模式”，等待“确认停止” |
 | recording.confirm_expired | recording；20 秒内没有确认，继续录音 |
 | recording.stopped | recording；此时 download_url 可用 |
-| recording.transcript | recording_id, line（1 起）, text, stamp（录音内 mm:ss）, lines, elapsed_ms；每段 VAD 停顿后的实时转写行 |
+| recording.transcript | recording_id, line（1 起）, text, stamp（录音内 mm:ss）, lines, elapsed_ms, merged；短停顿时会以 merged=true 更新上一行 |
 | recording.transcription_unavailable | message；VAD/ASR 不可用或使用 HTTP ASR，录音仍在继续 |
 | recording.input_ignored | message；录音模式下收到的文字消息被忽略 |
 | error | code, message, 可选 error_class |
 
 `session.state=recording` 表示音频正在写入 WAV，此时普通语音不产生
 `transcript.final`、`message.user`、`reply.*` 或工具调用。每个 VAD 停顿后的语音段
-只产生一条 `recording.transcript`，客户端按 `line` 去重后换行显示。录音提示（开始
-确认、停止二次确认、最终保存提示）使用普通 `audio.start/chunk/end` 播放，但不写
-对话历史或录音转写。实时转写和语音停止只在 ASR 为本机服务时启用；HTTP ASR 会收到
+只产生一条 `recording.transcript`，客户端按 `line` 去重后换行显示。停顿短于约
+1 秒时服务端把新文字接到上一行并补句号，事件带 `merged=true` 和更新后的整行
+`text`；客户端应替换该行而不是追加。录音提示（开始确认、停止二次确认、最终保存
+提示）使用普通 `audio.start/chunk/end` 播放，但不写对话历史或录音转写。实时转写和
+语音停止只在 ASR 为本机服务时启用；HTTP ASR 会收到
 `recording.transcription_unavailable`，录音音频不会为此上传。
 
 收到 `playback.clear` 时立即停止正在播放的音源、清空所有排队音频、使旧 turn_id

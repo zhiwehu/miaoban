@@ -7,7 +7,8 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from . import phrasing
-from .recording import CONFIRM_SECONDS, command as recording_command, duration_text
+from .recording import (CONFIRM_SECONDS, TRANSCRIPT_JOIN_PAUSE_MS,
+                        command as recording_command, duration_text)
 from .tools import ToolNotice, ToolStatus
 
 
@@ -177,7 +178,7 @@ class Session:
                     '。可以在网页下载。')
         return metadata
 
-    def recording_heard(self, pcm, elapsed_ms=None):
+    def recording_heard(self, pcm, elapsed_ms=None, pause_ms=None):
         """Queue one VAD segment for stop detection and live transcription."""
         if not self.recording or self.recording.stopping or self.recording_queue is None:
             return
@@ -185,7 +186,7 @@ class Session:
             with contextlib.suppress(asyncio.QueueEmpty):
                 self.recording_queue.get_nowait()
         with contextlib.suppress(asyncio.QueueFull):
-            self.recording_queue.put_nowait((pcm, elapsed_ms))
+            self.recording_queue.put_nowait((pcm, elapsed_ms, pause_ms))
 
     async def recording_transcription_unavailable(self, message):
         if not self.recording or self.recording_asr_notified:
@@ -252,7 +253,7 @@ class Session:
                 item = await self.recording_queue.get()
                 if item is None or self.recording is None:
                     return
-                pcm, started_ms = item
+                pcm, started_ms, pause_ms = item
                 if not self.recording_listen_allowed() and not self.recording.stopping:
                     continue
                 try:
@@ -285,17 +286,27 @@ class Session:
                     elapsed_ms = (started_ms if started_ms is not None
                                   else round(recording.duration*1000))
                     try:
-                        appended = recording.append_transcript(text, elapsed_ms)
+                        if (pause_ms is not None
+                                and pause_ms < TRANSCRIPT_JOIN_PAUSE_MS
+                                and recording.transcript_lines > 0):
+                            merged = recording.merge_transcript(text)
+                        else:
+                            merged = None
+                        appended = (None if merged else
+                                    recording.append_transcript(text, elapsed_ms))
                     except OSError:
                         await self.recording_transcription_unavailable(
                             '转写写入失败，录音仍在继续；请检查磁盘空间。')
                         continue
-                    if appended:
-                        line, stamp, clean = appended
+                    result = merged or appended
+                    if result:
+                        line, stamp, clean = result
                         await self.emit('recording.transcript',
                                         recording_id=recording.id, line=line,
-                                        text=clean, stamp=stamp, lines=recording.transcript_lines,
-                                        elapsed_ms=elapsed_ms)
+                                        text=clean, stamp=stamp,
+                                        lines=recording.transcript_lines,
+                                        elapsed_ms=elapsed_ms,
+                                        merged=bool(merged))
         except asyncio.CancelledError:
             pass
 

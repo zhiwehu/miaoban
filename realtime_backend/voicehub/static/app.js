@@ -894,6 +894,7 @@ function renderRecordingConsole() {
   const downloadable = !!(recording && !active && recording.download_url);
   download.hidden = !downloadable;
   if (downloadable) download.href = recording.download_url;
+  $("recording-jump").hidden = !recording;
   if (active && !recordingClockTimer) {
     recordingClockTimer = setInterval(() => {
       if (displayedRecording?.status === "active")
@@ -908,6 +909,9 @@ function renderRecordingConsole() {
 }
 function renderTranscript() {
   const target = $("transcript-lines");
+  const stick =
+    target.scrollHeight - target.scrollTop - target.clientHeight < 80;
+  const previousTop = target.scrollTop;
   target.replaceChildren();
   let status = "等待录音";
   let hint = "时间戳是录音内时间；停顿后自动换行。转写只使用本机 ASR。";
@@ -921,7 +925,7 @@ function renderTranscript() {
       row.append(node("span", "", line.text));
       target.append(row);
     }
-    target.scrollTop = target.scrollHeight;
+    target.scrollTop = stick ? target.scrollHeight : previousTop;
     status = displayedRecording.status === "active" ? "录音中 · 实时" : "已停止";
   } else if (transcriptWarning || displayedRecording.transcription_error) {
     const warning = transcriptWarning || displayedRecording.transcription_error;
@@ -1011,6 +1015,23 @@ async function selectDisplayedRecording(recording, {load = true} = {}) {
 function applyTranscriptEvent(event) {
   if (!displayedRecording || displayedRecording.id !== event.recording_id)
     return;
+  if (event.merged) {
+    const index = (event.line || 0) - 1;
+    if (index < 0 || index >= displayedTranscript.length) {
+      loadDisplayedTranscript(displayedRecording).catch(() => {});
+      return;
+    }
+    displayedTranscript[index] = {
+      stamp: event.stamp || displayedTranscript[index].stamp,
+      text: event.text,
+    };
+    displayedTranscriptState = "active";
+    transcriptWarning = "";
+    displayedRecording.transcription_error = null;
+    renderTranscript();
+    renderRecordingConsole();
+    return;
+  }
   if (event.line <= displayedTranscript.length) return;
   if (event.line > displayedTranscript.length + 1) {
     loadDisplayedTranscript(displayedRecording).catch(() => {});
@@ -1686,6 +1707,8 @@ $("recordings-start").onclick = () => startRecording();
 $("recordings-stop").onclick = () => stopDisplayedRecording();
 $("recordings-refresh").onclick = () =>
   loadRecordings().catch((error) => notice("刷新录音失败：" + error.message, true));
+$("recording-jump").onclick = () =>
+  $("transcript-lines").scrollIntoView({behavior: "smooth", block: "start"});
 $("recordings-connect").onclick = async () => {
   if (!(await ensureWebSession()))
     notice("无法连接网页麦克风，请检查浏览器权限。", true);

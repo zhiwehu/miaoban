@@ -851,11 +851,28 @@ select {
   margin-top: auto;
 }
 .transcript-lines {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 620px;
-  overflow: auto;
+  max-height: min(620px, calc(100dvh - 260px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #c8d5c1 transparent;
   padding: 12px 2px;
   border-top: 1px solid var(--line);
+}
+.transcript-lines::-webkit-scrollbar {
+  width: 8px;
+}
+.transcript-lines::-webkit-scrollbar-thumb {
+  background: #c8d5c1;
+  border-radius: 4px;
+}
+.recording-live {
+  scroll-margin-top: 20px;
 }
 .transcript-line {
   display: flex;
@@ -897,7 +914,12 @@ select {
     grid-template-columns: 1fr;
   }
   .recording-live {
-    min-height: 360px;
+    min-height: 0;
+  }
+  .transcript-lines {
+    max-height: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
   }
 }
 .danger {

@@ -96,6 +96,29 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(transcript_path.exists())
         self.assertIsNone(self.manager.transcript(recording.id))
 
+    def test_short_pause_merges_with_a_full_stop_instead_of_a_new_line(self):
+        recording = self.manager.start('session-join', 'device', 'voice')
+        self.assertEqual(recording.append_transcript('第一句话', 0),
+                         (1, '00:00', '第一句话'))
+        self.assertEqual(recording.merge_transcript('第二句话'),
+                         (1, '00:00', '第一句话。第二句话'))
+        self.assertEqual(recording.merge_transcript('，第三句话。'),
+                         (1, '00:00', '第一句话。第二句话。第三句话。'))
+        self.assertEqual(recording.append_transcript('第四句话，', 5000),
+                         (2, '00:05', '第四句话，'))
+        self.assertEqual(recording.merge_transcript('第五句话'),
+                         (2, '00:05', '第四句话。第五句话'))
+        self.assertEqual(recording.transcript_lines, 2)
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual(transcript['count'], 2)
+        self.assertEqual(
+            transcript['text'],
+            '[00:00] 第一句话。第二句话。第三句话。\n[00:05] 第四句话。第五句话')
+        self.manager.stop(recording.id, 'web')
+        self.assertEqual(
+            recording.transcript_path.read_text(encoding='utf-8'),
+            '[00:00] 第一句话。第二句话。第三句话。\n[00:05] 第四句话。第五句话\n')
+
     def test_duration_cap_writes_no_more_than_configured_seconds(self):
         manager = Recordings(self.root, max_seconds=1)
         recording = manager.start('session-b', 'device', 'voice')

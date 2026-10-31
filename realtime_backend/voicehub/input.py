@@ -36,6 +36,9 @@ class AudioInput:
         disabled = False
         recording_seen = None
         recording_onset = False
+        recording_between = False
+        recording_pause_frames = 0
+        pending_pause_ms = None
         try:
             while True:
                 packet = await self.queue.get()
@@ -49,6 +52,9 @@ class AudioInput:
                         self.segmenter.reset()
                         self.buffer = b''
                         recording_onset = False
+                        recording_between = False
+                        recording_pause_frames = 0
+                        pending_pause_ms = None
                         self.recording_vad_failed = False
                         disabled = False
                         if not session.recording_local_asr_allowed():
@@ -95,6 +101,11 @@ class AudioInput:
                         probability = await asyncio.to_thread(self.vad.probability, pcm)
                         onset, segment = self.segmenter.feed(pcm, probability)
                         if onset:
+                            if recording_between:
+                                pending_pause_ms = (self.config['silence_ms']
+                                                    + recording_pause_frames*32)
+                            recording_between = False
+                            recording_pause_frames = 0
                             # Drop any utterance that began while a prompt was audible,
                             # so the assistant cannot confirm its own stop prompt.
                             recording_onset = session.recording_listen_allowed()
@@ -103,8 +114,14 @@ class AudioInput:
                                     and session.recording_listen_allowed()):
                                 start_ms = max(0, round(
                                     (recording.samples-len(segment))/16000*1000))
-                                session.recording_heard(segment, start_ms)
+                                session.recording_heard(segment, start_ms, pending_pause_ms)
                             recording_onset = False
+                            pending_pause_ms = None
+                            recording_between = True
+                            recording_pause_frames = 0
+                        elif (recording_between
+                              and probability < self.config['speech_threshold']):
+                            recording_pause_frames += 1
                     continue
                 if recording_seen is not None:
                     # Do not carry a half-utterance from recording mode into chat.

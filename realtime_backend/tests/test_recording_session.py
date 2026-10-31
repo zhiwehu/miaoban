@@ -161,6 +161,35 @@ class RecordingSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metadata['transcript_lines'], 2)
         self.assertEqual(self.manager.transcript(recording.id)['status'], 'stopped')
 
+    async def test_short_pause_merges_and_long_pause_starts_a_new_line(self):
+        recording = await self.session.start_recording('web')
+        self.session.recording_listen_after = 0
+        self.pipeline.transcripts = ['第一段话', '第二段话', '第三段话']
+
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32), 0, None)
+        await wait_for(lambda: self.manager.transcript(recording.id)['count'] >= 1)
+        first = [e for e in self.events if e['type'] == 'recording.transcript'][-1]
+        self.assertFalse(first['merged'])
+
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32), 0, 700)
+        await wait_for(lambda: any(e['type'] == 'recording.transcript' and e.get('merged')
+                                   for e in self.events))
+        merged = next(e for e in self.events
+                      if e['type'] == 'recording.transcript' and e.get('merged'))
+        self.assertEqual(merged['line'], 1)
+        self.assertEqual(merged['text'], '第一段话。第二段话')
+        self.assertTrue(merged['merged'])
+        self.assertEqual(self.manager.transcript(recording.id)['count'], 1)
+
+        self.session.recording_heard(np.zeros(1600, dtype=np.float32), 0, 1500)
+        await wait_for(lambda: self.manager.transcript(recording.id)['count'] >= 2)
+        transcript = self.manager.transcript(recording.id)
+        self.assertEqual(transcript['count'], 2)
+        self.assertEqual(transcript['text'],
+                         '[00:00] 第一段话。第二段话\n[00:00] 第三段话')
+        self.assertEqual(transcript['lines'][0]['text'], '第一段话。第二段话')
+        await self.session.stop_recording('web')
+
     async def test_stop_waits_for_the_last_transcript_line(self):
         recording = await self.session.start_recording('web')
         self.session.recording_listen_after = 0
