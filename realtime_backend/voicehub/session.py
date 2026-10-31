@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from . import phrasing
 from .recording import (CONFIRM_SECONDS, TRANSCRIPT_JOIN_PAUSE_MS,
-                        command as recording_command, duration_text)
+                        command as recording_command, duration_text, stamp_ms)
 from .speaker import SpeakerTracker
 from .tools import ToolNotice, ToolStatus
 
@@ -59,6 +59,7 @@ class Session:
         self.recording_speakers=None
         self.recording_speaker_failed=False
         self.recording_speaker_notified=False
+        self.rediarize_tasks=set()
         self.speaker_engine=getattr(getattr(pipeline,'local',None),'speakers',None)
         self.operations=getattr(getattr(pipeline,'local',None),'operations',None)
         self.notifications=asyncio.Queue(maxsize=30);self.notification_ids=set()
@@ -183,6 +184,7 @@ class Session:
                 await self.interrupt('recording_stop')
         metadata = self.recording_manager.stop(recording.id, reason) if self.recording_manager else None
         metadata = metadata or recording.metadata()
+        self._maybe_rediarize(recording, metadata)
         if notify and not self.closed:
             with contextlib.suppress(Exception):
                 await self.emit('recording.stopped', recording=metadata)
@@ -352,6 +354,43 @@ class Session:
                                         merged=bool(merged))
         except asyncio.CancelledError:
             pass
+
+    def _maybe_rediarize(self, recording, metadata):
+        if self.closed or metadata.get('speaker_count', 0) > 1:
+            return
+        entries = list(getattr(recording, 'transcript_entries', []) or [])
+        if len(entries) < 2:
+            return
+        starts = []
+        for entry in entries:
+            try:
+                starts.append(stamp_ms(entry.get('stamp', '')))
+            except (TypeError, ValueError):
+                return
+        starts = [value for value in starts if isinstance(value, (int, float))]
+        if len(starts) != len(entries):
+            return
+        duration = metadata.get('duration_ms') or 0
+        gaps = [b-a for a, b in zip(starts, starts[1:])]
+        gaps.append(max(0, duration-starts[-1]))
+        if max(gaps or [0]) < 20000:
+            return
+        data_root = getattr(getattr(self.pipeline, 'local', None), 'data_root', None)
+        if not data_root:
+            return
+        recording_id = recording.id
+
+        async def run():
+            try:
+                from .rediarize import rediarize
+                await rediarize(recording_id, data_root, speakers=2, mode='text')
+                if not self.closed:
+                    await self.emit('recording.diarized', recording_id=recording_id)
+            except Exception:
+                pass
+        task = asyncio.create_task(run())
+        self.rediarize_tasks.add(task)
+        task.add_done_callback(self.rediarize_tasks.discard)
 
     async def _speak_recording_prompt(self, text):
         while self.turn is not None and not self.turn.cancelled:

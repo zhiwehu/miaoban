@@ -43,6 +43,7 @@ const eventLabels = {
   "recording.transcript": "实时转写",
   "recording.transcription_unavailable": "实时转写不可用",
   "recording.speaker_unavailable": "发言人区分不可用",
+  "recording.diarized": "发言人重分析完成",
   "recording.input_ignored": "录音中忽略文字",
   "tool.started": "工具查询中",
   "tool.completed": "工具查询完成",
@@ -430,6 +431,12 @@ function observe() {
         applyTranscriptionUnavailable(e);
       else if (e.type === "recording.speaker_unavailable")
         notice(e.message || "发言人区分暂时不可用。", true);
+      else if (e.type === "recording.diarized" &&
+               displayedRecording?.id === e.recording_id) {
+        loadRecordings().catch(() => {});
+        loadDisplayedTranscript(displayedRecording).catch(() => {});
+        notice("发言人重分析完成，逐字稿已更新。");
+      }
       else if (e.type === "recording.confirming" &&
                displayedRecording?.id === e.recording?.id) {
         displayedConfirming = true;
@@ -2358,6 +2365,14 @@ function openClient() {
       }
       if (e.type === "recording.speaker_unavailable") {
         notice(e.message || "发言人区分暂时不可用。", true);
+        return;
+      }
+      if (e.type === "recording.diarized") {
+        if (displayedRecording?.id === e.recording_id) {
+          loadRecordings().catch(() => {});
+          loadDisplayedTranscript(displayedRecording).catch(() => {});
+          notice("发言人重分析完成，逐字稿已更新。");
+        }
         return;
       }
       if (e.type === "recording.deleted") {
