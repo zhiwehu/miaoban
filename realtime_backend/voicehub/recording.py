@@ -134,7 +134,9 @@ class ActiveRecording:
         self.speaker_count = 0
         self.transcription_error = None
         self.speech_path = manager.root/f'{self.id}-speech.wav'
+        self.speech_map_path = manager.root/f'{self.id}-speech.json'
         self.speech_samples = 0
+        self.speech_segments = []
         self.file = open(self.path, 'wb', buffering=0)
         os.chmod(self.path, 0o600)
         self.file.write(_wav_header())
@@ -169,8 +171,8 @@ class ActiveRecording:
         self.samples += len(pcm)//SAMPLE_WIDTH
         return 'limit' if over or self.samples >= self.max_samples else None
 
-    def write_speech(self, pcm):
-        """Append one VAD-trimmed utterance to the speech-only WAV."""
+    def write_speech(self, pcm, full_start_ms=None, full_end_ms=None):
+        """Append one VAD-trimmed utterance and its full-timeline mapping."""
         if self.status != 'active' or not pcm:
             return
         if len(pcm) % SAMPLE_WIDTH:
@@ -180,8 +182,16 @@ class ActiveRecording:
             return
         if len(pcm) > remaining*SAMPLE_WIDTH:
             pcm = pcm[:remaining*SAMPLE_WIDTH]
+        ready_start = round(self.speech_samples/SAMPLE_RATE*1000)
         self.speech_file.write(pcm)
         self.speech_samples += len(pcm)//SAMPLE_WIDTH
+        if isinstance(full_start_ms, (int, float)) and isinstance(full_end_ms, (int, float)):
+            self.speech_segments.append({
+                'full_start_ms': round(full_start_ms),
+                'full_end_ms': round(full_end_ms),
+                'ready_start_ms': ready_start,
+                'ready_end_ms': round(self.speech_samples/SAMPLE_RATE*1000),
+            })
 
     def append_transcript(self, text, elapsed_ms=0, speaker=None, speaker_id=None):
         """Append one VAD segment as one [mm:ss] line; returns (line, stamp, text)."""
@@ -356,6 +366,21 @@ class ActiveRecording:
                 self.speech_path.unlink()
             except OSError:
                 pass
+        else:
+            map_path = self.speech_map_path
+            data = {
+                'recording_id': self.id,
+                'full_duration_ms': round(self.samples/SAMPLE_RATE*1000),
+                'ready_duration_ms': round(self.speech_samples/SAMPLE_RATE*1000),
+                'segments': self.speech_segments,
+            }
+            temporary = map_path.with_suffix('.tmp')
+            try:
+                temporary.write_text(json.dumps(data, ensure_ascii=False))
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, map_path)
+            except OSError:
+                temporary.unlink(missing_ok=True)
         self.close_transcript()
         metadata = self.metadata()
         try:
@@ -418,6 +443,20 @@ class Recordings:
         path = self.root/f'{identity}-speech.wav'
         return path if path.is_file() else None
 
+    def ready_path(self, identity):
+        if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
+            return None
+        if identity in self.active:
+            return None
+        path = self.root/f'{identity}-ready.wav'
+        return path if path.is_file() else None
+
+    def speech_map_path(self, identity):
+        if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
+            return None
+        path = self.root/f'{identity}-speech.json'
+        return path if path.is_file() else None
+
     def clean_path(self, identity):
         if not re.fullmatch(r'[a-f0-9]{32}', identity or ''):
             return None
@@ -469,8 +508,16 @@ class Recordings:
             else:
                 lines.append({'stamp': '', 'elapsed_ms': None, 'speaker': None,
                               'speaker_id': None, 'text': raw})
+        mapping = None
+        map_path = self.speech_map_path(identity)
+        if map_path:
+            try:
+                mapping = json.loads(map_path.read_text())
+            except (OSError, ValueError):
+                mapping = None
         return {'id': identity, 'status': metadata.get('status'), 'available': True,
-                'text': '\n'.join(raw_lines), 'lines': lines, 'count': len(lines)}
+                'text': '\n'.join(raw_lines), 'lines': lines, 'count': len(lines),
+                'speech_map': mapping}
 
     def decorate(self, metadata):
         """Keep older sidecars working without a schema migration."""
@@ -501,6 +548,20 @@ class Recordings:
         else:
             metadata.setdefault('speech_bytes', 0)
             metadata.setdefault('speech_duration_ms', 0)
+        ready = self.ready_path(identity)
+        speech = self.speech_path(identity)
+        metadata['ready_available'] = bool(speech)
+        metadata['ready_audio_url'] = (f'/api/recordings/{identity}/ready'
+                                       if speech else None)
+        metadata['speech_map_url'] = (f'/api/recordings/{identity}/speech-map'
+                                      if self.speech_map_path(identity) else None)
+        if ready:
+            data_bytes = max(0, ready.stat().st_size-HEADER_BYTES)
+            metadata['ready_bytes'] = data_bytes
+            metadata['ready_duration_ms'] = round(data_bytes/SAMPLE_WIDTH/SAMPLE_RATE*1000)
+        else:
+            metadata['ready_bytes'] = 0
+            metadata['ready_duration_ms'] = 0
         clean = self.clean_path(identity)
         metadata['clean_available'] = bool(clean)
         metadata['clean_audio_url'] = (f'/api/recordings/{identity}/clean'
@@ -570,10 +631,12 @@ class Recordings:
         audio, metadata = self.root/f'{identity}.wav', self.metadata_path(identity)
         transcript = self.root/f'{identity}.txt'
         speech = self.root/f'{identity}-speech.wav'
+        speech_map = self.root/f'{identity}-speech.json'
+        ready = self.root/f'{identity}-ready.wav'
         clean = self.root/f'{identity}-clean.wav'
         if not audio.is_file() and not metadata.is_file():
             raise ValueError('recording_not_found')
-        for path in (audio, metadata, transcript, speech, clean):
+        for path in (audio, metadata, transcript, speech, speech_map, ready, clean):
             if path.exists():
                 path.unlink()
 

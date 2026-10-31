@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 import uuid
@@ -157,6 +158,19 @@ class RecordingsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(wav.readframes(8000), b'\x01\x00'*8000)
         self.manager.delete(recording.id)
         self.assertFalse(path.exists())
+
+    def test_speech_time_mapping_is_written(self):
+        recording = self.manager.start('session-speech-map', 'device', 'voice')
+        recording.write(b'\0\0'*16000)
+        recording.write_speech(b'\0\0'*8000, 1200, 1700)
+        self.manager.stop(recording.id, 'web')
+        path = self.manager.speech_map_path(recording.id)
+        self.assertTrue(path.is_file())
+        data = json.loads(path.read_text())
+        self.assertEqual(data['full_duration_ms'], 1000)
+        self.assertEqual(len(data['segments']), 1)
+        self.assertEqual(data['segments'][0]['full_start_ms'], 1200)
+        self.assertEqual(data['segments'][0]['ready_end_ms'], 500)
 
     def test_recording_without_speech_has_no_speech_only_file(self):
         recording = self.manager.start('session-silent', 'device', 'voice')

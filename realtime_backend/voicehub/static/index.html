@@ -535,11 +535,6 @@
                     </div>
                   </div>
                   <audio id="recording-audio" preload="metadata"></audio>
-                  <select id="recording-audio-source" class="player-source" hidden
-                          aria-label="播放音源">
-                    <option value="clean">降噪</option>
-                    <option value="original">原始</option>
-                  </select>
                 </div>
                 <div id="recording-player-placeholder" class="recording-player-placeholder" hidden>
                   录音仍在进行，停止后可以播放、下载和跳转文字。
@@ -551,23 +546,11 @@
                   <button id="recording-export" class="secondary" type="button" disabled>
                     导出文字
                   </button>
-                  <a id="recording-download" class="secondary recording-download" hidden>
-                    下载完整音频
-                  </a>
-                  <a id="recording-speech-download" class="secondary recording-download" hidden>
+                  <a id="recording-ready-download" class="secondary recording-download" hidden>
                     下载精简音频
                   </a>
-                  <label class="cleanup-control"><span>降噪</span>
-                    <select id="recording-clean-profile" aria-label="降噪强度">
-                      <option value="mild">轻度</option>
-                      <option value="strong">强力</option>
-                    </select>
-                  </label>
-                  <button id="recording-clean" class="secondary" type="button" hidden>
-                    生成降噪音频
-                  </button>
-                  <a id="recording-clean-download" class="secondary recording-download" hidden>
-                    下载降噪音频
+                  <a id="recording-download" class="secondary recording-download" hidden>
+                    下载原始音频
                   </a>
                   <button id="recording-minutes-button" class="secondary" type="button" disabled>
                     生成会议纪要

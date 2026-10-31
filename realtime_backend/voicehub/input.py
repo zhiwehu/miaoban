@@ -115,13 +115,15 @@ class AudioInput:
                                 lead = self.segmenter.last_pre_trim_frames*512
                                 tail = self.segmenter.last_trailing_silence*512
                                 end = len(segment)-tail
+                                start_ms = max(0, round(
+                                    (recording.samples-len(segment))/16000*1000))
                                 if end > lead:
                                     speech = segment[lead:end]
                                     if speech.size:
                                         recording.write_speech(
-                                            to_pcm16(speech, 16000))
-                                start_ms = max(0, round(
-                                    (recording.samples-len(segment))/16000*1000))
+                                            to_pcm16(speech, 16000),
+                                            start_ms+lead/16000*1000,
+                                            start_ms+end/16000*1000)
                                 session.recording_heard(segment, start_ms, pending_pause_ms)
                             recording_onset = False
                             pending_pause_ms = None

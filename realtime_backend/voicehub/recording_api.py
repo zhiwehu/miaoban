@@ -6,6 +6,7 @@ still requires the owning session because the recording is fed by that socket.
 """
 import asyncio
 import contextlib
+import json
 import re
 import time
 
@@ -87,6 +88,33 @@ async def recording_api(request):
             if path is None:
                 raise web.HTTPNotFound()
             return web.FileResponse(path, headers={
+                'Content-Type': 'audio/wav',
+                'Cache-Control': 'no-store',
+            })
+        if request.path.endswith('/speech-map'):
+            if metadata is None or metadata.get('status') == 'active':
+                raise web.HTTPNotFound()
+            path = manager.speech_map_path(identity)
+            if path is None:
+                raise web.HTTPNotFound()
+            return web.json_response(json.loads(path.read_text()))
+        if request.path.endswith('/ready'):
+            if metadata is None or metadata.get('status') == 'active':
+                raise web.HTTPNotFound()
+            speech = manager.speech_path(identity)
+            if speech is None:
+                raise web.HTTPNotFound()
+            target = manager.root/f'{identity}-ready.wav'
+            if not target.is_file():
+                from .audio_cleanup import CleanupError, clean_wav
+                lock = hub.cleanup_locks.setdefault(identity, asyncio.Lock())
+                async with lock:
+                    if not target.is_file():
+                        try:
+                            await asyncio.to_thread(clean_wav, speech, target, 'mild')
+                        except CleanupError as exc:
+                            return error(exc.code, 503)
+            return web.FileResponse(target, headers={
                 'Content-Type': 'audio/wav',
                 'Cache-Control': 'no-store',
             })

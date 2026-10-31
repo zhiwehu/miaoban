@@ -79,6 +79,9 @@ def build(recording_id, data, config, force=False):
         output.close()
         output_path = Path(output.name)
         chunks = 0
+        mapping = []
+        ready_frames = 0
+        full_position = 0
         with wave.open(str(output_path), 'wb') as target:
             target.setnchannels(1)
             target.setsampwidth(2)
@@ -91,6 +94,9 @@ def build(recording_id, data, config, force=False):
                     raw = raw[:-1]
                 if not raw:
                     continue
+                count = len(raw)//2
+                frame_end = full_position+count
+                full_position = frame_end
                 frame = np.frombuffer(raw, '<i2').astype(np.float32)/32768
                 if len(frame) < 512:
                     frame = np.pad(frame, (0, 512-len(frame)))
@@ -101,14 +107,31 @@ def build(recording_id, data, config, force=False):
                 trimmed = trim_segment(segment, segmenter)
                 if trimmed is None or not len(trimmed):
                     continue
+                start = frame_end-len(segment)+segmenter.last_pre_trim_frames*512
+                end = frame_end-segmenter.last_trailing_silence*512
                 target.writeframes((np.clip(trimmed, -1, 1)*32767)
                                    .astype('<i2').tobytes())
+                mapping.append({'full_start_ms': round(start/16000*1000),
+                                'full_end_ms': round(end/16000*1000),
+                                'ready_start_ms': round(ready_frames/16000*1000),
+                                'ready_end_ms': round((ready_frames+len(trimmed))/16000*1000)})
+                ready_frames += len(trimmed)
                 chunks += 1
     if chunks <= 0:
         output_path.unlink(missing_ok=True)
         return 'no_speech'
     os.replace(output_path, speech)
     os.chmod(speech, 0o600)
+    map_path = root/f'{recording_id}-speech.json'
+    map_tmp = map_path.with_suffix('.tmp')
+    map_tmp.write_text(json.dumps({
+        'recording_id': recording_id,
+        'full_duration_ms': round(full_position/16000*1000),
+        'ready_duration_ms': round(ready_frames/16000*1000),
+        'segments': mapping,
+    }, ensure_ascii=False))
+    os.chmod(map_tmp, 0o600)
+    os.replace(map_tmp, map_path)
     with wave.open(str(speech), 'rb') as result:
         frames = result.getnframes()
     metadata.update({

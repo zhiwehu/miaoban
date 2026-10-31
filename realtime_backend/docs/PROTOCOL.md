@@ -109,11 +109,13 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 - `POST /api/recordings/{id}/stop`：停止并保存；会话已断线时直接完成文件。
 - `GET /api/recordings/{id}/audio`：返回已完成 WAV，支持 Range；不带 Content-Disposition，页面内 `<audio>` 与下载链接共用；活动中的文件返回 404。
 - `GET /api/recordings/{id}/transcript`：读取逐行转写（活动录音也可读）；返回
-  `{id,status,available,text,lines,count}`。`lines` 每项为
+  `{id,status,available,text,lines,count,speech_map}`。`lines` 每项为
   `{stamp:"mm:ss", elapsed_ms, speaker:"说话人1"|null, speaker_id, text}`，
   `stamp` 是录音内相对时间；没有文字时 `available=false`。保存到磁盘的
   `<id>.txt` 每行同样带 `[mm:ss]` 和可选的 `说话人N：` 前缀。
 - `GET /api/recordings/{id}/speech`：返回精简 WAV（只含 VAD 人声片段），支持 Range；没有精简音频时 404。
+- `GET /api/recordings/{id}/ready`：返回已去空白并降噪的最终 WAV；首次请求时由 speech 生成，支持 Range。
+- `GET /api/recordings/{id}/speech-map`：返回完整时间轴到精简时间轴的 JSON 映射。
 - `POST /api/recordings/{id}/clean`：body `{profile:"mild"|"strong"}`，同步生成 `/clean` 降噪副本；原始 WAV 不变；返回更新后的录音元数据。
 - `GET /api/recordings/{id}/clean`：返回降噪 WAV（与完整音频同一时间轴，支持 Range）；没有时 404。
 - `DELETE /api/recordings/{id}`：删除完整/精简/降噪 WAV、txt、元数据及会议纪要；活动中的录音返回 409。
