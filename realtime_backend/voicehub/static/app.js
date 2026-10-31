@@ -1102,8 +1102,8 @@ function renderTranscript() {
     });
     target.scrollTop = stick ? target.scrollHeight : previousTop;
     if (displayedRecording.status === "active") {
-      status = "录音中 · 实时";
-      hint = "录音中；停止后可以点击文字或拖动进度条跳转。";
+      status = "录音中 · 实时粗分";
+      hint = "录音中的说话人标签是实时粗分；停止后会自动按整段录音重新分析，最终结果以停止后为准。";
     } else {
       status = "已保存";
       hint = "点击一行跳到对应录音位置；拖动进度条会同步高亮当前段落。";
