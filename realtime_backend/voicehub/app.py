@@ -21,6 +21,7 @@ from .config import ConfigFile
 from .input import AudioInput
 from .models import Pipeline, LocalModels, ProviderError
 from .recording import Recordings
+from .meeting_minutes import MinutesService
 from .speaker import SpeakerEngine
 from .session import Session
 from .store import Store
@@ -121,6 +122,7 @@ class Hub:
         self.operations=Operations(self.root,publish=self.operation_changed)
         self.workflows = WorkflowManager(self.root,self.config.get,self.extensions,on_change=self.workflow_changed)
         self.recordings = Recordings(self.root)
+        self.minutes = MinutesService(self.root, self.recordings, publish=self.publish)
 
         self.skills=Skills(self.root,self.workflows) if skills_enabled else None
         self.timers=TimerReminders(self.root,self.operations,self.sessions,lambda:self.config.get()['tools']['timer'])
@@ -158,6 +160,7 @@ class Hub:
         self.local.calendar_reminders = self.calendar
         self.local.timer_reminders = self.timers
         self.store.prune(self.config.get()['retention_days'])
+        await self.minutes.start()
         self.maintenance = asyncio.create_task(self.maintain())
 
     async def maintain(self):
@@ -188,6 +191,7 @@ class Hub:
         for session in list(self.sessions.values()):
             await session.close()
         await asyncio.gather(*self.cleanups, return_exceptions=True)
+        await self.minutes.close()
         self.recordings.close()
         for watcher in self.watchers:
             if not watcher.full():
@@ -795,6 +799,17 @@ def create_app(root, pipeline_factory=Pipeline, *, device_host=None, device_port
     app.router.add_get('/api/recordings/{identity}/transcript', recording_api)
     app.router.add_post('/api/recordings/{identity}/stop', recording_api)
     app.router.add_delete('/api/recordings/{identity}', recording_api)
+    from .meeting_minutes.api import minutes_api
+    app.router.add_get('/api/meeting-templates', minutes_api)
+    app.router.add_post('/api/meeting-templates', minutes_api)
+    app.router.add_patch('/api/meeting-templates/{template_id}', minutes_api)
+    app.router.add_delete('/api/meeting-templates/{template_id}', minutes_api)
+    app.router.add_get('/api/recordings/{identity}/minutes', minutes_api)
+    app.router.add_post('/api/recordings/{identity}/minutes', minutes_api)
+    app.router.add_get('/api/recordings/{identity}/minutes/{job_id}', minutes_api)
+    app.router.add_patch('/api/recordings/{identity}/minutes/{job_id}', minutes_api)
+    app.router.add_delete('/api/recordings/{identity}/minutes/{job_id}', minutes_api)
+    app.router.add_get('/api/recordings/{identity}/minutes/{job_id}/export', minutes_api)
     app.router.add_post('/api/services/{kind}/{action}', service_action)
     app.router.add_get('/api/config/{scope:models|tools}', api)
     app.router.add_put('/api/config/{scope:models|tools}', api)

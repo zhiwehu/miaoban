@@ -4,6 +4,7 @@ The web client uses these endpoints to stop a recording even when its session
 WebSocket already dropped, and to list/download/delete the WAV files.  Starting
 still requires the owning session because the recording is fed by that socket.
 """
+import contextlib
 import re
 import time
 
@@ -102,6 +103,8 @@ async def recording_api(request):
                 raise web.HTTPNotFound()
             return web.json_response({'recording': result})
         if request.method == 'DELETE':
+            with contextlib.suppress(Exception):
+                await hub.minutes.delete_recording(identity)
             manager.delete(identity)
             hub.publish({'type': 'recording.deleted', 'recording_id': identity,
                          'session_id': None, 'turn_id': None, 'timestamp': time.time()})

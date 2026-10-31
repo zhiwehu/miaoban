@@ -1054,15 +1054,248 @@ select {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
-.minutes-content {
-  padding: 14px 16px;
+.minutes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.minutes-toolbar .primary,
+.minutes-toolbar .secondary {
+  padding: 8px 12px;
+  font-size: 11px;
+}
+.minutes-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.minutes-field select {
+  min-width: 150px;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fffdf8;
+  color: var(--ink);
+  font: inherit;
+}
+.minutes-status {
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f7f8f2;
-  color: #435048;
+}
+.minutes-status p {
+  margin: 7px 0 0;
+  color: #59675e;
+  font-size: 11px;
+}
+.minutes-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e8df;
+}
+.minutes-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #6d8b70;
+  transition: width .25s ease;
+}
+.minutes-error {
+  padding: 11px 13px;
+  border: 1px solid #d7b6a8;
+  border-radius: 8px;
+  background: #fbefe9;
+  color: #873b27;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.minutes-result {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #354239;
   font-size: 12px;
+  line-height: 1.8;
+}
+.minutes-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+.minutes-result-head strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.minutes-overview {
+  margin: 14px 0 4px;
+  padding: 11px 13px;
+  border-left: 2px solid #91a88e;
+  background: #f6f8f1;
+  color: #465449;
   line-height: 1.9;
-  white-space: pre-wrap;
+}
+.minutes-section {
+  margin-top: 20px;
+}
+.minutes-section h3 {
+  margin: 0 0 9px;
+  color: #354439;
+  font-size: 13px;
+  font-weight: 600;
+}
+.minutes-section h4 {
+  margin: 14px 0 5px;
+  color: #4d5c51;
+  font-size: 11px;
+}
+.minutes-item {
+  padding: 9px 0;
+  border-bottom: 1px dashed #e5e7de;
+}
+.minutes-item:last-child {
+  border-bottom: 0;
+}
+.minutes-item p {
+  margin: 0;
+}
+.minutes-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.minutes-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #edf1e8;
+  color: #5a6d5d;
+  font-size: 9px;
+}
+.minutes-badge.warn {
+  background: #f8e9d8;
+  color: #835b2c;
+}
+.minutes-badge.reject {
+  background: #f6e2dd;
+  color: #823d2e;
+}
+.minutes-evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 3px 4px 0 0;
+  padding: 2px 6px;
+  border: 1px solid #dfe5d8;
+  border-radius: 4px;
+  background: #f8faf5;
+  color: #53695a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+.minutes-evidence:hover {
+  border-color: #9caf98;
+  background: #eef4e8;
+}
+.minutes-quote {
+  color: #6b766e;
+  font-size: 10px;
+}
+.minutes-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+.minutes-history-block {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.minutes-history-block .section-heading {
+  margin-bottom: 7px;
+}
+.minutes-history-block h3 {
+  margin: 0;
+  font-size: 12px;
+}
+.minutes-history {
+  display: grid;
+  gap: 6px;
+}
+.minutes-history-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fffdf8;
+  color: #435147;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.minutes-history-item:hover,
+.minutes-history-item.selected {
+  border-color: #aebda5;
+  background: #f4f7ee;
+}
+.minutes-history-item strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+.minutes-history-item small {
+  color: var(--muted);
+  font-size: 9px;
+}
+.minutes-editor-wrap textarea {
+  width: 100%;
+  min-height: 280px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+  color: var(--ink);
+  font-family: Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  resize: vertical;
+}
+.minutes-note {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+@media (max-width: 850px) {
+  .minutes-result {
+    padding: 13px;
+  }
+  .minutes-field {
+    width: 100%;
+  }
+  .minutes-field select {
+    flex: 1;
+    max-width: none;
+  }
 }
 @media (max-width: 1150px) {
   .recording-workspace {
@@ -1526,3 +1759,54 @@ footer {
 .usb-steps [aria-current="step"] b { background:#315b4c; color:white; border-color:#315b4c; }
 .usb-steps .done b { background:#edf3ef; color:#315b4c; }
 @media(max-width:480px) { .usb-steps { gap:7px; } .usb-steps li { gap:5px; font-size:12px; } .usb-steps b { width:25px; height:25px; } }
+
+.minutes-custom {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.minutes-custom summary {
+  cursor: pointer;
+  user-select: none;
+}
+.minutes-custom-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbf6;
+}
+.minutes-custom-body input,
+.minutes-custom-body textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffdf8;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+.minutes-custom-body textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+.minutes-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 13px;
+}
+.minutes-sections label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #58665b;
+  font-size: 10px;
+}
+.minutes-custom-body button {
+  justify-self: start;
+  padding: 7px 11px;
+  font-size: 10px;
+}

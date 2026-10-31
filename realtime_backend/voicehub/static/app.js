@@ -758,6 +758,8 @@ let manualDisconnect = false,
 let activeWakeMode = "manual", activeWakePhrase = "";
 let recordings = [], displayedRecording = null;
 let displayedTranscript = [], displayedTranscriptState = "idle";
+let minutesTemplates = null, minutesJobs = [], minutesJob = null;
+let minutesPollTimer = null, minutesModelId = "", minutesRecordingId = null;
 let displayedConfirming = false, transcriptWarning = "", transcriptFetchToken = 0;
 let recordingsRefreshTimer = null;
 let identity;
@@ -909,7 +911,7 @@ function renderRecordingDetail() {
   if (!recording) {
     empty.hidden = false;
     detail.hidden = true;
-    $("minutes-panel").hidden = true;
+    resetMinutes();
     syncAudio(null);
     return;
   }
@@ -942,7 +944,7 @@ function renderRecordingDetail() {
   $("recording-stop").disabled = !active;
   const hasText = displayedTranscript.length > 0;
   $("recording-export").disabled = !hasText;
-  $("recording-minutes-button").disabled = !hasText;
+  $("recording-minutes-button").disabled = active;
   const download = $("recording-download");
   const downloadable = !active && !!recording.download_url;
   download.hidden = !downloadable;
@@ -1145,7 +1147,7 @@ async function selectDisplayedRecording(recording, {load = true} = {}) {
   transcriptWarning = recording.transcription_error || "";
   transcriptFetchToken++;
   currentLineIndex = -1;
-  $("minutes-panel").hidden = true;
+  resetMinutes();
   renderRecordings();
   renderRecordingDetail();
   renderTranscript();
@@ -1387,13 +1389,500 @@ async function exportTranscript() {
     notice("导出文字失败：" + error.message, true);
   }
 }
-function showMinutesPlaceholder() {
+function minutesStatusLabel(status) {
+  return {
+    queued: "排队中",
+    running: "生成中",
+    completed: "已完成",
+    failed: "生成失败",
+    cancelled: "已取消",
+    interrupted: "已中断",
+  }[status] || status || "未知";
+}
+function formatMinutesTime(seconds) {
+  if (!seconds) return "—";
+  return new Date(seconds * 1000).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+function stopMinutesPolling() {
+  if (minutesPollTimer) clearTimeout(minutesPollTimer);
+  minutesPollTimer = null;
+}
+function resetMinutes() {
+  stopMinutesPolling();
+  minutesJobs = [];
+  minutesJob = null;
+  minutesRecordingId = null;
+  $("minutes-panel").hidden = true;
+  $("minutes-result").hidden = true;
+  $("minutes-error").hidden = true;
+  $("minutes-status").hidden = true;
+  $("minutes-editor-wrap").hidden = true;
+  $("minutes-actions").hidden = true;
+  $("minutes-cancel").hidden = true;
+  $("minutes-generate").disabled = false;
+}
+function minutesBusy(job = minutesJob) {
+  return !!job && (job.status === "queued" || job.status === "running");
+}
+function minutesRecordingReady() {
+  return !!displayedRecording && displayedRecording.status !== "active";
+}
+async function loadMinutesTemplates() {
+  if (minutesTemplates) return minutesTemplates;
+  const data = await api("meeting-templates");
+  minutesTemplates = data.templates || [];
+  minutesModelId = data.model_id || "";
+  $("minutes-model-tag").textContent = minutesModelId || "本地模型";
+  const select = $("minutes-template");
+  select.replaceChildren();
+  for (const template of minutesTemplates) {
+    const option = document.createElement("option");
+    option.value = template.template_id;
+    option.textContent =
+      template.name + (template.builtin ? "" : "（自定义）");
+    option.title = template.description || template.instructions || "";
+    select.append(option);
+  }
+  if (!minutesTemplates.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "没有可用模板";
+    select.append(option);
+  }
+  return minutesTemplates;
+}
+function minutesEvidenceButton(evidence) {
+  if (!evidence) return null;
+  const button = node(
+    "button",
+    "minutes-evidence",
+    (evidence.stamp ? "[" + evidence.stamp + "] " : "") +
+      (evidence.speaker || (evidence.line ? "第 " + evidence.line + " 行" : "证据")),
+  );
+  button.type = "button";
+  button.title = evidence.quote || "";
+  if (Number.isFinite(evidence.elapsed_ms)) {
+    button.onclick = () => {
+      const audio = $("recording-audio");
+      if (!audio.getAttribute("src")) return;
+      audio.currentTime = evidence.elapsed_ms / 1000;
+      audio.play().catch(() => {});
+    };
+  } else {
+    button.disabled = true;
+  }
+  return button;
+}
+function minutesEvidence(target, evidence) {
+  for (const item of evidence || []) {
+    const button = minutesEvidenceButton(item);
+    if (!button) continue;
+    target.append(button);
+    if (item.quote)
+      target.append(node("span", "minutes-quote", "「" + item.quote + "」"));
+  }
+}
+function minutesTextItem(text, meta, evidence) {
+  const wrap = node("div", "minutes-item");
+  wrap.append(node("p", "", text));
+  if (meta) {
+    const metaNode = node("div", "minutes-item-meta");
+    for (const [key, value] of Object.entries(meta)) {
+      if (value)
+        metaNode.append(
+          node("span", key === "warn" ? "minutes-badge warn" : "minutes-badge", value),
+        );
+    }
+    if (metaNode.childElementCount) wrap.append(metaNode);
+  }
+  const evidenceNode = node("div", "");
+  minutesEvidence(evidenceNode, evidence);
+  if (evidenceNode.childElementCount) wrap.append(evidenceNode);
+  return wrap;
+}
+function renderMinutesResult(result) {
+  const target = $("minutes-result");
+  target.replaceChildren();
+  target.hidden = false;
+  const head = node("div", "minutes-result-head");
+  head.append(node("strong", "", result.template_name || "会议纪要"));
+  head.append(node("span", "", "本地模型"));
+  head.append(node("span", "", formatMinutesTime(result.generated_at)));
+  target.append(head);
+  const overview = node("div", "minutes-overview", result.overview || "");
+  target.append(overview);
+  for (const section of result.sections || []) {
+    const block = node("section", "minutes-section");
+    block.append(node("h3", "", section.title));
+    if (section.kind === "text") {
+      block.append(node("p", "minutes-empty", section.text || ""));
+    } else if (section.kind === "topics") {
+      if (!(section.items || []).length && !(section.key_points || []).length) {
+        block.append(node("p", "minutes-empty", "未提取到明确议题。"));
+      }
+      for (const topic of section.items || []) {
+        const item = node("div", "minutes-item");
+        item.append(node("h4", "", topic.title || "未命名议题"));
+        if (topic.summary) item.append(node("p", "", topic.summary));
+        const evidence = node("div", "");
+        minutesEvidence(evidence, topic.evidence);
+        if (evidence.childElementCount) item.append(evidence);
+        block.append(item);
+      }
+      if ((section.key_points || []).length) {
+        block.append(node("h4", "", "关键点"));
+        for (const point of section.key_points) {
+          block.append(minutesTextItem(point.text, null, point.evidence));
+        }
+      }
+    } else if (section.kind === "decisions") {
+      if (!(section.items || []).length)
+        block.append(node("p", "minutes-empty", "本段没有已确认决策。"));
+      for (const item of section.items || []) {
+        block.append(minutesTextItem(item.text, {badge: "已确认"}, item.evidence));
+      }
+    } else if (section.kind === "proposals") {
+      if (!(section.items || []).length && !(section.questions || []).length)
+        block.append(node("p", "minutes-empty", "没有提议、否决或未决事项。"));
+      for (const item of section.items || []) {
+        const label =
+          {rejected: "已否决", open: "未决", proposed: "提议"}[item.status] ||
+          "未决";
+        block.append(minutesTextItem(item.text, {warn: label}, item.evidence));
+      }
+      for (const question of section.questions || []) {
+        block.append(minutesTextItem(question.text, {warn: "待确认"}, question.evidence));
+      }
+    } else if (section.kind === "actions") {
+      if (!(section.items || []).length)
+        block.append(node("p", "minutes-empty", "没有提取到行动项。"));
+      for (const item of section.items || []) {
+        const meta = {
+          badge: item.status === "agreed" ? "已确认" : "提议",
+          warn: item.needs_confirmation ? "待确认" : "",
+          owner: "负责人：" + (item.owner || "未明确"),
+          due:
+            "截止：" +
+            (item.due_date || "未明确") +
+            (item.due_date_relative ? "（相对日期，待确认）" : ""),
+        };
+        block.append(minutesTextItem(item.task, meta, item.evidence));
+      }
+    } else if (section.kind === "risks") {
+      if (!(section.items || []).length && !(section.questions || []).length)
+        block.append(node("p", "minutes-empty", "没有提取到风险或待确认事项。"));
+      for (const item of section.items || [])
+        block.append(minutesTextItem(item.text, {warn: "风险/阻塞"}, item.evidence));
+      for (const question of section.questions || [])
+        block.append(minutesTextItem(question.text, {warn: "待确认"}, question.evidence));
+    }
+    target.append(block);
+  }
+  if (result.coverage?.chunks_failed) {
+    target.append(
+      node(
+        "p",
+        "minutes-note",
+        "本次有 " + result.coverage.chunks_failed + " 个转写片段生成失败，纪要可能不完整。",
+      ),
+    );
+  }
+  const actions = $("minutes-actions");
+  actions.hidden = false;
+  $("minutes-edit-button").disabled = !minutesJob?.result;
+  const base =
+    "recordings/" + encodeURIComponent(minutesJob.recording_id) +
+    "/minutes/" + encodeURIComponent(minutesJob.id) + "/export?format=";
+  for (const [id, format] of [
+    ["minutes-export-md", "md"],
+    ["minutes-export-txt", "txt"],
+  ]) {
+    const link = $(id);
+    link.href = "/api/" + base + format;
+    link.download =
+      "meeting-minutes-" +
+      minutesJob.recording_id.slice(0, 8) +
+      "-" +
+      minutesJob.id.slice(0, 8) +
+      "." +
+      format;
+    link.hidden = !minutesJob?.result;
+  }
+}
+function renderMinutesHistory() {
+  const target = $("minutes-history");
+  target.replaceChildren();
+  if (!minutesJobs.length) {
+    target.append(
+      node("p", "minutes-empty", "还没有生成过纪要。选择模板后点“生成纪要”。"),
+    );
+    return;
+  }
+  for (const job of minutesJobs) {
+    const item = node("button", "minutes-history-item" +
+      (minutesJob?.id === job.id ? " selected" : ""));
+    item.type = "button";
+    const left = node("span", "");
+    left.append(node("strong", "", job.template_name || "会议纪要"));
+    left.append(
+      node("small", "", " · " + formatMinutesTime(job.created_at)),
+    );
+    item.append(left);
+    item.append(node("small", "", minutesStatusLabel(job.status)));
+    item.onclick = () => openMinutesJob(job.id).catch((error) =>
+      notice("读取纪要失败：" + error.message, true));
+    target.append(item);
+  }
+}
+async function loadMinutesJobs({select = false} = {}) {
+  if (!displayedRecording) return;
+  const data = await api(
+    "recordings/" + encodeURIComponent(displayedRecording.id) + "/minutes",
+  );
+  minutesJobs = data.jobs || [];
+  renderMinutesHistory();
+  if (select && minutesJobs.length && !minutesJob) {
+    await openMinutesJob(minutesJobs[0].id);
+  }
+}
+async function openMinutesJob(jobId) {
+  if (!displayedRecording) return;
+  const data = await api(
+    "recordings/" +
+      encodeURIComponent(displayedRecording.id) +
+      "/minutes/" +
+      encodeURIComponent(jobId),
+  );
+  minutesJob = data.job;
+  renderMinutesJob();
+  renderMinutesHistory();
+}
+function renderMinutesJob() {
+  const job = minutesJob;
+  const panel = $("minutes-panel");
+  const status = $("minutes-status");
+  const error = $("minutes-error");
+  const result = $("minutes-result");
+  const actions = $("minutes-actions");
+  const editor = $("minutes-editor-wrap");
+  const generate = $("minutes-generate");
+  const cancel = $("minutes-cancel");
+  panel.hidden = false;
+  if (!job) {
+    status.hidden = true;
+    error.hidden = true;
+    result.hidden = true;
+    editor.hidden = true;
+    actions.hidden = true;
+    cancel.hidden = true;
+    generate.disabled = !minutesRecordingReady() || !displayedTranscript.length;
+    return;
+  }
+  const busy = minutesBusy(job);
+  const select = $("minutes-template");
+  if ([...select.options].some((option) => option.value === job.template_id))
+    select.value = job.template_id;
+  generate.disabled = busy || !minutesRecordingReady() || !displayedTranscript.length;
+  cancel.hidden = !busy;
+  status.hidden = !busy;
+  if (busy) {
+    $("minutes-progress-bar").style.width = Math.max(0, Math.min(100, job.progress || 0)) + "%";
+    $("minutes-status-text").textContent =
+      (job.message || "正在生成") + " · " + (job.progress || 0) + "%";
+  }
+  if (job.status === "failed" || job.status === "cancelled" ||
+      job.status === "interrupted") {
+    error.hidden = false;
+    error.textContent =
+      (job.error?.message || job.message || "纪要生成失败。") +
+      (job.status === "interrupted" ? " 可以重新生成。" : "");
+  } else {
+    error.hidden = true;
+  }
+  if (job.status === "completed" && job.result) {
+    renderMinutesResult(job.result);
+    if (job.edited_markdown) {
+      $("minutes-result").append(
+        node("p", "minutes-note",
+          "这份纪要已手动编辑；上面的结构化内容仍是模型原始版本，导出会使用编辑后的 Markdown。"),
+      );
+    }
+    actions.hidden = false;
+  } else {
+    result.hidden = true;
+    actions.hidden = false;
+    for (const id of ["minutes-export-md", "minutes-export-txt"])
+      $(id).hidden = true;
+    $("minutes-edit-button").disabled = true;
+  }
+  editor.hidden = true;
+  generate.textContent = job.status === "completed" ? "重新生成" : "生成纪要";
+}
+async function openMinutesPanel() {
   if (!displayedRecording) return;
   const panel = $("minutes-panel");
   panel.hidden = false;
   panel.scrollIntoView({behavior: "smooth", block: "start"});
-  notice("会议纪要本地模型尚未接入；这里先保留生成结果的位置。");
+  if (displayedRecording.status === "active") {
+    $("minutes-error").hidden = false;
+    $("minutes-error").textContent = "录音还没有结束，停止并保存后再生成会议纪要。";
+    $("minutes-generate").disabled = true;
+    return;
+  }
+  if (minutesRecordingId !== displayedRecording.id) {
+    resetMinutes();
+    minutesRecordingId = displayedRecording.id;
+    minutesJob = null;
+    panel.hidden = false;
+  }
+  try {
+    await loadMinutesTemplates();
+    await loadMinutesJobs();
+    if (minutesJob) {
+      renderMinutesJob();
+      if (minutesBusy()) pollMinutesJob();
+    } else if (minutesJobs.length) {
+      await openMinutesJob(minutesJobs[0].id);
+      if (minutesBusy()) pollMinutesJob();
+    } else {
+      renderMinutesJob();
+    }
+    if (!displayedTranscript.length) {
+      $("minutes-error").hidden = false;
+      $("minutes-error").textContent =
+        "这条录音没有可用的转写，暂时无法生成会议纪要。";
+      $("minutes-generate").disabled = true;
+    }
+  } catch (error) {
+    notice("读取纪要信息失败：" + error.message, true);
+    $("minutes-error").hidden = false;
+    $("minutes-error").textContent = error.message;
+  }
 }
+async function createMinutesTemplate() {
+  const name = $("minutes-template-name").value.trim();
+  const instructions = $("minutes-template-instructions").value.trim();
+  const sections = [...document.querySelectorAll(
+    "#minutes-template-sections input:checked")].map((item) => item.value);
+  if (!name || !instructions) {
+    notice("请填写模板名称和关注点。", true);
+    return;
+  }
+  if (!sections.length) {
+    notice("至少选择一个纪要栏目。", true);
+    return;
+  }
+  try {
+    const data = await api("meeting-templates", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name, instructions, sections}),
+    });
+    minutesTemplates = null;
+    await loadMinutesTemplates();
+    $("minutes-template").value = data.template.template_id;
+    $("minutes-template-name").value = "";
+    $("minutes-template-instructions").value = "";
+    $("minutes-template-create").closest("details").open = false;
+    notice("自定义模板已保存，可以直接生成。");
+  } catch (error) {
+    notice("保存模板失败：" + error.message, true);
+  }
+}
+
+async function startMinutesJob() {
+  if (!displayedRecording) return;
+  const templateId = $("minutes-template").value;
+  if (!templateId) return;
+  $("minutes-generate").disabled = true;
+  $("minutes-error").hidden = true;
+  try {
+    const data = await api(
+      "recordings/" + encodeURIComponent(displayedRecording.id) + "/minutes",
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({template_id: templateId}),
+      },
+    );
+    minutesJob = data.job;
+    renderMinutesJob();
+    await loadMinutesJobs();
+    pollMinutesJob();
+  } catch (error) {
+    $("minutes-error").hidden = false;
+    $("minutes-error").textContent = error.message;
+    $("minutes-generate").disabled = false;
+    notice("生成会议纪要失败：" + error.message, true);
+  }
+}
+function pollMinutesJob() {
+  stopMinutesPolling();
+  if (!minutesJob || !minutesBusy()) return;
+  const jobId = minutesJob.id;
+  const recordingId = minutesJob.recording_id;
+  minutesPollTimer = setTimeout(async () => {
+    if (!displayedRecording || displayedRecording.id !== recordingId ||
+        minutesJob?.id !== jobId) return;
+    try {
+      await openMinutesJob(jobId);
+      if (minutesBusy()) pollMinutesJob();
+      else await loadMinutesJobs();
+    } catch (error) {
+      $("minutes-error").hidden = false;
+      $("minutes-error").textContent = error.message;
+    }
+  }, 1200);
+}
+async function cancelMinutesJob() {
+  if (!minutesJob) return;
+  try {
+    await api(
+      "recordings/" +
+        encodeURIComponent(minutesJob.recording_id) +
+        "/minutes/" +
+        encodeURIComponent(minutesJob.id),
+      {method: "DELETE"},
+    );
+    minutesJob = {...minutesJob, status: "cancelled", stage: "cancelled",
+      message: "生成任务已取消。"};
+    stopMinutesPolling();
+    renderMinutesJob();
+    await loadMinutesJobs();
+  } catch (error) {
+    notice("取消生成失败：" + error.message, true);
+  }
+}
+async function saveMinutesEdit() {
+  if (!minutesJob) return;
+  const markdown = $("minutes-editor").value;
+  try {
+    const data = await api(
+      "recordings/" +
+        encodeURIComponent(minutesJob.recording_id) +
+        "/minutes/" +
+        encodeURIComponent(minutesJob.id),
+      {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({markdown}),
+      },
+    );
+    minutesJob = data.job;
+    $("minutes-editor-wrap").hidden = true;
+    $("minutes-result").hidden = false;
+    renderMinutesJob();
+    notice("会议纪要编辑已保存。");
+  } catch (error) {
+    notice("保存纪要失败：" + error.message, true);
+  }
+}
+
 
 const recordingAudio = $("recording-audio");
 const recordingSeek = $("recording-seek");
@@ -1450,7 +1939,25 @@ $("recording-play").onclick = () => {
   else recordingAudio.pause();
 };
 $("recording-export").onclick = () => exportTranscript();
-$("recording-minutes-button").onclick = () => showMinutesPlaceholder();
+$("recording-minutes-button").onclick = () => openMinutesPanel();
+$("minutes-generate").onclick = () => startMinutesJob();
+$("minutes-refresh").onclick = () =>
+  loadMinutesJobs().catch((error) => notice("刷新纪要失败：" + error.message, true));
+$("minutes-cancel").onclick = () => cancelMinutesJob();
+$("minutes-template-create").onclick = () => createMinutesTemplate();
+$("minutes-edit-button").onclick = () => {
+  if (!minutesJob?.result) return;
+  $("minutes-editor").value =
+    minutesJob.edited_markdown || minutesJob.result.markdown || "";
+  $("minutes-editor-wrap").hidden = false;
+  $("minutes-result").hidden = true;
+  $("minutes-editor").focus();
+};
+$("minutes-cancel-edit").onclick = () => {
+  $("minutes-editor-wrap").hidden = true;
+  $("minutes-result").hidden = false;
+};
+$("minutes-save-edit").onclick = () => saveMinutesEdit();
 window.addEventListener("voicehub:view", (event) => {
   if (event.detail === "recordings")
     loadRecordings().catch((error) =>

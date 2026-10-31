@@ -580,11 +580,67 @@
                 <section id="minutes-panel" class="minutes-panel" hidden>
                   <div class="section-heading">
                     <h2>会议纪要</h2>
-                    <span class="tag">本地模型 · 待接入</span>
+                    <span class="tag" id="minutes-model-tag">本地模型</span>
                   </div>
-                  <div id="minutes-content" class="minutes-content">
-                    会议纪要生成接口已预留。接入本地模型后，会在这里根据当前转写生成
-                    摘要、决议和待办。
+                  <div class="minutes-toolbar">
+                    <label class="minutes-field">模板
+                      <select id="minutes-template"></select>
+                    </label>
+                    <button id="minutes-generate" class="primary" type="button">
+                      生成纪要
+                    </button>
+                    <button id="minutes-cancel" class="secondary" type="button" hidden>
+                      取消生成
+                    </button>
+                    <button id="minutes-refresh" class="secondary" type="button">
+                      刷新
+                    </button>
+                  </div>
+                  <details class="minutes-custom">
+                    <summary>新建自定义模板</summary>
+                    <div class="minutes-custom-body">
+                      <input id="minutes-template-name" maxlength="40"
+                             placeholder="模板名称（最多 40 字）" />
+                      <textarea id="minutes-template-instructions" maxlength="1000"
+                                placeholder="这个模板最关注什么？例如：只提取技术风险、决策和负责人。"></textarea>
+                      <div class="minutes-sections" id="minutes-template-sections">
+                        <label><input type="checkbox" value="overview" checked> 概览</label>
+                        <label><input type="checkbox" value="topics" checked> 议题</label>
+                        <label><input type="checkbox" value="decisions" checked> 决策</label>
+                        <label><input type="checkbox" value="proposals" checked> 提议/未决</label>
+                        <label><input type="checkbox" value="action_items" checked> 行动项</label>
+                        <label><input type="checkbox" value="risks" checked> 风险</label>
+                      </div>
+                      <button id="minutes-template-create" class="secondary" type="button">
+                        保存为我的模板
+                      </button>
+                    </div>
+                  </details>
+                  <div id="minutes-status" class="minutes-status" hidden>
+                    <div class="minutes-progress"><span id="minutes-progress-bar"></span></div>
+                    <p id="minutes-status-text"></p>
+                  </div>
+                  <div id="minutes-error" class="minutes-error" hidden></div>
+                  <div id="minutes-result" class="minutes-result" hidden></div>
+                  <div id="minutes-editor-wrap" class="minutes-editor-wrap" hidden>
+                    <textarea id="minutes-editor" spellcheck="false"
+                              aria-label="编辑会议纪要"></textarea>
+                    <div class="minutes-toolbar">
+                      <button id="minutes-save-edit" class="primary" type="button">保存编辑</button>
+                      <button id="minutes-cancel-edit" class="secondary" type="button">取消</button>
+                    </div>
+                  </div>
+                  <div id="minutes-actions" class="minutes-toolbar" hidden>
+                    <button id="minutes-edit-button" class="secondary" type="button">编辑</button>
+                    <a id="minutes-export-md" class="secondary recording-download">导出 Markdown</a>
+                    <a id="minutes-export-txt" class="secondary recording-download">导出 TXT</a>
+                  </div>
+                  <div class="minutes-history-block">
+                    <div class="section-heading">
+                      <h3>历史纪要</h3>
+                      <span class="hint">同一录音可以换模板重新生成</span>
+                    </div>
+                    <div id="minutes-history" class="minutes-history"></div>
                   </div>
                 </section>
               </div>

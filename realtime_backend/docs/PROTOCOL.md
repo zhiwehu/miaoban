@@ -116,6 +116,40 @@ Opus 最多 2048 bytes/包。按实际采样速率发送，禁止批量灌入整
 - `GET /api/recordings/{id}/speech`：返回精简 WAV（只含 VAD 人声片段），支持 Range；没有精简音频时 404。
 - `DELETE /api/recordings/{id}`：删除完整/精简 WAV、txt 与元数据；活动中的录音返回 409。
 
+### 会议纪要 API
+
+所有接口沿用 `/api/*` 的 admin 鉴权和同源策略；纪要模型只在本机运行。
+
+| 方法 | 路径 | 行为 |
+|---|---|---|
+| GET | `/api/meeting-templates` | 内置 + 自定义模板，附带 `model_id` |
+| POST | `/api/meeting-templates` | 创建自定义模板（name、instructions、sections） |
+| PATCH | `/api/meeting-templates/{template_id}` | 更新自定义模板（版本 +1） |
+| DELETE | `/api/meeting-templates/{template_id}` | 删除自定义模板，不删除已生成纪要 |
+| POST | `/api/recordings/{id}/minutes` | 启动后台任务，body `{template_id}`；202 + job |
+| GET | `/api/recordings/{id}/minutes` | 该录音的纪要版本摘要列表 |
+| GET | `/api/recordings/{id}/minutes/{job_id}` | 状态、进度、结构化结果和 Markdown |
+| PATCH | `/api/recordings/{id}/minutes/{job_id}` | body `{markdown}`，保存编辑版 |
+| DELETE | `/api/recordings/{id}/minutes/{job_id}` | 删除一份纪要 |
+| GET | `/api/recordings/{id}/minutes/{job_id}/export?format=md|txt` | 下载 Markdown/TXT |
+
+- `POST` 只接受停止且至少有有效转写的录音；录音中返回 409，无转写返回 400，
+  模型未缓存返回 503，队列满返回 429。
+- 任务状态：`queued → running → completed | failed | cancelled | interrupted`；
+  `progress` 0–100、`stage`、`message` 会被持久化。页面轮询任务状态，刷新后可恢复。
+- 生成前快照最终转写并记录 `transcript_sha256`、`transcript_lines`、`model_id`、
+  `template_id/version`；生成期间录音文本变化不会影响任务。
+- `result` 包含 `overview`、`sections`（结构化条目和证据）、`stats`、`coverage`、
+  `markdown`；证据对象为 `{elapsed_ms, stamp, speaker, speaker_id, quote, line}`。
+  证据的 `elapsed_ms` 对应当前录音的完整音频，`line` 是快照内行号。
+- 自定义模板只接受受控的 `name`/`instructions`/`sections` 字段；不接受任意路径或
+  代码。模型输出只做文本/结构化渲染，不执行其中的指令。
+- 数据目录：`data/meeting_minutes/jobs/<recording_id>/<job_id>.json` 和
+  `data/meeting_minutes/templates.json`；不复制音频和完整转写，只保存证据引用。
+  删除录音会删除对应的纪要目录；进程中断的任务在下次启动时标记 `interrupted`。
+- 模型默认 `mlx-community/Qwen3.5-4B-MLX-4bit`，可用
+  `VOICEHUB_MINUTES_MODEL` 覆盖；只使用 `local_files_only`，不会回退到远端。
+
 管理事件流积压超过 256 条时发 `events.resync`，应重新请求会话/日志快照。
 它不是持久消息队列。记录存储失败不伪装成持久化成功。
 
